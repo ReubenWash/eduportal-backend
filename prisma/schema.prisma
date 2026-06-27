@@ -1,0 +1,482 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  SCHOOL_ADMIN
+  CLASS_TEACHER
+  SUBJECT_TEACHER
+  PARENT
+  STUDENT
+}
+
+enum SchoolStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+  REJECTED
+}
+
+enum Plan {
+  BASIC
+  STANDARD
+  PREMIUM
+}
+
+enum JHSLevel {
+  JHS1
+  JHS2
+  JHS3
+}
+
+enum SubjectType {
+  CORE
+  ELECTIVE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum TermNumber {
+  TERM1
+  TERM2
+  TERM3
+}
+
+enum TermStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+}
+
+enum StudentStatus {
+  ACTIVE
+  GRADUATED
+  TRANSFERRED
+  WITHDRAWN
+  REPEATED
+}
+
+enum ReportStatus {
+  DRAFT
+  APPROVED
+  RELEASED
+}
+
+// ─────────────────────────────────────────────────────
+// SCHOOL (Tenant root)
+// ─────────────────────────────────────────────────────
+
+model School {
+  id            String       @id @default(uuid())
+  name          String
+  slug          String       @unique  // URL-safe identifier e.g. "accra-academy-jhs"
+  gesNumber     String?      @unique
+  region        String
+  district      String
+  address       String?
+  phone         String?
+  email         String
+  logoUrl       String?
+  motto         String?
+  status        SchoolStatus @default(PENDING)
+  plan          Plan         @default(BASIC)
+  reportConfig  Json?        // custom report card template settings
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relations
+  users         User[]
+  students      Student[]
+  classes       Class[]
+  subjects      Subject[]
+  terms         Term[]
+  staff         Staff[]
+  guardians     Guardian[]
+  announcements Announcement[]
+
+  @@map("schools")
+}
+
+// ─────────────────────────────────────────────────────
+// USER (Authentication — all roles)
+// ─────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(uuid())
+  schoolId      String?   // null for SUPER_ADMIN
+  email         String    @unique
+  passwordHash  String
+  role          Role
+  isVerified    Boolean   @default(false)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  school        School?         @relation(fields: [schoolId], references: [id])
+  staff         Staff?
+  studentProfile Student?
+  refreshTokens RefreshToken[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────
+// REFRESH TOKEN
+// ─────────────────────────────────────────────────────
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────
+// STAFF
+// ─────────────────────────────────────────────────────
+
+model Staff {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  schoolId      String
+  firstName     String
+  lastName      String
+  phone         String?
+  gender        Gender?
+  photoUrl      String?
+  qualification String?
+  staffNumber   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id])
+  school        School   @relation(fields: [schoolId], references: [id])
+  classesAsTeacher Class[]
+  subjectAssignments StaffSubject[]
+
+  @@map("staff")
+}
+
+// ─────────────────────────────────────────────────────
+// GUARDIAN / PARENT
+// ─────────────────────────────────────────────────────
+
+model Guardian {
+  id           String   @id @default(uuid())
+  schoolId     String
+  firstName    String
+  lastName     String
+  phone        String
+  email        String?
+  relationship String   // Father, Mother, Uncle, etc.
+  createdAt    DateTime @default(now())
+
+  school       School   @relation(fields: [schoolId], references: [id])
+  students     StudentGuardian[]
+
+  @@map("guardians")
+}
+
+// ─────────────────────────────────────────────────────
+// STUDENT
+// ─────────────────────────────────────────────────────
+
+model Student {
+  id            String        @id @default(uuid())
+  schoolId      String
+  userId        String?       @unique // optional portal access
+  studentNumber String        // e.g. JHS-2025-0042
+  firstName     String
+  lastName      String
+  otherNames    String?
+  gender        Gender
+  dateOfBirth   DateTime
+  photoUrl      String?
+  status        StudentStatus @default(ACTIVE)
+  admissionDate DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  school        School        @relation(fields: [schoolId], references: [id])
+  user          User?         @relation(fields: [userId], references: [id])
+  guardians     StudentGuardian[]
+  enrollments   Enrollment[]
+  scores        Score[]
+  attendances   Attendance[]
+  reports       Report[]
+
+  @@unique([schoolId, studentNumber])
+  @@map("students")
+}
+
+model StudentGuardian {
+  studentId   String
+  guardianId  String
+  isPrimary   Boolean @default(false)
+
+  student     Student  @relation(fields: [studentId], references: [id])
+  guardian    Guardian @relation(fields: [guardianId], references: [id])
+
+  @@id([studentId, guardianId])
+  @@map("student_guardians")
+}
+
+// ─────────────────────────────────────────────────────
+// CLASS
+// ─────────────────────────────────────────────────────
+
+model Class {
+  id             String   @id @default(uuid())
+  schoolId       String
+  level          JHSLevel
+  section        String   // A, B, C, etc.
+  classTeacherId String?
+  academicYear   String   // e.g. "2024/2025"
+  createdAt      DateTime @default(now())
+
+  school         School    @relation(fields: [schoolId], references: [id])
+  classTeacher   Staff?    @relation(fields: [classTeacherId], references: [id])
+  enrollments    Enrollment[]
+  attendances    Attendance[]
+  subjects       ClassSubject[]
+
+  @@unique([schoolId, level, section, academicYear])
+  @@map("classes")
+}
+
+// ─────────────────────────────────────────────────────
+// SUBJECT
+// ─────────────────────────────────────────────────────
+
+model Subject {
+  id       String      @id @default(uuid())
+  schoolId String
+  name     String
+  code     String      // e.g. MATH, ENG, SCI
+  type     SubjectType @default(CORE)
+
+  school         School         @relation(fields: [schoolId], references: [id])
+  classSubjects  ClassSubject[]
+  staffSubjects  StaffSubject[]
+  scores         Score[]
+
+  @@unique([schoolId, code])
+  @@map("subjects")
+}
+
+// Class ↔ Subject (many-to-many)
+model ClassSubject {
+  classId   String
+  subjectId String
+
+  class     Class   @relation(fields: [classId], references: [id])
+  subject   Subject @relation(fields: [subjectId], references: [id])
+
+  @@id([classId, subjectId])
+  @@map("class_subjects")
+}
+
+// Staff ↔ Subject ↔ Class assignment
+model StaffSubject {
+  id        String @id @default(uuid())
+  staffId   String
+  subjectId String
+  classId   String
+
+  staff     Staff   @relation(fields: [staffId], references: [id])
+  subject   Subject @relation(fields: [subjectId], references: [id])
+
+  @@unique([staffId, subjectId, classId])
+  @@map("staff_subjects")
+}
+
+// ─────────────────────────────────────────────────────
+// TERM
+// ─────────────────────────────────────────────────────
+
+model Term {
+  id           String     @id @default(uuid())
+  schoolId     String
+  academicYear String     // "2024/2025"
+  termNumber   TermNumber
+  startDate    DateTime
+  endDate      DateTime
+  status       TermStatus @default(UPCOMING)
+  nextTermDate DateTime?
+  createdAt    DateTime   @default(now())
+
+  school       School     @relation(fields: [schoolId], references: [id])
+  enrollments  Enrollment[]
+  scores       Score[]
+  reports      Report[]
+  attendances  Attendance[]
+
+  @@unique([schoolId, academicYear, termNumber])
+  @@map("terms")
+}
+
+// ─────────────────────────────────────────────────────
+// ENROLLMENT (Student in Class for a Term)
+// ─────────────────────────────────────────────────────
+
+model Enrollment {
+  id        String   @id @default(uuid())
+  studentId String
+  classId   String
+  termId    String
+  createdAt DateTime @default(now())
+
+  student   Student  @relation(fields: [studentId], references: [id])
+  class     Class    @relation(fields: [classId], references: [id])
+  term      Term     @relation(fields: [termId], references: [id])
+
+  @@unique([studentId, termId])
+  @@map("enrollments")
+}
+
+// ─────────────────────────────────────────────────────
+// SCORE
+// ─────────────────────────────────────────────────────
+
+model Score {
+  id         String   @id @default(uuid())
+  studentId  String
+  subjectId  String
+  termId     String
+  ca1        Float?   // max 10
+  ca2        Float?   // max 10
+  ca3        Float?   // max 10
+  caTotal    Float?   // computed: avg of CAs normalised to 30
+  examScore  Float?   // max 100, normalised to 70
+  total      Float?   // caTotal + examScore
+  grade      String?  // 1-6
+  remark     String?  // Excellent, Very Good, etc.
+  position   Int?     // within class for this subject
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  student    Student  @relation(fields: [studentId], references: [id])
+  subject    Subject  @relation(fields: [subjectId], references: [id])
+  term       Term     @relation(fields: [termId], references: [id])
+
+  @@unique([studentId, subjectId, termId])
+  @@map("scores")
+}
+
+// ─────────────────────────────────────────────────────
+// ATTENDANCE
+// ─────────────────────────────────────────────────────
+
+model Attendance {
+  id        String           @id @default(uuid())
+  studentId String
+  classId   String
+  termId    String
+  date      DateTime         @db.Date
+  status    AttendanceStatus
+  note      String?
+  createdAt DateTime         @default(now())
+
+  student   Student @relation(fields: [studentId], references: [id])
+  class     Class   @relation(fields: [classId], references: [id])
+  term      Term    @relation(fields: [termId], references: [id])
+
+  @@unique([studentId, date])
+  @@map("attendances")
+}
+
+// ─────────────────────────────────────────────────────
+// REPORT CARD
+// ─────────────────────────────────────────────────────
+
+model Report {
+  id               String       @id @default(uuid())
+  studentId        String
+  termId           String
+  classPosition    Int?
+  totalStudents    Int?
+  aggregate        Float?       // best 6 subjects total grade (JHS3)
+  teacherRemark    String?
+  headRemark       String?
+  conductScore     Json?        // { punctuality, neatness, attentiveness, ... }
+  daysPresent      Int?
+  daysAbsent       Int?
+  daysLate         Int?
+  totalSchoolDays  Int?
+  pdfUrl           String?
+  status           ReportStatus @default(DRAFT)
+  releasedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  student          Student @relation(fields: [studentId], references: [id])
+  term             Term    @relation(fields: [termId], references: [id])
+
+  @@unique([studentId, termId])
+  @@map("reports")
+}
+
+// ─────────────────────────────────────────────────────
+// NOTIFICATION
+// ─────────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String   // info | warning | success | report
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────────────
+// ANNOUNCEMENT
+// ─────────────────────────────────────────────────────
+
+model Announcement {
+  id        String   @id @default(uuid())
+  schoolId  String
+  title     String
+  body      String
+  audience  String   // ALL | TEACHERS | PARENTS | STUDENTS
+  createdAt DateTime @default(now())
+
+  school    School   @relation(fields: [schoolId], references: [id])
+
+  @@map("announcements")
+}

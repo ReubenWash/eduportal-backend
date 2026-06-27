@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.local
+.env.production
+logs/
+*.log
+dist/
+build/
+.DS_Store
+prisma/migrations/dev.db
+.env.example
