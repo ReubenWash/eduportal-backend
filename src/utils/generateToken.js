@@ -2,6 +2,8 @@ const jwt = require("jsonwebtoken");
 const { v4: uuidv4 } = require("uuid");
 const { prisma } = require("../config/db");
 
+const isProd = process.env.NODE_ENV === "production";
+
 /**
  * Sign a short-lived JWT access token
  * Payload contains userId, schoolId, and role
@@ -43,12 +45,18 @@ const verifyAccessToken = (token) => {
 
 /**
  * Helper to set the refresh token as an HTTP-only secure cookie
+ *
+ * NOTE: Frontend (Vercel) and backend (Render) are on different domains,
+ * which makes this a cross-site request. Cross-site cookies REQUIRE
+ * `sameSite: "none"` + `secure: true` or the browser will silently refuse
+ * to send/accept the cookie. `secure: true` only works over HTTPS, so we
+ * fall back to `sameSite: "lax"` + `secure: false` in local dev (http://localhost).
  */
 const setRefreshTokenCookie = (res, token) => {
   res.cookie("refreshToken", token, {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    secure:   isProd,                  // must be true in production (HTTPS + sameSite=none requires it)
+    sameSite: isProd ? "none" : "lax", // "none" required for cross-site (Vercel -> Render)
     maxAge:   7 * 24 * 60 * 60 * 1000, // 7 days in ms
   });
 };
@@ -59,8 +67,8 @@ const setRefreshTokenCookie = (res, token) => {
 const clearRefreshTokenCookie = (res) => {
   res.clearCookie("refreshToken", {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === "production",
-    sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+    secure:   isProd,
+    sameSite: isProd ? "none" : "lax",
   });
 };
 
