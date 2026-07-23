@@ -1,0 +1,50 @@
+{
+  "name": "eduport",
+  "version": "1.0.0",
+  "description": "EduTrack JHS — Node.js/Express REST API",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "postinstall": "node scripts/postinstall.js",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "db:seed": "node prisma/seed.js",
+    "db:generate": "prisma generate",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@getbrevo/brevo": "^6.0.2",
+    "@prisma/client": "^5.14.0",
+    "archiver": "^7.0.1",
+    "axios": "^1.18.1",
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^1.41.3",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "express-async-errors": "^3.1.1",
+    "express-rate-limit": "^7.3.1",
+    "firebase-admin": "^12.3.1",
+    "express-validator": "^7.1.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "multer-storage-cloudinary": "^4.0.0",
+    "nodemailer": "^6.10.1",
+    "puppeteer": "^22.15.0",
+    "qrcode": "^1.5.4",
+    "speakeasy": "^2.0.0",
+    "uuid": "^10.0.0",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.5.0",
+    "nodemon": "^3.1.14",
+    "prisma": "^5.14.0"
+  }
+}
