@@ -1,0 +1,1681 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  SCHOOL_ADMIN
+  CLASS_TEACHER
+  SUBJECT_TEACHER
+  PARENT
+  STUDENT
+}
+
+enum SchoolStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+  REJECTED
+}
+
+enum Plan {
+  BASIC
+  STANDARD
+  PREMIUM
+}
+
+enum JHSLevel {
+  JHS1
+  JHS2
+  JHS3
+}
+
+enum SubjectType {
+  CORE
+  ELECTIVE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum TermNumber {
+  TERM1
+  TERM2
+  TERM3
+}
+
+enum TermStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+}
+
+enum StudentStatus {
+  ACTIVE
+  GRADUATED
+  TRANSFERRED
+  WITHDRAWN
+  REPEATED
+}
+
+enum ReportStatus {
+  DRAFT
+  APPROVED
+  RELEASED
+}
+
+// ─────────────────────────────────────────────────────
+// NEW ENUMS FOR ADMIN FEATURES
+// ─────────────────────────────────────────────────────
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  LOGIN_FAILED
+  APPROVE
+  REJECT
+  SUSPEND
+  ACTIVATE
+  CONFIG_UPDATE
+  BACKUP_CREATE
+  BACKUP_RESTORE
+  EXPORT
+  IMPORT
+  ROLE_CHANGE
+  PERMISSION_CHANGE
+  PASSWORD_RESET
+  EMAIL_SENT
+  TWOFA_ENABLE
+  TWOFA_DISABLE
+  IP_BLOCK
+  IP_UNBLOCK
+}
+
+enum AuditResource {
+  USER
+  SCHOOL
+  STUDENT
+  STAFF
+  GUARDIAN
+  CLASS
+  SUBJECT
+  TERM
+  ENROLLMENT
+  SCORE
+  ATTENDANCE
+  REPORT
+  NOTIFICATION
+  DOCUMENT
+  SUBSCRIPTION
+  PAYMENT
+  CMS_PAGE
+  EMAIL_TEMPLATE
+  INTEGRATION
+  SYSTEM_SETTING
+  SECURITY_SETTING
+  BACKUP
+  SUPPORT_TICKET
+  API_KEY
+  WEBHOOK
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+  TRIAL
+  PENDING
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  FREE
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  MOBILE_MONEY
+  BANK_TRANSFER
+  PAYPAL
+  STRIPE
+  PAYSTACK
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELED
+  VOID
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketCategory {
+  TECHNICAL
+  BILLING
+  FEATURE_REQUEST
+  BUG_REPORT
+  GENERAL
+  COMPLAINT
+  ACCOUNT
+  REPORT_ISSUE
+  INTEGRATION
+  OTHER
+}
+
+enum CmsStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum CmsSectionType {
+  HERO
+  FEATURES
+  STATS
+  PRICING
+  TESTIMONIALS
+  FAQ
+  CTA
+  TEAM
+  BLOG
+  GALLERY
+  CONTACT
+  FOOTER
+}
+
+enum LegalType {
+  TERMS
+  PRIVACY
+  COOKIE
+  GDPR
+  DPA
+  ACCEPTABLE_USE
+  REFUND
+}
+
+enum SettingCategory {
+  GENERAL
+  BRANDING
+  SECURITY
+  NOTIFICATION
+  INTEGRATION
+  PERFORMANCE
+  MAINTENANCE
+  FEATURES
+  SOCIAL
+}
+
+enum IntegrationType {
+  PAYMENT
+  SMS
+  EMAIL
+  STORAGE
+  AI
+  ANALYTICS
+  AUTH
+  VIDEO
+  SOCIAL
+  OTHER
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  PENDING
+}
+
+enum WebhookEvent {
+  SCHOOL_CREATED
+  SCHOOL_UPDATED
+  SCHOOL_DELETED
+  USER_CREATED
+  USER_UPDATED
+  USER_DELETED
+  STUDENT_CREATED
+  STUDENT_UPDATED
+  STUDENT_DELETED
+  PAYMENT_SUCCEEDED
+  PAYMENT_FAILED
+  SUBSCRIPTION_CREATED
+  SUBSCRIPTION_UPDATED
+  SUBSCRIPTION_CANCELED
+  REPORT_GENERATED
+  REPORT_RELEASED
+  TICKET_CREATED
+  TICKET_UPDATED
+  TICKET_RESOLVED
+}
+
+enum WebhookStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+}
+
+enum ApiKeyScope {
+  READ_SCHOOLS
+  WRITE_SCHOOLS
+  DELETE_SCHOOLS
+  READ_USERS
+  WRITE_USERS
+  DELETE_USERS
+  READ_STUDENTS
+  WRITE_STUDENTS
+  DELETE_STUDENTS
+  READ_REPORTS
+  WRITE_REPORTS
+  DELETE_REPORTS
+  READ_PAYMENTS
+  WRITE_PAYMENTS
+  READ_SUBSCRIPTIONS
+  WRITE_SUBSCRIPTIONS
+  ADMIN_ALL
+}
+
+enum BackupType {
+  FULL
+  INCREMENTAL
+  DATABASE_ONLY
+  FILES_ONLY
+}
+
+enum BackupStatus {
+  PENDING
+  IN_PROGRESS
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum BackupStorage {
+  LOCAL
+  CLOUDINARY
+  AWS_S3
+  GOOGLE_CLOUD
+}
+
+enum ServiceType {
+  API_SERVER
+  DATABASE
+  FILE_STORAGE
+  EMAIL_SERVICE
+  SMS_GATEWAY
+  REDIS
+  QUEUE
+  AI_SERVICE
+  PAYMENT_GATEWAY
+}
+
+enum ServiceStatus {
+  HEALTHY
+  DEGRADED
+  DOWN
+  UNKNOWN
+}
+
+enum ErrorLevel {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  SUCCESS
+  FAILED
+  RETRY
+  CANCELLED
+}
+
+enum DebugMode {
+  OFF
+  ON
+  LOGS_ONLY
+}
+
+enum FeatureFlag {
+  ENABLE_AI
+  ENABLE_SMS
+  ENABLE_ANALYTICS
+  ENABLE_EXPORTS
+  ENABLE_API
+  ENABLE_2FA
+  ENABLE_MAINTENANCE
+  ENABLE_REGISTRATION
+  ENABLE_REPORT_GENERATION
+  ENABLE_BULK_OPERATIONS
+}
+
+// ─────────────────────────────────────────────────────
+// SCHOOL (Tenant root)
+// ─────────────────────────────────────────────────────
+
+model School {
+  id           String       @id @default(uuid())
+  name         String
+  slug         String       @unique
+  gesNumber    String?      @unique
+  region       String
+  district     String
+  address      String?
+  phone        String?
+  email        String
+  logoUrl      String?
+  motto        String?
+  status       SchoolStatus @default(PENDING)
+  plan         Plan         @default(BASIC)
+  reportConfig Json?
+  scoreLabels  Json?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  // Relations
+  users          User[]
+  students       Student[]
+  classes        Class[]
+  subjects       Subject[]
+  terms          Term[]
+  staff          Staff[]
+  guardians      Guardian[]
+  announcements  Announcement[]
+  documents      Document[]
+  subscriptions  Subscription?
+  payments       Payment[]
+  invoices       Invoice[]
+  auditLogs      AuditLog[]
+  supportTickets SupportTicket[]
+  feedback       Feedback[]
+  apiKeys        ApiKey[]
+
+  @@map("schools")
+}
+
+// ─────────────────────────────────────────────────────
+// USER (Authentication — all roles)
+// ─────────────────────────────────────────────────────
+
+model User {
+  id                        String    @id @default(uuid())
+  schoolId                  String?
+  email                     String    @unique
+  passwordHash              String
+  role                      Role
+  isVerified                Boolean   @default(false)
+  isActive                  Boolean   @default(true)
+  mustChangePassword        Boolean   @default(true)
+  verificationCode          String?
+  verificationCodeExpiresAt DateTime?
+  lastLoginAt               DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  // Relations
+  school                 School?         @relation(fields: [schoolId], references: [id])
+  staff                  Staff?
+  studentProfile         Student?
+  guardianProfile        Guardian?
+  refreshTokens          RefreshToken[]
+  notifications          Notification[]
+  uploadedDocuments      Document[]      @relation("DocumentUploadedBy")
+  twoFactorAuth          TwoFactorAuth?
+  auditLogs              AuditLog[]
+  consentLogs            ConsentLog[]
+  supportTicketsCreated  SupportTicket[] @relation("TicketCreator")
+  supportTicketsAssigned SupportTicket[] @relation("TicketAssignee")
+  ticketMessages         TicketMessage[]
+  feedback               Feedback[]
+  feedbackReplies        FeedbackReply[]
+  apiKeys                ApiKey[]
+  errorLogs              ErrorLog[]
+  deviceTokens           DeviceToken[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────
+// REFRESH TOKEN
+// ─────────────────────────────────────────────────────
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// ─────────────────────────────────────────────────────
+// STAFF
+// ─────────────────────────────────────────────────────
+
+model Staff {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  schoolId      String
+  firstName     String
+  lastName      String
+  phone         String?
+  gender        Gender?
+  photoUrl      String?
+  qualification String?
+  staffNumber   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user               User           @relation(fields: [userId], references: [id])
+  school             School         @relation(fields: [schoolId], references: [id])
+  classesAsTeacher   Class[]
+  subjectAssignments StaffSubject[]
+  documents          Document[]
+
+  @@map("staff")
+}
+
+// ─────────────────────────────────────────────────────
+// GUARDIAN / PARENT
+// ─────────────────────────────────────────────────────
+
+model Guardian {
+  id           String   @id @default(uuid())
+  schoolId     String
+  userId       String?  @unique
+  firstName    String
+  lastName     String
+  phone        String
+  email        String?
+  relationship String
+  createdAt    DateTime @default(now())
+
+  school    School            @relation(fields: [schoolId], references: [id])
+  user      User?             @relation(fields: [userId], references: [id])
+  students  StudentGuardian[]
+  documents Document[]
+
+  @@map("guardians")
+}
+
+// ─────────────────────────────────────────────────────
+// STUDENT
+// ─────────────────────────────────────────────────────
+
+model Student {
+  id            String        @id @default(uuid())
+  schoolId      String
+  userId        String?       @unique
+  studentNumber String
+  firstName     String
+  lastName      String
+  otherNames    String?
+  gender        Gender
+  dateOfBirth   DateTime
+  photoUrl      String?
+  status        StudentStatus @default(ACTIVE)
+  admissionDate DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  school      School            @relation(fields: [schoolId], references: [id])
+  user        User?             @relation(fields: [userId], references: [id])
+  guardians   StudentGuardian[]
+  enrollments Enrollment[]
+  scores      Score[]
+  attendances Attendance[]
+  reports     Report[]
+  documents   Document[]
+
+  @@unique([schoolId, studentNumber])
+  @@map("students")
+}
+
+model StudentGuardian {
+  studentId  String
+  guardianId String
+  isPrimary  Boolean @default(false)
+
+  student  Student  @relation(fields: [studentId], references: [id])
+  guardian Guardian @relation(fields: [guardianId], references: [id])
+
+  @@id([studentId, guardianId])
+  @@map("student_guardians")
+}
+
+// ─────────────────────────────────────────────────────
+// CLASS
+// ─────────────────────────────────────────────────────
+
+model Class {
+  id             String   @id @default(uuid())
+  schoolId       String
+  level          JHSLevel
+  section        String
+  classTeacherId String?
+  academicYear   String
+  createdAt      DateTime @default(now())
+
+  school       School         @relation(fields: [schoolId], references: [id])
+  classTeacher Staff?         @relation(fields: [classTeacherId], references: [id])
+  enrollments  Enrollment[]
+  attendances  Attendance[]
+  subjects     ClassSubject[]
+
+  @@unique([schoolId, level, section, academicYear])
+  @@map("classes")
+}
+
+// ─────────────────────────────────────────────────────
+// SUBJECT
+// ─────────────────────────────────────────────────────
+
+model Subject {
+  id       String      @id @default(uuid())
+  schoolId String
+  name     String
+  code     String
+  type     SubjectType @default(CORE)
+
+  school        School         @relation(fields: [schoolId], references: [id])
+  classSubjects ClassSubject[]
+  staffSubjects StaffSubject[]
+  scores        Score[]
+
+  @@unique([schoolId, code])
+  @@map("subjects")
+}
+
+// Class ↔ Subject (many-to-many)
+model ClassSubject {
+  classId   String
+  subjectId String
+
+  class   Class   @relation(fields: [classId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+
+  @@id([classId, subjectId])
+  @@map("class_subjects")
+}
+
+// Staff ↔ Subject ↔ Class assignment
+model StaffSubject {
+  id        String @id @default(uuid())
+  staffId   String
+  subjectId String
+  classId   String
+
+  staff   Staff   @relation(fields: [staffId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+
+  @@unique([staffId, subjectId, classId])
+  @@map("staff_subjects")
+}
+
+// ─────────────────────────────────────────────────────
+// TERM
+// ─────────────────────────────────────────────────────
+
+model Term {
+  id           String     @id @default(uuid())
+  schoolId     String
+  academicYear String
+  termNumber   TermNumber
+  startDate    DateTime
+  endDate      DateTime
+  status       TermStatus @default(UPCOMING)
+  nextTermDate DateTime?
+  createdAt    DateTime   @default(now())
+
+  school      School       @relation(fields: [schoolId], references: [id])
+  enrollments Enrollment[]
+  scores      Score[]
+  reports     Report[]
+  attendances Attendance[]
+
+  @@unique([schoolId, academicYear, termNumber])
+  @@map("terms")
+}
+
+// ─────────────────────────────────────────────────────
+// ENROLLMENT (Student in Class for a Term)
+// ─────────────────────────────────────────────────────
+
+model Enrollment {
+  id        String   @id @default(uuid())
+  studentId String
+  classId   String
+  termId    String
+  createdAt DateTime @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+  term    Term    @relation(fields: [termId], references: [id])
+
+  @@unique([studentId, termId])
+  @@map("enrollments")
+}
+
+// ─────────────────────────────────────────────────────
+// SCORE
+// ─────────────────────────────────────────────────────
+
+model Score {
+  id        String   @id @default(uuid())
+  studentId String
+  subjectId String
+  termId    String
+  ca1       Float?
+  ca2       Float?
+  ca3       Float?
+  caTotal   Float?
+  examScore Float?
+  total     Float?
+  grade     String?
+  remark    String?
+  position  Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id])
+  subject Subject @relation(fields: [subjectId], references: [id])
+  term    Term    @relation(fields: [termId], references: [id])
+
+  @@unique([studentId, subjectId, termId])
+  @@map("scores")
+}
+
+// ─────────────────────────────────────────────────────
+// ATTENDANCE
+// ─────────────────────────────────────────────────────
+
+model Attendance {
+  id        String           @id @default(uuid())
+  studentId String
+  classId   String
+  termId    String
+  date      DateTime         @db.Date
+  status    AttendanceStatus
+  note      String?
+  createdAt DateTime         @default(now())
+
+  student Student @relation(fields: [studentId], references: [id])
+  class   Class   @relation(fields: [classId], references: [id])
+  term    Term    @relation(fields: [termId], references: [id])
+
+  @@unique([studentId, date])
+  @@map("attendances")
+}
+
+// ─────────────────────────────────────────────────────
+// REPORT CARD
+// ─────────────────────────────────────────────────────
+
+model Report {
+  id              String       @id @default(uuid())
+  studentId       String
+  termId          String
+  classPosition   Int?
+  totalStudents   Int?
+  aggregate       Float?
+  teacherRemark   String?
+  headRemark      String?
+  conductScore    Json?
+  daysPresent     Int?
+  daysAbsent      Int?
+  daysLate        Int?
+  totalSchoolDays Int?
+  pdfUrl          String?
+  status          ReportStatus @default(DRAFT)
+  releasedAt      DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id])
+  term    Term    @relation(fields: [termId], references: [id])
+
+  @@unique([studentId, termId])
+  @@map("reports")
+}
+
+// ─────────────────────────────────────────────────────
+// NOTIFICATION
+// ─────────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────────────
+// DEVICE TOKENS (push notifications)
+// ─────────────────────────────────────────────────────
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String   // "ios" | "android" | "web"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
+}
+
+// ─────────────────────────────────────────────────────
+// ROLES & PERMISSIONS (custom, platform-wide)
+// ─────────────────────────────────────────────────────
+
+model RoleDefinition {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  color       String   @default("blue")
+  permissions String[] @default([])
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("role_definitions")
+}
+
+// ─────────────────────────────────────────────────────
+// (Pre-existing, currently unused — see note above)
+// ─────────────────────────────────────────────────────
+
+model CustomRole {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  color       String   @default("blue")
+  isSystem    Boolean  @default(false) // system roles (e.g. Super Admin) can't be edited/deleted
+  permissions String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("custom_roles")
+}
+
+model Announcement {
+  id        String   @id @default(uuid())
+  schoolId  String?
+  title     String
+  body      String
+  audience  String
+  createdAt DateTime @default(now())
+
+  school School? @relation(fields: [schoolId], references: [id])
+
+  @@map("announcements")
+}
+
+// ─────────────────────────────────────────────────────
+// GLOBAL SETTING (Legacy)
+// ─────────────────────────────────────────────────────
+
+model GlobalSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("global_settings")
+}
+
+// ─────────────────────────────────────────────────────
+// DOCUMENT
+// ─────────────────────────────────────────────────────
+
+model Document {
+  id           String   @id @default(uuid())
+  schoolId     String
+  studentId    String?
+  staffId      String?
+  guardianId   String?
+  uploadedById String
+  category     String?
+  url          String
+  originalName String
+  mimeType     String
+  size         Int
+  createdAt    DateTime @default(now())
+
+  school     School    @relation(fields: [schoolId], references: [id])
+  student    Student?  @relation(fields: [studentId], references: [id])
+  staff      Staff?    @relation(fields: [staffId], references: [id])
+  guardian   Guardian? @relation(fields: [guardianId], references: [id])
+  uploadedBy User      @relation("DocumentUploadedBy", fields: [uploadedById], references: [id])
+
+  @@map("documents")
+}
+
+// ─────────────────────────────────────────────────────
+// PHASE 1: AUDIT & SECURITY
+// ─────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String        @id @default(uuid())
+  userId     String?
+  schoolId   String?
+  action     AuditAction
+  resource   AuditResource
+  resourceId String?
+  oldData    Json?
+  newData    Json?
+  changes    Json?
+  ipAddress  String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime      @default(now())
+
+  user   User?   @relation(fields: [userId], references: [id])
+  school School? @relation(fields: [schoolId], references: [id])
+
+  @@index([userId])
+  @@index([schoolId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model SecuritySetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       Json
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("security_settings")
+}
+
+model IpWhitelist {
+  id        String   @id @default(uuid())
+  ipAddress String   @unique
+  label     String?
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ip_whitelist")
+}
+
+model TwoFactorAuth {
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  secret      String
+  isEnabled   Boolean   @default(false)
+  backupCodes String[]
+  lastUsed    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("two_factor_auth")
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid())
+  email     String
+  ipAddress String
+  userAgent String?
+  success   Boolean  @default(false)
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([ipAddress])
+  @@index([createdAt])
+  @@map("login_attempts")
+}
+
+// ─────────────────────────────────────────────────────
+// PHASE 2: SUBSCRIPTIONS & BILLING
+// ─────────────────────────────────────────────────────
+
+model PlanDefinition {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  displayName  String
+  price        Float
+  currency     String   @default("USD")
+  billingCycle String
+  features     Json
+  limits       Json
+  isActive     Boolean  @default(true)
+  isDefault    Boolean  @default(false)
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("plan_definitions")
+}
+
+model Subscription {
+  id                        String             @id @default(uuid())
+  schoolId                  String             @unique
+  plan                      Plan               @default(BASIC)
+  status                    SubscriptionStatus @default(ACTIVE)
+  startDate                 DateTime           @default(now())
+  endDate                   DateTime?
+  autoRenew                 Boolean            @default(true)
+  price                     Float?
+  currency                  String             @default("USD")
+  stripeCustomerId          String?
+  stripeSubscriptionId      String?
+  paystackSubscriptionCode  String?
+  paystackAuthorizationCode String?
+  customFeatures            Json?
+  trialEndDate              DateTime?
+  canceledAt                DateTime?
+  createdAt                 DateTime           @default(now())
+  updatedAt                 DateTime           @updatedAt
+
+  school   School    @relation(fields: [schoolId], references: [id])
+  payments Payment[]
+  invoices Invoice[]
+
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                    String         @id @default(uuid())
+  subscriptionId        String
+  schoolId              String
+  invoiceNumber         String         @unique
+  amount                Float
+  currency              String         @default("USD")
+  status                PaymentStatus  @default(PENDING)
+  method                PaymentMethod?
+  stripePaymentIntentId String?
+  stripeChargeId        String?
+  paystackTransactionId String?
+  paystackReference     String?
+  receiptUrl            String?
+  description           String?
+  metadata              Json?
+  paidAt                DateTime?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  school       School       @relation(fields: [schoolId], references: [id])
+  invoice      Invoice?     @relation(fields: [invoiceNumber], references: [invoiceNumber])
+
+  @@index([schoolId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("payments")
+}
+
+model Invoice {
+  invoiceNumber  String        @id
+  subscriptionId String
+  schoolId       String
+  amount         Float
+  currency       String        @default("USD")
+  status         InvoiceStatus @default(DRAFT)
+  issueDate      DateTime      @default(now())
+  dueDate        DateTime
+  paidDate       DateTime?
+  pdfUrl         String?
+  lineItems      Json
+  tax            Float?        @default(0)
+  discount       Float?        @default(0)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  school       School       @relation(fields: [schoolId], references: [id])
+  payment      Payment?
+
+  @@map("invoices")
+}
+
+// ─────────────────────────────────────────────────────
+// PHASE 3: SUPPORT SYSTEM
+// ─────────────────────────────────────────────────────
+
+model SupportTicket {
+  id            String         @id @default(uuid())
+  ticketNumber  String         @unique
+  schoolId      String?
+  userId        String
+  subject       String
+  description   String
+  status        TicketStatus   @default(OPEN)
+  priority      TicketPriority @default(MEDIUM)
+  category      TicketCategory @default(GENERAL)
+  assignedTo    String?
+  source        String?
+  rating        Int?
+  ratingComment String?
+  resolvedAt    DateTime?
+  closedAt      DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  school      School?            @relation(fields: [schoolId], references: [id])
+  user        User               @relation("TicketCreator", fields: [userId], references: [id])
+  assignee    User?              @relation("TicketAssignee", fields: [assignedTo], references: [id])
+  messages    TicketMessage[]
+  attachments TicketAttachment[]
+
+  @@index([schoolId])
+  @@index([userId])
+  @@index([assignedTo])
+  @@index([status])
+  @@index([priority])
+  @@index([createdAt])
+  @@map("support_tickets")
+}
+
+model TicketMessage {
+  id          String   @id @default(uuid())
+  ticketId    String
+  userId      String
+  message     String
+  isInternal  Boolean  @default(false)
+  attachments Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ticket           SupportTicket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user             User               @relation(fields: [userId], references: [id])
+  TicketAttachment TicketAttachment[]
+
+  @@index([ticketId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("ticket_messages")
+}
+
+model TicketAttachment {
+  id         String   @id @default(uuid())
+  ticketId   String
+  messageId  String?
+  fileName   String
+  fileUrl    String
+  fileSize   Int
+  mimeType   String
+  uploadedBy String
+  createdAt  DateTime @default(now())
+
+  ticket  SupportTicket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  message TicketMessage? @relation(fields: [messageId], references: [id])
+
+  @@map("ticket_attachments")
+}
+
+model Feedback {
+  id              String    @id @default(uuid())
+  schoolId        String
+  userId          String?
+  rating          Int
+  comment         String?
+  category        String?
+  isPublic        Boolean   @default(true)
+  helpfulCount    Int       @default(0)
+  notHelpfulCount Int       @default(0)
+  respondedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  school  School          @relation(fields: [schoolId], references: [id])
+  user    User?           @relation(fields: [userId], references: [id])
+  replies FeedbackReply[]
+
+  @@index([schoolId])
+  @@index([rating])
+  @@index([createdAt])
+  @@map("feedback")
+}
+
+model FeedbackReply {
+  id         String   @id @default(uuid())
+  feedbackId String
+  userId     String
+  reply      String
+  isPublic   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@map("feedback_replies")
+}
+
+model KnowledgeArticle {
+  id              String    @id @default(uuid())
+  slug            String    @unique
+  title           String
+  content         String
+  category        String?
+  tags            String[]
+  isPublished     Boolean   @default(false)
+  viewCount       Int       @default(0)
+  helpfulCount    Int       @default(0)
+  notHelpfulCount Int       @default(0)
+  publishedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([category])
+  @@index([isPublished])
+  @@index([viewCount])
+  @@map("knowledge_articles")
+}
+
+// ─────────────────────────────────────────────────────
+// PHASE 4: CMS & CONTENT
+// ─────────────────────────────────────────────────────
+
+model CmsPage {
+  id              String    @id @default(uuid())
+  slug            String    @unique
+  title           String
+  content         String?
+  metaTitle       String?
+  metaDescription String?
+  ogImage         String?
+  status          CmsStatus @default(DRAFT)
+  isHomepage      Boolean   @default(false)
+  publishedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sections CmsSection[]
+
+  @@index([status])
+  @@index([isHomepage])
+  @@map("cms_pages")
+}
+
+model CmsSection {
+  id        String         @id @default(uuid())
+  pageId    String?
+  type      CmsSectionType
+  title     String?
+  subtitle  String?
+  content   Json?
+  order     Int            @default(0)
+  isActive  Boolean        @default(true)
+  settings  Json?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  page CmsPage? @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId])
+  @@index([type])
+  @@index([order])
+  @@map("cms_sections")
+}
+
+model LegalDocument {
+  id          String    @id @default(uuid())
+  type        LegalType
+  title       String
+  content     String
+  version     String
+  isActive    Boolean   @default(true)
+  isPublished Boolean   @default(false)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  consentLogs ConsentLog[]
+
+  @@unique([type, version])
+  @@index([type])
+  @@index([isActive])
+  @@map("legal_documents")
+}
+
+model ConsentLog {
+  id              String   @id @default(uuid())
+  userId          String
+  legalDocumentId String
+  action          String
+  ipAddress       String?
+  userAgent       String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  user          User          @relation(fields: [userId], references: [id])
+  legalDocument LegalDocument @relation(fields: [legalDocumentId], references: [id])
+
+  @@index([userId])
+  @@index([legalDocumentId])
+  @@map("consent_logs")
+}
+
+model EmailTemplate {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  name        String
+  subject     String
+  htmlContent String
+  textContent String?
+  description String?
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false)
+  variables   Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+  @@index([isActive])
+  @@map("email_templates")
+}
+
+model SystemSetting {
+  id          String          @id @default(uuid())
+  key         String          @unique
+  value       Json
+  category    SettingCategory @default(GENERAL)
+  description String?
+  isPublic    Boolean         @default(false)
+  updatedAt   DateTime        @updatedAt
+
+  @@index([category])
+  @@map("system_settings")
+}
+
+// ─────────────────────────────────────────────────────
+// PHASE 5: INTEGRATIONS & API KEYS
+// ─────────────────────────────────────────────────────
+
+model Integration {
+  id           String            @id @default(uuid())
+  key          String            @unique
+  name         String
+  type         IntegrationType
+  description  String?
+  config       Json
+  status       IntegrationStatus @default(INACTIVE)
+  isEnabled    Boolean           @default(false)
+  lastTestedAt DateTime?
+  lastError    String?
+  metadata     Json?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  webhooks Webhook[]
+
+  @@index([type])
+  @@index([status])
+  @@index([isEnabled])
+  @@map("integrations")
+}
+
+model Webhook {
+  id              String         @id @default(uuid())
+  integrationId   String?
+  name            String
+  url             String
+  secret          String?
+  events          WebhookEvent[]
+  status          WebhookStatus  @default(ACTIVE)
+  retryCount      Int            @default(3)
+  timeout         Int            @default(5000)
+  lastTriggeredAt DateTime?
+  lastError       String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  integration Integration? @relation(fields: [integrationId], references: [id])
+  logs        WebhookLog[]
+
+  @@index([integrationId])
+  @@index([status])
+  @@map("webhooks")
+}
+
+model WebhookLog {
+  id             String       @id @default(uuid())
+  webhookId      String
+  event          WebhookEvent
+  payload        Json
+  responseStatus Int?
+  responseBody   String?
+  error          String?
+  durationMs     Int?
+  attempt        Int          @default(1)
+  success        Boolean
+  createdAt      DateTime     @default(now())
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId])
+  @@index([event])
+  @@index([success])
+  @@index([createdAt])
+  @@map("webhook_logs")
+}
+
+model ApiKey {
+  id         String        @id @default(uuid())
+  userId     String
+  schoolId   String?
+  name       String
+  key        String        @unique
+  keyPrefix  String
+  scopes     ApiKeyScope[]
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  isActive   Boolean       @default(true)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  user      User             @relation(fields: [userId], references: [id])
+  school    School?          @relation(fields: [schoolId], references: [id])
+  usageLogs ApiKeyUsageLog[]
+
+  @@index([userId])
+  @@index([schoolId])
+  @@index([isActive])
+  @@map("api_keys")
+}
+
+model ApiKeyUsageLog {
+  id             String   @id @default(uuid())
+  apiKeyId       String
+  endpoint       String
+  method         String
+  ipAddress      String?
+  statusCode     Int
+  responseTimeMs Int?
+  createdAt      DateTime @default(now())
+
+  apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId])
+  @@index([createdAt])
+  @@map("api_key_usage_logs")
+}
+
+model FeatureFlagConfig {
+  id          String      @id @default(uuid())
+  key         FeatureFlag @unique
+  value       Boolean     @default(true)
+  description String?
+  updatedAt   DateTime    @updatedAt
+
+  @@map("feature_flag_configs")
+}
+
+// ─────────────────────────────────────────────────────
+// PHASE 6: SYSTEM & MONITORING
+// ─────────────────────────────────────────────────────
+
+model Backup {
+  id          String        @id @default(uuid())
+  name        String
+  type        BackupType
+  status      BackupStatus  @default(PENDING)
+  size        Int?
+  fileUrl     String?
+  storage     BackupStorage @default(CLOUDINARY)
+  location    String?
+  metadata    Json?
+  startedAt   DateTime      @default(now())
+  completedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  logs BackupLog[]
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@map("backups")
+}
+
+model BackupLog {
+  id        String   @id @default(uuid())
+  backupId  String
+  message   String
+  level     String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  backup Backup @relation(fields: [backupId], references: [id], onDelete: Cascade)
+
+  @@index([backupId])
+  @@map("backup_logs")
+}
+
+model BackupSchedule {
+  id            String     @id @default(uuid())
+  name          String
+  type          BackupType
+  frequency     String
+  time          String?
+  dayOfWeek     Int?
+  dayOfMonth    Int?
+  retentionDays Int        @default(30)
+  isEnabled     Boolean    @default(true)
+  lastRunAt     DateTime?
+  nextRunAt     DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@map("backup_schedules")
+}
+
+model ServiceHealth {
+  id           String        @id @default(uuid())
+  type         ServiceType   @unique
+  name         String
+  status       ServiceStatus @default(UNKNOWN)
+  uptime       Float         @default(100)
+  responseTime Float?
+  lastCheckAt  DateTime?
+  lastError    String?
+  metadata     Json?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  checks HealthCheck[]
+
+  @@index([status])
+  @@map("service_healths")
+}
+
+model HealthCheck {
+  id           String        @id @default(uuid())
+  serviceId    String
+  status       ServiceStatus
+  responseTime Float?
+  error        String?
+  metadata     Json?
+  createdAt    DateTime      @default(now())
+
+  service ServiceHealth @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@index([serviceId])
+  @@index([createdAt])
+  @@map("health_checks")
+}
+
+model SystemMetric {
+  id                String   @id @default(uuid())
+  cpuUsage          Float?
+  memoryUsage       Float?
+  ramUsage          Float?
+  diskUsage         Float?
+  activeConnections Int?
+  requestCount      Int?
+  errorCount        Int?
+  timestamp         DateTime @default(now())
+
+  @@index([timestamp])
+  @@map("system_metrics")
+}
+
+model ErrorLog {
+  id         String     @id @default(uuid())
+  level      ErrorLevel @default(ERROR)
+  message    String
+  stack      String?
+  endpoint   String?
+  method     String?
+  statusCode Int?
+  ipAddress  String?
+  userId     String?
+  userAgent  String?
+  metadata   Json?
+  resolved   Boolean    @default(false)
+  resolvedAt DateTime?
+  resolvedBy String?
+  notes      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([level])
+  @@index([endpoint])
+  @@index([statusCode])
+  @@index([createdAt])
+  @@index([resolved])
+  @@map("error_logs")
+}
+
+model CacheEntry {
+  id        String    @id @default(uuid())
+  key       String    @unique
+  value     Json
+  ttl       Int?
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  @@index([expiresAt])
+  @@map("cache_entries")
+}
+
+model CronJob {
+  id        String    @id @default(uuid())
+  name      String
+  schedule  String
+  command   String
+  isEnabled Boolean   @default(true)
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  runs CronJobRun[]
+
+  @@map("cron_jobs")
+}
+
+model CronJobRun {
+  id          String    @id @default(uuid())
+  jobId       String
+  status      JobStatus @default(PENDING)
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  durationMs  Int?
+  output      String?
+  error       String?
+  metadata    Json?
+
+  job CronJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@index([status])
+  @@index([startedAt])
+  @@map("cron_job_runs")
+}
+
+model DeveloperSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       Json
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("developer_settings")
+}
+
+model WebhookDeliveryLog {
+  id             String   @id @default(uuid())
+  webhookId      String
+  event          String
+  payload        Json
+  responseStatus Int?
+  responseBody   String?
+  error          String?
+  durationMs     Int?
+  attempt        Int
+  success        Boolean
+  createdAt      DateTime @default(now())
+
+  @@index([webhookId])
+  @@index([event])
+  @@index([success])
+  @@index([createdAt])
+  @@map("webhook_delivery_logs")
+}
