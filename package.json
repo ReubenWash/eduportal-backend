@@ -38,11 +38,14 @@
     "nodemailer": "^6.10.1",
     "puppeteer": "^22.15.0",
     "qrcode": "^1.5.4",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "speakeasy": "^2.0.0",
     "uuid": "^10.0.0",
     "winston": "^3.13.0"
   },
   "devDependencies": {
+    "@types/socket.io": "^3.0.1",
     "eslint": "^9.5.0",
     "nodemon": "^3.1.14",
     "prisma": "^5.14.0"

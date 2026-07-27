@@ -15,23 +15,76 @@ const app = express();
 app.use(helmet());
 
 // ── CORS ───────────────────────────────────────────────────────
+// Comprehensive list of allowed origins
 const allowedOrigins = [
-  process.env.CLIENT_URL || "http://localhost:5173",
-  "http://localhost:3000",
-];
+  // Local development
+  "http://localhost:5173",      // Vite
+  "http://localhost:3000",      // React default
+  "http://localhost:5000",      // Backend itself
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:3000",
+  
+  // Production - Add your frontend Render URL here
+  "https://your-frontend-url.onrender.com", // REPLACE THIS WITH YOUR ACTUAL FRONTEND URL
+  
+  // Add any other frontend URLs
+  process.env.CLIENT_URL,       // From environment variable
+].filter(Boolean); // Remove any undefined values
+
+// Log the allowed origins in development
+if (process.env.NODE_ENV !== 'production') {
+  console.log('CORS allowed origins:', allowedOrigins);
+}
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      // Allow requests with no origin (like mobile apps, Postman, or same-origin requests)
+      if (!origin) {
+        return callback(null, true);
+      }
+      
+      // Check if the origin is allowed
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      // In development, log blocked origins
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn(`CORS blocked: ${origin}`);
+      }
+      
+      // For production, you might want to be more strict
+      // For now, we'll allow it if it's a localhost or render URL
+      const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      const isRender = /^https:\/\/.*\.onrender\.com$/.test(origin);
+      
+      if (isLocalhost || isRender) {
+        return callback(null, true);
+      }
+      
       callback(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+      "Access-Control-Allow-Origin",
+      "Access-Control-Allow-Headers",
+      "Access-Control-Allow-Methods"
+    ],
+    exposedHeaders: ["Authorization"], // Expose headers to frontend
+    optionsSuccessStatus: 200, // Some legacy browsers (IE11, various SmartTVs) choke on 204
+    preflightContinue: false,
   })
 );
+
+// Handle preflight requests explicitly
+app.options('*', cors()); // Enable preflight for all routes
 
 // ── Body parsers ───────────────────────────────────────────────
 app.use(express.json({ limit: "10mb" }));
