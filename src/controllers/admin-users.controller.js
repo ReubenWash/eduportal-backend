@@ -38,15 +38,60 @@ const getAllUsers = async (req, res) => {
   sendSuccess(res, 200, "Users retrieved", formatted);
 };
 
+// ─── FIXED: ADD USER - SUPPORT BOTH SCHOOL ID AND NAME ────────
 const addUser = async (req, res) => {
   const { name, email, role, schoolName } = req.body;
-  if (!name || !email || !role || !schoolName) throw createError("Missing fields", 400);
+  
+  console.log("📝 Add user request:", { name, email, role, schoolName });
 
-  const school = await prisma.school.findFirst({ where: { name: schoolName } });
-  if (!school) throw createError("School not found", 404);
+  if (!name || !email || !role || !schoolName) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing fields: name, email, role, and schoolName are required"
+    });
+  }
 
+  // Find school - support both ID and name
+  let school = await prisma.school.findFirst({
+    where: {
+      OR: [
+        { id: schoolName },
+        { name: schoolName },
+        { slug: schoolName }
+      ]
+    }
+  });
+
+  if (!school) {
+    // Try to find by name with case-insensitive search
+    school = await prisma.school.findFirst({
+      where: {
+        name: {
+          contains: schoolName,
+          mode: 'insensitive'
+        }
+      }
+    });
+  }
+
+  if (!school) {
+    console.log("❌ School not found for:", schoolName);
+    return res.status(404).json({
+      success: false,
+      message: `School "${schoolName}" not found. Please select a valid school.`
+    });
+  }
+
+  console.log("✅ Found school:", school.name, school.id);
+
+  // Check if user already exists
   const exists = await prisma.user.findUnique({ where: { email } });
-  if (exists) throw createError("User email already exists", 409);
+  if (exists) {
+    return res.status(409).json({
+      success: false,
+      message: "User email already exists"
+    });
+  }
 
   const tempPassword = crypto.randomBytes(6).toString("hex");
   const passwordHash = await bcrypt.hash(tempPassword, 12);
@@ -55,7 +100,13 @@ const addUser = async (req, res) => {
 
   const result = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
-      data: { schoolId: school.id, email, passwordHash, role, isVerified: true },
+      data: { 
+        schoolId: school.id, 
+        email, 
+        passwordHash, 
+        role, 
+        isVerified: true 
+      },
     });
     const staff = await tx.staff.create({
       data: {
@@ -81,7 +132,12 @@ const addUser = async (req, res) => {
 
 const updateUserStatus = async (req, res) => {
   const { status } = req.body;
-  if (!["ACTIVE", "SUSPENDED"].includes(status)) throw createError("Invalid status", 400);
+  if (!["ACTIVE", "SUSPENDED"].includes(status)) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid status. Must be ACTIVE or SUSPENDED"
+    });
+  }
 
   const user = await prisma.user.update({
     where: { id: req.params.id },
@@ -128,7 +184,7 @@ const deleteUser = async (req, res) => {
 
     // Delete related records in correct order
     await prisma.$transaction(async (tx) => {
-      // 1. Delete staff FIRST (this was the blocker)
+      // 1. Delete staff FIRST
       if (user.staff) {
         await tx.staff.delete({ where: { userId: userId } });
       }
@@ -167,7 +223,6 @@ const deleteUser = async (req, res) => {
       // Ignore audit log errors
     }
 
-    // Send success response
     return res.status(200).json({
       success: true,
       message: "User deleted successfully",
@@ -197,11 +252,16 @@ const deleteUser = async (req, res) => {
   }
 };
 
-// ─── NEW: Super Admin manually verify a user ───────────────────
+// ─── Super Admin manually verify a user ───────────────────
 const verifyUser = async (req, res) => {
   const { userId } = req.params;
   const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw createError("User not found", 404);
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: "User not found"
+    });
+  }
 
   if (user.isVerified) {
     return sendSuccess(res, 200, "User is already verified", { id: user.id, isVerified: true });
