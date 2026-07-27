@@ -29,6 +29,13 @@ const deleteNotification = async (userId, notificationId) => {
   await prisma.notification.delete({ where: { id: notificationId } });
 };
 
+// ── Get unread count for a user ────────────────────────────────
+const getUnreadCount = async (userId) => {
+  return prisma.notification.count({
+    where: { userId, isRead: false }
+  });
+};
+
 const broadcast = async (schoolId, { title, message, type, audience }) => {
   // Find target users by audience
   const roleMap = {
@@ -48,6 +55,11 @@ const broadcast = async (schoolId, { title, message, type, audience }) => {
     select: { id: true },
   });
 
+  if (users.length === 0) {
+    return { sent: 0, notificationId: null };
+  }
+
+  // Create notifications
   await prisma.notification.createMany({
     data: users.map((u) => ({
       userId:  u.id,
@@ -62,7 +74,17 @@ const broadcast = async (schoolId, { title, message, type, audience }) => {
     data: { schoolId, title, body: message, audience: audience || "ALL" },
   });
 
-  return { sent: users.length };
+  // Get the first notification ID for reference
+  const firstNotification = await prisma.notification.findFirst({
+    where: { 
+      title, 
+      message, 
+      type: type || "info" 
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  return { sent: users.length, notificationId: firstNotification?.id };
 };
 
 const massBroadcast = async ({ title, message, type, audience }) => {
@@ -82,6 +104,10 @@ const massBroadcast = async ({ title, message, type, audience }) => {
     },
     select: { id: true },
   });
+
+  if (users.length === 0) {
+    return { sent: 0, notificationId: null };
+  }
 
   // Batch insert notifications
   const batchSize = 1000;
@@ -108,7 +134,17 @@ const massBroadcast = async ({ title, message, type, audience }) => {
     }
   });
 
-  return { sent: users.length };
+  // Get the first notification ID for reference
+  const firstNotification = await prisma.notification.findFirst({
+    where: { 
+      title, 
+      message, 
+      type: type || "info" 
+    },
+    orderBy: { createdAt: 'desc' }
+  });
+
+  return { sent: users.length, notificationId: firstNotification?.id };
 };
 
 const createNotification = async (userId, { title, message, type }) => {
@@ -201,4 +237,17 @@ const getBroadcastHistory = async (query) => {
   };
 };
 
-module.exports = { getNotifications, markAsRead, markAllRead, deleteNotification, broadcast, massBroadcast, createNotification, pushNotification, getBroadcastHistory, registerDeviceToken, removeDeviceToken };
+module.exports = { 
+  getNotifications, 
+  markAsRead, 
+  markAllRead, 
+  deleteNotification, 
+  broadcast, 
+  massBroadcast, 
+  createNotification, 
+  pushNotification, 
+  getBroadcastHistory, 
+  registerDeviceToken, 
+  removeDeviceToken,
+  getUnreadCount // ← ADDED
+};

@@ -4,10 +4,14 @@ const app = require("./app");
 const logger = require("./config/logger");
 const { connectDB } = require("./config/db");
 const { startKeepAlive } = require("./utils/keepAlive");
+const { initializeSocket } = require("./config/socket");
 
 const PORT = process.env.PORT || 5000;
 
 const server = http.createServer(app);
+
+// Initialize Socket.IO
+const io = initializeSocket(server);
 
 async function startServer() {
   try {
@@ -18,6 +22,7 @@ async function startServer() {
     server.listen(PORT, () => {
       logger.info(`🚀 EduTrack API running on port ${PORT}`);
       logger.info(`📦 Environment: ${process.env.NODE_ENV}`);
+      logger.info(`🔌 Socket.IO initialized`);
     });
 
     // 3. Start keep-alive ping (prevents Koyeb cold starts)
@@ -33,6 +38,15 @@ async function startServer() {
 // ── Graceful shutdown ──────────────────────────────────────────
 const shutdown = (signal) => {
   logger.info(`${signal} received — shutting down gracefully`);
+  
+  // Close Socket.IO first
+  if (io) {
+    io.close(() => {
+      logger.info("Socket.IO closed");
+    });
+  }
+  
+  // Then close HTTP server
   server.close(() => {
     logger.info("HTTP server closed");
     process.exit(0);
