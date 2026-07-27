@@ -51,7 +51,7 @@ const addUser = async (req, res) => {
     });
   }
 
-  // Find school - support both ID and name
+  // Find school - support both ID, name, and slug
   let school = await prisma.school.findFirst({
     where: {
       OR: [
@@ -76,9 +76,17 @@ const addUser = async (req, res) => {
 
   if (!school) {
     console.log("❌ School not found for:", schoolName);
+    // Return available schools for debugging
+    const availableSchools = await prisma.school.findMany({
+      select: { id: true, name: true, slug: true },
+      take: 10
+    });
+    console.log("Available schools (first 10):", availableSchools);
+    
     return res.status(404).json({
       success: false,
-      message: `School "${schoolName}" not found. Please select a valid school.`
+      message: `School "${schoolName}" not found. Please select a valid school.`,
+      availableSchools: availableSchools
     });
   }
 
