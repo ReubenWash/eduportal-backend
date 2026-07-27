@@ -546,6 +546,63 @@ const deleteSchool = async (schoolId, userId = null) => {
   };
 };
 
+// ── Super admin: restore a deactivated school ─────────────────
+const restoreSchool = async (schoolId, userId = null) => {
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: { id: true, name: true, status: true },
+  });
+
+  if (!school) throw createError("School not found", 404);
+  if (school.status !== "DEACTIVATED") {
+    throw createError("This school is not deactivated", 400);
+  }
+
+  // Restore - set status back to ACTIVE
+  const updated = await prisma.school.update({
+    where: { id: schoolId },
+    data: { status: "ACTIVE" },
+  });
+
+  // Notify school admins
+  const adminUsers = await prisma.user.findMany({
+    where: { schoolId, role: "SCHOOL_ADMIN" }
+  });
+
+  for (const u of adminUsers) {
+    await prisma.notification.create({
+      data: {
+        userId: u.id,
+        title: `School Account Restored`,
+        message: `Your school account for ${school.name} has been restored by the system administrator. You can now access your account again.`,
+        type: "success",
+      }
+    });
+  }
+
+  // Log the action
+  await prisma.auditLog.create({
+    data: {
+      userId,
+      action: "RESTORE",
+      resource: "SCHOOL",
+      resourceId: schoolId,
+      metadata: { 
+        name: school.name, 
+        previousStatus: school.status,
+        newStatus: "ACTIVE" 
+      },
+    },
+  });
+
+  return { 
+    id: updated.id, 
+    name: updated.name, 
+    status: updated.status,
+    message: "School restored successfully" 
+  };
+};
+
 module.exports = {
   registerSchool,
   manualCreateSchool,
@@ -561,4 +618,5 @@ module.exports = {
   getAllSchools,
   updateSchoolStatus,
   deleteSchool,
+  restoreSchool, // ← ADDED
 };
