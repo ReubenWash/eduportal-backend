@@ -565,35 +565,44 @@ const restoreSchool = async (schoolId, userId = null) => {
   });
 
   // Notify school admins
-  const adminUsers = await prisma.user.findMany({
-    where: { schoolId, role: "SCHOOL_ADMIN" }
-  });
-
-  for (const u of adminUsers) {
-    await prisma.notification.create({
-      data: {
-        userId: u.id,
-        title: `School Account Restored`,
-        message: `Your school account for ${school.name} has been restored by the system administrator. You can now access your account again.`,
-        type: "success",
-      }
+  try {
+    const adminUsers = await prisma.user.findMany({
+      where: { schoolId, role: "SCHOOL_ADMIN" }
     });
+
+    for (const u of adminUsers) {
+      await prisma.notification.create({
+        data: {
+          userId: u.id,
+          title: `School Account Restored`,
+          message: `Your school account for ${school.name} has been restored by the system administrator. You can now access your account again.`,
+          type: "success",
+        }
+      });
+    }
+  } catch (notifError) {
+    console.warn('Notification creation failed:', notifError.message);
   }
 
-  // Log the action
-  await prisma.auditLog.create({
-    data: {
-      userId,
-      action: "RESTORE",
-      resource: "SCHOOL",
-      resourceId: schoolId,
-      metadata: { 
-        name: school.name, 
-        previousStatus: school.status,
-        newStatus: "ACTIVE" 
+  // Log the action - using "ACTIVATE" since "RESTORE" is not in the AuditAction enum
+  try {
+    await prisma.auditLog.create({
+      data: {
+        userId,
+        action: "ACTIVATE", // Changed from "RESTORE" to "ACTIVATE"
+        resource: "SCHOOL",
+        resourceId: schoolId,
+        metadata: { 
+          name: school.name, 
+          previousStatus: school.status,
+          newStatus: "ACTIVE",
+          restored: true // Flag to indicate this was a restoration
+        },
       },
-    },
-  });
+    });
+  } catch (auditError) {
+    console.warn('Audit log creation failed:', auditError.message);
+  }
 
   return { 
     id: updated.id, 
@@ -618,5 +627,5 @@ module.exports = {
   getAllSchools,
   updateSchoolStatus,
   deleteSchool,
-  restoreSchool, // ← ADDED
+  restoreSchool,
 };
