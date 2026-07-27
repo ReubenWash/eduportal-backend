@@ -21,11 +21,13 @@ router.use("/analytics",     require("./analytics.routes"));
 router.use("/notifications", require("./notification.routes"));
 router.use("/documents",     require("./document.routes"));
 
+// ── Test Routes ──────────────────────────────────────────────────
+router.use("/test",          require("./test.routes"));
+
 // ── Super Admin Routes (All Phases) ──────────────────────────
-// These were missing! Now all admin routes are mounted.
 router.use("/admin/audit",        require("./admin/audit.routes"));
 router.use("/admin/security",     require("./admin/security.routes"));
-router.use("/admin/subscriptions", require("./admin/subscription.routes"));  // subscriptions, payments, revenue
+router.use("/admin/subscriptions", require("./admin/subscription.routes"));
 router.use("/admin/support",      require("./admin/support.routes"));
 router.use("/admin/cms",          require("./admin/cms.routes"));
 router.use("/admin/integrations", require("./admin/integration.routes"));

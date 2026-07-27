@@ -1,6 +1,6 @@
-require("dotenv").config(); // Add this at the top
+require("dotenv").config();
 const nodemailer = require("nodemailer");
-const logger      = require("../config/logger");
+const logger = require("../config/logger");
 
 // ── Configure Brevo SMTP Transporter ──────────────────────────
 const transporter = nodemailer.createTransport({
@@ -15,14 +15,27 @@ const transporter = nodemailer.createTransport({
 
 const FROM = `"${process.env.BREVO_SENDER_NAME || "EduTrack JHS"}" <${process.env.BREVO_SENDER_EMAIL || "noreply@edutrack.com"}>`;
 
+// ── Verify connection on startup ──────────────────────────────
+transporter.verify((error) => {
+  if (error) {
+    console.error('❌ Email transporter not ready:', error.message);
+    logger.warn('Email transporter not ready:', error.message);
+  } else {
+    console.log('✅ Email transporter ready');
+    logger.info('✅ Email transporter ready');
+  }
+});
+
 // ── Generic send helper ────────────────────────────────────────
 const sendMail = async ({ to, subject, html }) => {
   try {
     const info = await transporter.sendMail({ from: FROM, to, subject, html });
     logger.info(`Email sent to ${to} — ${subject} [${info.messageId}]`);
+    console.log(`✅ Email sent to ${to} — ${subject}`);
     return info;
   } catch (error) {
     logger.error(`Failed to send email to ${to}:`, error.message);
+    console.error(`❌ Failed to send email to ${to}:`, error.message);
     throw error;
   }
 };
@@ -32,7 +45,7 @@ const sendMail = async ({ to, subject, html }) => {
 const sendVerificationEmail = async (email, name, token) => {
   const url = `${process.env.CLIENT_URL}/verify-email/${token}`;
   await sendMail({
-    to:      email,
+    to: email,
     subject: "Verify your EduTrack account",
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
@@ -64,7 +77,7 @@ const sendVerificationEmail = async (email, name, token) => {
 const sendPasswordResetEmail = async (email, name, token) => {
   const url = `${process.env.CLIENT_URL}/reset-password/${token}`;
   await sendMail({
-    to:      email,
+    to: email,
     subject: "Reset your EduTrack password",
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
@@ -93,7 +106,7 @@ const sendPasswordResetEmail = async (email, name, token) => {
 const sendWelcomeStaffEmail = async (email, name, tempPassword, schoolName) => {
   const loginUrl = `${process.env.CLIENT_URL}/login`;
   await sendMail({
-    to:      email,
+    to: email,
     subject: `Welcome to ${schoolName} on EduTrack JHS`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
@@ -128,7 +141,7 @@ const sendWelcomeStaffEmail = async (email, name, tempPassword, schoolName) => {
 
 const sendReportCardEmail = async (email, parentName, studentName, term, pdfUrl, schoolName) => {
   await sendMail({
-    to:      email,
+    to: email,
     subject: `${studentName}'s ${term} Report Card — ${schoolName}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
@@ -238,7 +251,7 @@ const sendSchoolStatusEmail = async (email, schoolName, status) => {
 const sendWelcomeGuardianEmail = async (email, name, tempPassword, schoolName) => {
   const loginUrl = `${process.env.CLIENT_URL}/login`;
   await sendMail({
-    to:      email,
+    to: email,
     subject: `Welcome to ${schoolName} Parent Portal`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
