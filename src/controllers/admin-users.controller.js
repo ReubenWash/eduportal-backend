@@ -39,7 +39,6 @@ const getAllUsers = async (req, res) => {
 };
 
 const addUser = async (req, res) => {
-  // Only meant for staff/admin addition from super admin panel
   const { name, email, role, schoolName } = req.body;
   if (!name || !email || !role || !schoolName) throw createError("Missing fields", 400);
 
@@ -81,7 +80,7 @@ const addUser = async (req, res) => {
 };
 
 const updateUserStatus = async (req, res) => {
-  const { status } = req.body; // ACTIVE or SUSPENDED
+  const { status } = req.body;
   if (!["ACTIVE", "SUSPENDED"].includes(status)) throw createError("Invalid status", 400);
 
   const user = await prisma.user.update({
@@ -92,7 +91,7 @@ const updateUserStatus = async (req, res) => {
   sendSuccess(res, 200, "User status updated", user);
 };
 
-// ─── FIXED: DELETE USER WITH PROPER ORDER ─────────────────────
+// ─── FIXED: DELETE USER WITH PROPER RESPONSE ──────────────────
 const deleteUser = async (req, res) => {
   const userId = req.params.id;
 
@@ -108,7 +107,10 @@ const deleteUser = async (req, res) => {
     });
 
     if (!user) {
-      return sendSuccess(res, 404, "User not found", null);
+      return res.status(404).json({
+        success: false,
+        message: "User not found"
+      });
     }
 
     // Prevent deleting the last SUPER_ADMIN
@@ -117,7 +119,10 @@ const deleteUser = async (req, res) => {
         where: { role: "SUPER_ADMIN" }
       });
       if (superAdminCount <= 1) {
-        return sendSuccess(res, 400, "Cannot delete the last Super Admin", null);
+        return res.status(400).json({
+          success: false,
+          message: "Cannot delete the last Super Admin"
+        });
       }
     }
 
@@ -162,22 +167,32 @@ const deleteUser = async (req, res) => {
       // Ignore audit log errors
     }
 
-    sendSuccess(res, 200, "User deleted successfully", { id: userId, deleted: true });
+    // Send success response
+    return res.status(200).json({
+      success: true,
+      message: "User deleted successfully",
+      data: { id: userId, deleted: true }
+    });
+
   } catch (error) {
     console.error("Delete user error:", error);
     
-    // If the above fails, try a simpler approach - just deactivate the user
+    // Try to deactivate instead
     try {
-      await prisma.user.update({
+      const updated = await prisma.user.update({
         where: { id: userId },
         data: { isActive: false }
       });
-      sendSuccess(res, 200, "User deactivated successfully (could not fully delete)", { 
-        id: userId, 
-        deactivated: true 
+      return res.status(200).json({
+        success: true,
+        message: "User deactivated successfully (could not fully delete)",
+        data: { id: userId, deactivated: true }
       });
     } catch (fallbackError) {
-      sendSuccess(res, 500, "Failed to delete user: " + error.message, null);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to delete user: " + error.message
+      });
     }
   }
 };
