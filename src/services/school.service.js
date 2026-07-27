@@ -332,14 +332,16 @@ const getSuperAdminDashboard = async () => {
     pendingApplications,
     recentActivity,
   ] = await Promise.all([
-    prisma.school.count(),
+    // Exclude deactivated schools from total count
+    prisma.school.count({ where: { status: { not: "DEACTIVATED" } } }),
     prisma.school.count({ where: { status: 'ACTIVE' } }),
     prisma.student.count({ where: { status: 'ACTIVE' } }),
     prisma.staff.count(),
     prisma.user.count({ where: { isVerified: true, role: { not: 'SUPER_ADMIN' } } }),
     prisma.school.count({ where: { status: 'PENDING' } }),
+    // Exclude deactivated schools from recent activity
     prisma.school.findMany({
-      where: {},
+      where: { status: { not: "DEACTIVATED" } },
       select: { id: true, name: true, status: true, createdAt: true },
       orderBy: { createdAt: 'desc' },
       take: 6,
@@ -350,6 +352,7 @@ const getSuperAdminDashboard = async () => {
     SELECT to_char("createdAt", 'Mon') as month, COUNT(*)::int as count
     FROM schools
     WHERE "createdAt" >= CURRENT_DATE - INTERVAL '6 months'
+    AND status != 'DEACTIVATED'
     GROUP BY 1
     ORDER BY MIN("createdAt")
   `;
@@ -420,8 +423,17 @@ const updateTerm = async (schoolId, termId, data) => {
 // ── Super admin: list all schools ─────────────────────────────
 const getAllSchools = async (query) => {
   const { skip, take, page, limit } = getPagination(query);
-  const where = {};
-  if (query.status) where.status = query.status;
+  
+  // Start with base filter to exclude deactivated schools
+  const where = {
+    status: { not: "DEACTIVATED" }
+  };
+  
+  // If a specific status is requested, override the filter
+  if (query.status) {
+    where.status = query.status;
+  }
+  
   if (query.search) {
     where.OR = [
       { name:     { contains: query.search, mode: "insensitive" } },
@@ -548,5 +560,5 @@ module.exports = {
   updateTerm,
   getAllSchools,
   updateSchoolStatus,
-  deleteSchool, // ← ADDED
+  deleteSchool,
 };
