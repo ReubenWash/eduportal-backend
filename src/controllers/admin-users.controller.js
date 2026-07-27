@@ -1,3 +1,4 @@
+// backend/controllers/admin-users.controller.js
 const { prisma } = require("../config/db");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
@@ -68,7 +69,6 @@ const addUser = async (req, res) => {
     return { user, staff };
   });
 
-  // Not sending email here for brevity, just return the user
   sendSuccess(res, 201, "User created", {
     id: result.user.id,
     name,
@@ -92,10 +92,72 @@ const updateUserStatus = async (req, res) => {
   sendSuccess(res, 200, "User status updated", user);
 };
 
+// ─── FIXED: DELETE USER WITH CASCADE ──────────────────────────
 const deleteUser = async (req, res) => {
-  // A true delete is dangerous, usually we just deactivate, but per frontend req "removed from platform"
-  await prisma.user.delete({ where: { id: req.params.id } });
-  sendSuccess(res, 200, "User deleted", null);
+  const userId = req.params.id;
+
+  // Check if user exists
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      staff: true,
+      studentProfile: true,
+      guardianProfile: true,
+    }
+  });
+
+  if (!user) {
+    throw createError("User not found", 404);
+  }
+
+  // Prevent deleting the last SUPER_ADMIN
+  if (user.role === "SUPER_ADMIN") {
+    const superAdminCount = await prisma.user.count({
+      where: { role: "SUPER_ADMIN" }
+    });
+    if (superAdminCount <= 1) {
+      throw createError("Cannot delete the last Super Admin", 400);
+    }
+  }
+
+  // Delete related records in a transaction
+  await prisma.$transaction(async (tx) => {
+    // Delete staff if exists
+    if (user.staff) {
+      await tx.staff.delete({ where: { userId: userId } });
+    }
+    // Delete student profile if exists
+    if (user.studentProfile) {
+      await tx.student.delete({ where: { userId: userId } });
+    }
+    // Delete guardian profile if exists
+    if (user.guardianProfile) {
+      await tx.guardian.delete({ where: { userId: userId } });
+    }
+    // Delete refresh tokens
+    await tx.refreshToken.deleteMany({ where: { userId: userId } });
+    // Delete notifications
+    await tx.notification.deleteMany({ where: { userId: userId } });
+    // Delete device tokens
+    await tx.deviceToken.deleteMany({ where: { userId: userId } });
+    // Delete audit logs (optional - you might want to keep these)
+    // await tx.auditLog.deleteMany({ where: { userId: userId } });
+    // Finally delete the user
+    await tx.user.delete({ where: { id: userId } });
+  });
+
+  // Log the action
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user?.userId || null,
+      action: "DELETE",
+      resource: "USER",
+      resourceId: userId,
+      metadata: { email: user.email, role: user.role }
+    }
+  }).catch(() => {}); // Non-blocking
+
+  sendSuccess(res, 200, "User deleted successfully", { id: userId, deleted: true });
 };
 
 // ─── NEW: Super Admin manually verify a user ───────────────────
@@ -104,7 +166,6 @@ const verifyUser = async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw createError("User not found", 404);
 
-  // If already verified, just return success
   if (user.isVerified) {
     return sendSuccess(res, 200, "User is already verified", { id: user.id, isVerified: true });
   }
@@ -114,7 +175,6 @@ const verifyUser = async (req, res) => {
     data: { isVerified: true },
   });
 
-  // Log the action in audit log
   await prisma.auditLog.create({
     data: {
       userId: req.user?.userId || null,
@@ -136,5 +196,5 @@ module.exports = {
   addUser,
   updateUserStatus,
   deleteUser,
-  verifyUser,   // ← exported
+  verifyUser,
 };
