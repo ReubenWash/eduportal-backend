@@ -88,6 +88,12 @@ const deleteSchool = async (req, res) => {
   return sendSuccess(res, 200, "School deactivated successfully.", result);
 };
 
+// PATCH /api/v1/schools/:id/restore  (SUPER_ADMIN)
+const restoreSchool = async (req, res) => {
+  const result = await schoolService.restoreSchool(req.params.id, req.user.userId);
+  return sendSuccess(res, 200, "School restored successfully.", result);
+};
+
 module.exports = {
   register,
   manualCreate,
@@ -102,5 +108,6 @@ module.exports = {
   updateStatus,
   updateSchool,
   updateSchoolPlan,
-  deleteSchool, // ← ADDED
+  deleteSchool,
+  restoreSchool, // ← ADDED
 };

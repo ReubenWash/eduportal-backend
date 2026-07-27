@@ -83,6 +83,13 @@ router.delete(
   controller.deleteSchool
 );
 
+// ── RESTORE /api/v1/schools/:id/restore (Super Admin only) ────
+router.patch(
+  "/:id/restore",
+  isSuperAdmin,
+  controller.restoreSchool
+);
+
 // ── PATCH /api/v1/schools/:id (Super Admin only) ──────────────
 router.patch(
   "/:id",
