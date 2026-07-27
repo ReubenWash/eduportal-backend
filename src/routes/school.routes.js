@@ -90,6 +90,13 @@ router.patch(
   controller.restoreSchool
 );
 
+// ── DOWNLOAD REGISTRATION PDF /api/v1/schools/:id/registration-pdf (Super Admin only) ────
+router.get(
+  "/:id/registration-pdf",
+  isSuperAdmin,
+  controller.downloadRegistrationPdf
+);
+
 // ── PATCH /api/v1/schools/:id (Super Admin only) ──────────────
 router.patch(
   "/:id",

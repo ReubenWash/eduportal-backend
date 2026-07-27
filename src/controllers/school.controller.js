@@ -94,6 +94,27 @@ const restoreSchool = async (req, res) => {
   return sendSuccess(res, 200, "School restored successfully.", result);
 };
 
+// GET /api/v1/schools/:id/registration-pdf  (SUPER_ADMIN)
+const downloadRegistrationPdf = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await schoolService.generateRegistrationPdf(id, req.user);
+    
+    // Set response headers for PDF download
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=${result.filename}`);
+    
+    // Send the PDF buffer
+    res.send(result.pdfBuffer);
+  } catch (error) {
+    console.error('PDF Generation error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to generate registration PDF'
+    });
+  }
+};
+
 module.exports = {
   register,
   manualCreate,
@@ -109,5 +130,6 @@ module.exports = {
   updateSchool,
   updateSchoolPlan,
   deleteSchool,
-  restoreSchool, // ← ADDED
+  restoreSchool,
+  downloadRegistrationPdf, // ← ADDED
 };

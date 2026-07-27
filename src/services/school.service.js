@@ -589,14 +589,14 @@ const restoreSchool = async (schoolId, userId = null) => {
     await prisma.auditLog.create({
       data: {
         userId,
-        action: "ACTIVATE", // Changed from "RESTORE" to "ACTIVATE"
+        action: "ACTIVATE",
         resource: "SCHOOL",
         resourceId: schoolId,
         metadata: { 
           name: school.name, 
           previousStatus: school.status,
           newStatus: "ACTIVE",
-          restored: true // Flag to indicate this was a restoration
+          restored: true
         },
       },
     });
@@ -610,6 +610,211 @@ const restoreSchool = async (schoolId, userId = null) => {
     status: updated.status,
     message: "School restored successfully" 
   };
+};
+
+// ── Super admin: generate registration PDF ────────────────────
+const generateRegistrationPdf = async (schoolId, user) => {
+  const PDFDocument = require('pdfkit');
+  
+  // Fetch school with related data
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    include: {
+      users: {
+        where: { role: 'SCHOOL_ADMIN' },
+        select: {
+          email: true,
+          staff: {
+            select: {
+              firstName: true,
+              lastName: true,
+              phone: true,
+            }
+          }
+        }
+      },
+      _count: {
+        select: { students: true, staff: true }
+      }
+    }
+  });
+
+  if (!school) {
+    throw createError("School not found", 404);
+  }
+
+  // Get the admin user
+  const admin = school.users[0];
+  const adminStaff = admin?.staff;
+
+  // Create PDF document
+  const doc = new PDFDocument({ margin: 50, size: 'A4' });
+  const buffers = [];
+  
+  doc.on('data', buffers.push.bind(buffers));
+  doc.on('end', () => {
+    // PDF generation complete
+  });
+
+  // ─── PDF CONTENT ──────────────────────────────────────────────
+
+  // Header with branding
+  doc.rect(0, 0, doc.page.width, 80)
+     .fill('#4F46E5');
+  
+  doc.fillColor('#FFFFFF')
+     .fontSize(24)
+     .font('Helvetica-Bold')
+     .text('EduPortal', 50, 25);
+  
+  doc.fontSize(12)
+     .font('Helvetica')
+     .text('School Registration Document', 50, 52);
+
+  // Title
+  doc.fillColor('#1F2937')
+     .fontSize(20)
+     .font('Helvetica-Bold')
+     .text('REGISTRATION DETAILS', 50, 120);
+
+  // Line separator
+  doc.moveTo(50, 145)
+     .lineTo(550, 145)
+     .stroke('#E5E7EB');
+
+  // ─── School Information ──────────────────────────────────────
+  let yPos = 165;
+  
+  const sections = [
+    {
+      title: '🏫 School Information',
+      fields: [
+        { label: 'School Name', value: school.name },
+        { label: 'Email', value: school.email },
+        { label: 'Phone', value: school.phone || 'Not provided' },
+        { label: 'Region', value: school.region },
+        { label: 'District', value: school.district },
+        { label: 'Address', value: school.address || 'Not provided' },
+        { label: 'Status', value: school.status },
+        { label: 'Plan', value: school.plan },
+      ]
+    },
+    {
+      title: '👤 Admin Information',
+      fields: [
+        { label: 'Admin Name', value: adminStaff ? `${adminStaff.firstName} ${adminStaff.lastName}` : 'Not assigned' },
+        { label: 'Admin Email', value: admin?.email || 'Not provided' },
+        { label: 'Admin Phone', value: adminStaff?.phone || 'Not provided' },
+      ]
+    },
+    {
+      title: '📊 Statistics',
+      fields: [
+        { label: 'Total Students', value: school._count.students || 0 },
+        { label: 'Total Staff', value: school._count.staff || 0 },
+      ]
+    }
+  ];
+
+  sections.forEach((section, index) => {
+    // Section title
+    doc.fillColor('#1F2937')
+       .fontSize(14)
+       .font('Helvetica-Bold')
+       .text(section.title, 50, yPos);
+    
+    yPos += 22;
+
+    // Section fields
+    section.fields.forEach(field => {
+      doc.fillColor('#6B7280')
+         .fontSize(11)
+         .font('Helvetica')
+         .text(`${field.label}:`, 50, yPos);
+      
+      doc.fillColor('#1F2937')
+         .fontSize(11)
+         .font('Helvetica-Bold')
+         .text(String(field.value), 200, yPos);
+      
+      yPos += 20;
+    });
+
+    yPos += 15;
+
+    // Add page break if needed
+    if (yPos > 700 && index < sections.length - 1) {
+      doc.addPage();
+      yPos = 50;
+    }
+  });
+
+  // ─── Footer ──────────────────────────────────────────────────
+  doc.addPage();
+  
+  // Footer header
+  doc.fillColor('#4F46E5')
+     .fontSize(16)
+     .font('Helvetica-Bold')
+     .text('Document Information', 50, 50);
+
+  doc.fillColor('#6B7280')
+     .fontSize(11)
+     .font('Helvetica')
+     .text('This document is an official record of the school registration on EduPortal.', 50, 80);
+
+  // Footer details
+  const footerFields = [
+    { label: 'Document ID', value: `REG-${school.id.substring(0, 8).toUpperCase()}` },
+    { label: 'Generated On', value: new Date().toLocaleString() },
+    { label: 'Generated By', value: user?.email || 'System' },
+  ];
+
+  let fyPos = 120;
+  footerFields.forEach(field => {
+    doc.fillColor('#6B7280')
+       .fontSize(11)
+       .font('Helvetica')
+       .text(`${field.label}:`, 50, fyPos);
+    
+    doc.fillColor('#1F2937')
+       .fontSize(11)
+       .font('Helvetica-Bold')
+       .text(field.value, 200, fyPos);
+    
+    fyPos += 22;
+  });
+
+  // Footer line
+  doc.moveTo(50, fyPos + 10)
+     .lineTo(550, fyPos + 10)
+     .stroke('#E5E7EB');
+
+  // Footer text
+  doc.fillColor('#9CA3AF')
+     .fontSize(10)
+     .font('Helvetica')
+     .text(
+       'This is a computer-generated document. No signature is required.',
+       50,
+       fyPos + 30,
+       { align: 'center' }
+     );
+
+  // Finalize PDF
+  doc.end();
+
+  // Return PDF buffer
+  return new Promise((resolve, reject) => {
+    doc.on('end', () => {
+      const pdfBuffer = Buffer.concat(buffers);
+      resolve({
+        pdfBuffer,
+        filename: `${school.name.replace(/\s+/g, '_')}_Registration.pdf`
+      });
+    });
+    doc.on('error', reject);
+  });
 };
 
 module.exports = {
@@ -628,4 +833,5 @@ module.exports = {
   updateSchoolStatus,
   deleteSchool,
   restoreSchool,
+  generateRegistrationPdf, // ← ADDED
 };
