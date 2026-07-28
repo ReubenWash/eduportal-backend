@@ -1,54 +1,49 @@
 // backend/services/email.service.js
 require("dotenv").config();
-const nodemailer = require("nodemailer");
+const axios = require("axios");
 const logger = require("../config/logger");
 
-// ── Configure Brevo SMTP Transporter ──────────────────────────
-const transporter = nodemailer.createTransport({
-  host: process.env.BREVO_SMTP_HOST || "smtp-relay.brevo.com",
-  port: parseInt(process.env.BREVO_SMTP_PORT) || 587,
-  secure: false, // TLS for port 587
-  auth: {
-    user: process.env.BREVO_SMTP_USER,
-    pass: process.env.BREVO_SMTP_PASSWORD,
-  },
-  // ── Add timeout settings ──────────────────────────────────────
-  connectionTimeout: 10000, // 10 seconds
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-});
+const BREVO_API_URL = process.env.BREVO_API_URL || "https://api.brevo.com/v3";
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
 
-// ── Verify connection on startup ──────────────────────────────
-transporter.verify((error) => {
-  if (error) {
-    console.error('❌ Email transporter not ready:', error.message);
-    logger.warn('Email transporter not ready:', error.message);
-  } else {
-    console.log('✅ Email transporter ready');
-    logger.info('✅ Email transporter ready');
-  }
-});
-
-const FROM = `"${process.env.BREVO_SENDER_NAME || "EduTrack JHS"}" <${process.env.BREVO_SENDER_EMAIL || "noreply@edutrack.com"}>`;
-
-// ── Generic send helper with timeout and retry ────────────────
-const sendMail = async ({ to, subject, html }, retries = 1) => {
+// ── Generic send helper using Brevo API ──────────────────────
+const sendMail = async ({ to, subject, html }, retries = 2) => {
   try {
-    console.log(`📧 Sending email to ${to}...`);
-    const info = await transporter.sendMail({ from: FROM, to, subject, html });
-    logger.info(`Email sent to ${to} — ${subject} [${info.messageId}]`);
-    console.log(`✅ Email sent to ${to} — ${subject}`);
-    return info;
+    console.log(`📧 Sending email via Brevo API to ${to}...`);
+    
+    const response = await axios.post(
+      `${BREVO_API_URL}/smtp/email`,
+      {
+        sender: {
+          name: process.env.BREVO_SENDER_NAME || "EduTrack JHS",
+          email: process.env.BREVO_SENDER_EMAIL || "asiedureubenwash@gmail.com"
+        },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: html,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': BREVO_API_KEY,
+        },
+        timeout: 30000,
+      }
+    );
+
+    console.log(`✅ Email sent via Brevo API to ${to}`);
+    logger.info(`Email sent to ${to} — ${subject}`);
+    return response.data;
   } catch (error) {
     // If it's a timeout error and we have retries left, try again
-    if (error.message && (error.message.includes('timeout') || error.message.includes('Connection timeout')) && retries > 0) {
+    if (error.code === 'ECONNABORTED' && retries > 0) {
       console.log(`⏳ Retrying... (${retries} retries left)`);
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+      await new Promise(resolve => setTimeout(resolve, 2000));
       return sendMail({ to, subject, html }, retries - 1);
     }
     
-    logger.error(`Failed to send email to ${to}:`, error.message);
-    console.error(`❌ Failed to send email to ${to}:`, error.message);
+    logger.error(`Failed to send email to ${to}:`, error.response?.data || error.message);
+    console.error(`❌ Failed to send email to ${to}:`, error.response?.data || error.message);
     throw error;
   }
 };
@@ -59,7 +54,6 @@ const sendMailSafe = async ({ to, subject, html }) => {
     return await sendMail({ to, subject, html });
   } catch (error) {
     console.error(`❌ Email failed (but continuing): ${error.message}`);
-    // Return a result object instead of throwing
     return { success: false, error: error.message };
   }
 };
@@ -333,7 +327,7 @@ const sendSchoolWelcomeEmail = async (email, schoolName) => {
 // ─── EXPORT ALL FUNCTIONS ──────────────────────────────────────
 module.exports = {
   sendMail,
-  sendMailSafe,  // ← Added for non-blocking email sending
+  sendMailSafe,
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendWelcomeStaffEmail,
