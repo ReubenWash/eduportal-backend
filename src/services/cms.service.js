@@ -454,6 +454,28 @@ const updateSection = async (sectionId, data) => {
   return updated;
 };
 
+// ─── NEW: Update section content only ───────────────────────────
+const updateSectionContent = async (sectionId, contentData) => {
+  const section = await prisma.cmsSection.findUnique({
+    where: { id: sectionId }
+  });
+
+  if (!section) {
+    throw createError('Section not found', 404);
+  }
+
+  // Merge existing content with new content
+  const existingContent = section.content || {};
+  const mergedContent = { ...existingContent, ...contentData };
+
+  const updated = await prisma.cmsSection.update({
+    where: { id: sectionId },
+    data: { content: mergedContent }
+  });
+
+  return updated;
+};
+
 const deleteSection = async (sectionId) => {
   const section = await prisma.cmsSection.findUnique({
     where: { id: sectionId }
@@ -534,10 +556,276 @@ const getSectionContent = (section) => {
       return {
         faqs: section.content.faqs || []
       };
+    case 'CTA':
+      return {
+        heading: section.content.heading || '',
+        subtitle: section.content.subtitle || '',
+        buttonText: section.content.buttonText || '',
+        buttonLink: section.content.buttonLink || ''
+      };
+    case 'FOOTER':
+      return {
+        tagline: section.content.tagline || '',
+        links: section.content.links || [],
+        socialLinks: section.content.socialLinks || [],
+        copyright: section.content.copyright || ''
+      };
     default:
       return section.content || {};
   }
 };
+
+// ─────────────────────────────────────────────────────
+// LANDING PAGE - GET ALL CONTENT ────────────────────
+// ─────────────────────────────────────────────────────
+
+const getLandingContent = async () => {
+  try {
+    // Try to find the homepage
+    const homepage = await prisma.cmsPage.findFirst({
+      where: { 
+        isHomepage: true,
+        status: 'PUBLISHED'
+      },
+      include: {
+        sections: {
+          orderBy: { order: 'asc' },
+          where: { isActive: true }
+        }
+      }
+    });
+
+    // If no homepage exists, create default one with all sections
+    if (!homepage) {
+      // Create default homepage
+      const newHomepage = await prisma.cmsPage.create({
+        data: {
+          title: 'Homepage',
+          slug: 'home',
+          content: 'Default homepage content',
+          isHomepage: true,
+          status: 'PUBLISHED',
+          publishedAt: new Date()
+        }
+      });
+
+      // Create default sections
+      const defaultSections = [
+        {
+          pageId: newHomepage.id,
+          type: 'HERO',
+          title: 'Hero Section',
+          order: 1,
+          isActive: true,
+          content: {
+            heading: 'Run your school.',
+            highlight: 'Not paperwork.',
+            subtitle: 'EduPortal gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.',
+            trustBadge: 'Trusted by 200+ schools across Ghana, Nigeria & Kenya'
+          }
+        },
+        {
+          pageId: newHomepage.id,
+          type: 'STATS',
+          title: 'Statistics',
+          order: 2,
+          isActive: true,
+          content: {
+            stats: [
+              { number: '200+', label: 'Schools registered' },
+              { number: '84K', label: 'Students managed' },
+              { number: '1.2M', label: 'Reports generated' },
+              { number: '99.9%', label: 'Platform uptime' }
+            ]
+          }
+        },
+        {
+          pageId: newHomepage.id,
+          type: 'TESTIMONIALS',
+          title: 'Testimonials',
+          order: 3,
+          isActive: true,
+          content: {
+            testimonials: [
+              {
+                quote: "We used to spend three weeks compiling report cards. With EduPortal, the whole process takes two days.",
+                author: "Abena Owusu",
+                role: "Headmistress, Holy Child School",
+                initials: "AO",
+                color: "#4F46E5"
+              },
+              {
+                quote: "The attendance analytics alone are worth it. I can see which classes have the worst absenteeism and act on it before the term ends.",
+                author: "Kwame Darko",
+                role: "Deputy Head, Presec Legon",
+                initials: "KD",
+                color: "#10B981"
+              },
+              {
+                quote: "As a parent, I used to wait weeks to find out how my daughter was doing. Now I get her report on my phone the same day results are released.",
+                author: "Efua Boateng",
+                role: "Parent, Achimota School",
+                initials: "EB",
+                color: "#F59E0B"
+              }
+            ]
+          }
+        },
+        {
+          pageId: newHomepage.id,
+          type: 'PRICING',
+          title: 'Pricing Plans',
+          order: 4,
+          isActive: true,
+          content: {
+            plans: [
+              {
+                name: "Basic",
+                price: "Free",
+                period: "/ term",
+                desc: "For small schools getting started. Up to 150 students.",
+                popular: false,
+                features: ["Up to 150 students", "Scores & grading", "Attendance tracking", "PDF report cards"],
+                disabled: ["Analytics dashboard", "Email reports to parents"]
+              },
+              {
+                name: "Standard",
+                price: "GHS 299",
+                period: "/ term",
+                desc: "For growing schools. Up to 800 students, full feature set.",
+                popular: true,
+                features: ["Up to 800 students", "Scores & grading", "Attendance tracking", "PDF report cards", "Analytics dashboard", "Email reports to parents"],
+                disabled: []
+              },
+              {
+                name: "Premium",
+                price: "GHS 599",
+                period: "/ term",
+                desc: "For large institutions. Unlimited students, priority support.",
+                popular: false,
+                features: ["Unlimited students", "Everything in Standard", "Bulk import & export", "Priority email support", "Custom report branding", "Dedicated account manager"],
+                disabled: []
+              }
+            ]
+          }
+        },
+        {
+          pageId: newHomepage.id,
+          type: 'FOOTER',
+          title: 'Footer',
+          order: 5,
+          isActive: true,
+          content: {
+            tagline: 'A school management platform built specifically for schools in Ghana and across West Africa.'
+          }
+        }
+      ];
+
+      // Create all sections
+      for (const section of defaultSections) {
+        await prisma.cmsSection.create({ data: section });
+      }
+
+      // Return default content
+      return getDefaultLandingContent();
+    }
+
+    // Parse sections into structured content
+    const content = {};
+    
+    for (const section of homepage.sections) {
+      const sectionData = getSectionContent(section);
+      
+      switch (section.type) {
+        case 'HERO':
+          content.heroHeadline = sectionData.heading;
+          content.heroHeadlineHighlight = sectionData.highlight || 'Not paperwork.';
+          content.heroSubtitle = sectionData.subtitle;
+          content.heroTrustText = sectionData.trustBadge || 'Trusted by 200+ schools across Africa';
+          break;
+        case 'STATS':
+          content.stats = sectionData.stats;
+          break;
+        case 'TESTIMONIALS':
+          content.testimonials = sectionData.testimonials;
+          break;
+        case 'PRICING':
+          content.plans = sectionData.plans;
+          break;
+        case 'FAQ':
+          content.faqs = sectionData.faqs;
+          break;
+        case 'FOOTER':
+          content.footerTagline = sectionData.tagline;
+          break;
+        default:
+          break;
+      }
+    }
+
+    // Merge with defaults for any missing fields
+    const defaultContent = getDefaultLandingContent();
+    return { ...defaultContent, ...content };
+
+  } catch (error) {
+    console.error('Error fetching landing content:', error);
+    // Return default content if anything fails
+    return getDefaultLandingContent();
+  }
+};
+
+// ─── Default Landing Content ────────────────────────────────────
+const getDefaultLandingContent = () => ({
+  heroHeadline: "Run your school.",
+  heroHeadlineHighlight: "Not paperwork.",
+  heroSubtitle: "EduPortal gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.",
+  heroTrustText: "Trusted by 200+ schools across Ghana, Nigeria & Kenya",
+  stats: [
+    { number: "200+", label: "Schools registered" },
+    { number: "84K", label: "Students managed" },
+    { number: "1.2M", label: "Reports generated" },
+    { number: "99.9%", label: "Platform uptime" }
+  ],
+  testimonials: [
+    {
+      quote: "We used to spend three weeks compiling report cards. With EduPortal, the whole process takes two days.",
+      author: "Abena Owusu",
+      role: "Headmistress, Holy Child School",
+      initials: "AO",
+      color: "#4F46E5"
+    }
+  ],
+  plans: [
+    {
+      name: "Basic",
+      price: "Free",
+      period: "/ term",
+      desc: "For small schools getting started. Up to 150 students.",
+      popular: false,
+      features: ["Up to 150 students", "Scores & grading", "Attendance tracking", "PDF report cards"],
+      disabled: ["Analytics dashboard", "Email reports to parents"]
+    },
+    {
+      name: "Standard",
+      price: "GHS 299",
+      period: "/ term",
+      desc: "For growing schools. Up to 800 students, full feature set.",
+      popular: true,
+      features: ["Up to 800 students", "Scores & grading", "Attendance tracking", "PDF report cards", "Analytics dashboard", "Email reports to parents"],
+      disabled: []
+    },
+    {
+      name: "Premium",
+      price: "GHS 599",
+      period: "/ term",
+      desc: "For large institutions. Unlimited students, priority support.",
+      popular: false,
+      features: ["Unlimited students", "Everything in Standard", "Bulk import & export", "Priority email support", "Custom report branding", "Dedicated account manager"],
+      disabled: []
+    }
+  ],
+  footerTagline: "A school management platform built specifically for schools in Ghana and across West Africa."
+});
 
 // ─────────────────────────────────────────────────────
 // EXPORTS
@@ -560,9 +848,14 @@ module.exports = {
   getSectionById,
   createSection,
   updateSection,
+  updateSectionContent, // ← NEW
   deleteSection,
   reorderSections,
   
+  // Landing Page
+  getLandingContent, // ← NEW
+  
   // Helpers
-  getSectionContent
+  getSectionContent,
+  getDefaultLandingContent // ← NEW
 };
