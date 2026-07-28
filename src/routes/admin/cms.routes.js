@@ -22,8 +22,19 @@ router.get('/sections', controller.getSections);
 router.get('/sections/:id', controller.getSectionById);
 router.post('/sections', controller.createSection);
 router.patch('/sections/:id', controller.updateSection);
+router.patch('/sections/:id/content', controller.updateSectionContent); // ← NEW
 router.delete('/sections/:id', controller.deleteSection);
 router.post('/sections/reorder', controller.reorderSections);
+
+// ── Landing Page ──
+router.get('/landing', controller.getLandingContent); // ← NEW
+
+// ── Footer ──
+router.patch('/footer', controller.updateFooter); // ← NEW
+
+// ── Theme ──
+router.get('/theme', controller.getTheme); // ← NEW
+router.patch('/theme', controller.updateTheme); // ← NEW
 
 // ── Legal Documents ──
 router.get('/legal', controller.getLegalDocuments);

@@ -1,6 +1,7 @@
 const cmsService = require("../../services/cms.service");
 const legalService = require("../../services/legal.service");
 const emailTemplateService = require("../../services/email-template.service");
+const { prisma } = require("../../config/db");
 const { sendSuccess } = require("../../utils/apiResponse");
 const { createError } = require("../../middleware/errorHandler");
 
@@ -146,6 +147,18 @@ const updateSection = async (req, res) => {
   return sendSuccess(res, 200, "Section updated", section);
 };
 
+// PATCH /api/v1/admin/cms/sections/:id/content
+const updateSectionContent = async (req, res) => {
+  const { content } = req.body;
+
+  if (!content || typeof content !== 'object') {
+    throw createError("Content is required", 400);
+  }
+
+  const section = await cmsService.updateSectionContent(req.params.id, content);
+  return sendSuccess(res, 200, "Section content updated", section);
+};
+
 // DELETE /api/v1/admin/cms/sections/:id
 const deleteSection = async (req, res) => {
   await cmsService.deleteSection(req.params.id);
@@ -162,6 +175,117 @@ const reorderSections = async (req, res) => {
 
   await cmsService.reorderSections(pageId, sectionOrders);
   return sendSuccess(res, 200, "Sections reordered");
+};
+
+// ─────────────────────────────────────────────────────
+// LANDING PAGE ────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+
+// GET /api/v1/admin/cms/landing
+const getLandingContent = async (req, res) => {
+  const content = await cmsService.getLandingContent();
+  return sendSuccess(res, 200, "Landing content fetched", content);
+};
+
+// ─────────────────────────────────────────────────────
+// FOOTER ──────────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+
+// PATCH /api/v1/admin/cms/footer
+const updateFooter = async (req, res) => {
+  const { tagline, links, socialLinks, copyright } = req.body;
+
+  // Find or create footer section
+  const sections = await cmsService.getSections({ type: 'FOOTER' });
+  let footerSection = sections.find(s => s.type === 'FOOTER');
+
+  const footerContent = { tagline, links, socialLinks, copyright };
+
+  if (!footerSection) {
+    // Create footer section if it doesn't exist
+    const homepage = await cmsService.getHomepage();
+    if (!homepage) {
+      throw createError("Homepage not found. Please create a homepage first.", 404);
+    }
+    
+    footerSection = await cmsService.createSection({
+      pageId: homepage.id,
+      type: 'FOOTER',
+      title: 'Footer',
+      content: footerContent,
+      isActive: true,
+      userId: req.user.userId
+    });
+  } else {
+    // Update existing footer
+    footerSection = await cmsService.updateSectionContent(footerSection.id, footerContent);
+  }
+
+  return sendSuccess(res, 200, "Footer updated successfully", footerSection);
+};
+
+// ─────────────────────────────────────────────────────
+// THEME ───────────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+
+// GET /api/v1/admin/cms/theme
+const getTheme = async (req, res) => {
+  const theme = await prisma.systemSetting.findUnique({
+    where: { key: 'theme_config' }
+  });
+
+  const defaultTheme = {
+    primaryColor: '#4F46E5',
+    secondaryColor: '#1A3C5E',
+    fontFamily: 'Inter',
+    buttonStyle: 'rounded',
+    logoUrl: null,
+    faviconUrl: null
+  };
+
+  return sendSuccess(res, 200, "Theme fetched", theme?.value || defaultTheme);
+};
+
+// PATCH /api/v1/admin/cms/theme
+const updateTheme = async (req, res) => {
+  const { primaryColor, secondaryColor, fontFamily, buttonStyle, logoUrl, faviconUrl } = req.body;
+
+  const themeSettings = {
+    primaryColor: primaryColor || '#4F46E5',
+    secondaryColor: secondaryColor || '#1A3C5E',
+    fontFamily: fontFamily || 'Inter',
+    buttonStyle: buttonStyle || 'rounded',
+    logoUrl: logoUrl || null,
+    faviconUrl: faviconUrl || null
+  };
+
+  // Store in system settings
+  const updated = await prisma.systemSetting.upsert({
+    where: { key: 'theme_config' },
+    update: { 
+      value: themeSettings,
+      updatedAt: new Date()
+    },
+    create: { 
+      key: 'theme_config', 
+      value: themeSettings,
+      category: 'BRANDING',
+      description: 'Platform theme configuration'
+    }
+  });
+
+  // Log this action
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.userId,
+      action: 'CONFIG_UPDATE',
+      resource: 'SYSTEM_SETTING',
+      resourceId: updated.id,
+      metadata: { theme: themeSettings }
+    }
+  });
+
+  return sendSuccess(res, 200, "Theme updated successfully", themeSettings);
 };
 
 // ─────────────────────────────────────────────────────
@@ -322,8 +446,19 @@ module.exports = {
   getSectionById,
   createSection,
   updateSection,
+  updateSectionContent, // ← NEW
   deleteSection,
   reorderSections,
+  
+  // Landing Page
+  getLandingContent, // ← NEW
+  
+  // Footer
+  updateFooter, // ← NEW
+  
+  // Theme
+  getTheme, // ← NEW
+  updateTheme, // ← NEW
   
   // Legal
   getLegalDocuments,
