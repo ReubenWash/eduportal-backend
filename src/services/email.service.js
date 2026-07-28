@@ -1,4 +1,4 @@
-\// backend/services/email.service.js
+// backend/services/email.service.js
 require("dotenv").config();
 const nodemailer = require("nodemailer");
 const logger = require("../config/logger");
