@@ -178,7 +178,7 @@ const reorderSections = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────
-// LANDING PAGE ────────────────────────────────────────
+// LANDING PAGE CONTENT
 // ─────────────────────────────────────────────────────
 
 // GET /api/v1/admin/cms/landing
@@ -187,9 +187,40 @@ const getLandingContent = async (req, res) => {
   return sendSuccess(res, 200, "Landing content fetched", content);
 };
 
+// PUT /api/v1/admin/cms/landing
+const saveLandingContent = async (req, res) => {
+  const { content } = req.body;
+
+  if (!content || typeof content !== 'object') {
+    throw createError("Content is required", 400);
+  }
+
+  const result = await cmsService.saveLandingContent(content, req.user.userId);
+  return sendSuccess(res, 200, "Landing content saved successfully", result);
+};
+
+// PATCH /api/v1/admin/cms/landing/section/:type
+const updateLandingSection = async (req, res) => {
+  const { type } = req.params;
+  const { content } = req.body;
+
+  if (!content || typeof content !== 'object') {
+    throw createError("Content is required", 400);
+  }
+
+  const section = await cmsService.updateLandingSection(type, content, req.user.userId);
+  return sendSuccess(res, 200, `${type} section updated successfully`, section);
+};
+
 // ─────────────────────────────────────────────────────
-// FOOTER ──────────────────────────────────────────────
+// FOOTER
 // ─────────────────────────────────────────────────────
+
+// GET /api/v1/admin/cms/footer
+const getFooter = async (req, res) => {
+  const footer = await cmsService.getFooter();
+  return sendSuccess(res, 200, "Footer fetched", footer);
+};
 
 // PATCH /api/v1/admin/cms/footer
 const updateFooter = async (req, res) => {
@@ -225,7 +256,7 @@ const updateFooter = async (req, res) => {
 };
 
 // ─────────────────────────────────────────────────────
-// THEME ───────────────────────────────────────────────
+// THEME
 // ─────────────────────────────────────────────────────
 
 // GET /api/v1/admin/cms/theme
@@ -237,10 +268,13 @@ const getTheme = async (req, res) => {
   const defaultTheme = {
     primaryColor: '#4F46E5',
     secondaryColor: '#1A3C5E',
+    accentColor: '#F59E0B',
     fontFamily: 'Inter',
+    borderRadius: '8px',
     buttonStyle: 'rounded',
     logoUrl: null,
-    faviconUrl: null
+    faviconUrl: null,
+    customCss: ''
   };
 
   return sendSuccess(res, 200, "Theme fetched", theme?.value || defaultTheme);
@@ -248,15 +282,28 @@ const getTheme = async (req, res) => {
 
 // PATCH /api/v1/admin/cms/theme
 const updateTheme = async (req, res) => {
-  const { primaryColor, secondaryColor, fontFamily, buttonStyle, logoUrl, faviconUrl } = req.body;
+  const { 
+    primaryColor, 
+    secondaryColor, 
+    accentColor,
+    fontFamily, 
+    borderRadius,
+    buttonStyle, 
+    logoUrl, 
+    faviconUrl,
+    customCss
+  } = req.body;
 
   const themeSettings = {
     primaryColor: primaryColor || '#4F46E5',
     secondaryColor: secondaryColor || '#1A3C5E',
+    accentColor: accentColor || '#F59E0B',
     fontFamily: fontFamily || 'Inter',
+    borderRadius: borderRadius || '8px',
     buttonStyle: buttonStyle || 'rounded',
     logoUrl: logoUrl || null,
-    faviconUrl: faviconUrl || null
+    faviconUrl: faviconUrl || null,
+    customCss: customCss || ''
   };
 
   // Store in system settings
@@ -286,6 +333,66 @@ const updateTheme = async (req, res) => {
   });
 
   return sendSuccess(res, 200, "Theme updated successfully", themeSettings);
+};
+
+// ─────────────────────────────────────────────────────
+// CMS SETTINGS
+// ─────────────────────────────────────────────────────
+
+// GET /api/v1/admin/cms/settings
+const getCmsSettings = async (req, res) => {
+  const settings = await prisma.systemSetting.findMany({
+    where: {
+      category: 'BRANDING',
+      isPublic: true
+    }
+  });
+
+  const settingsMap = {};
+  settings.forEach(setting => {
+    settingsMap[setting.key] = setting.value;
+  });
+
+  return sendSuccess(res, 200, "CMS settings fetched", settingsMap);
+};
+
+// PATCH /api/v1/admin/cms/settings
+const updateCmsSettings = async (req, res) => {
+  const { settings } = req.body;
+
+  if (!settings || typeof settings !== 'object') {
+    throw createError("Invalid settings data", 400);
+  }
+
+  const updates = [];
+  for (const [key, value] of Object.entries(settings)) {
+    const result = await prisma.systemSetting.upsert({
+      where: { key },
+      update: {
+        value,
+        updatedAt: new Date()
+      },
+      create: {
+        key,
+        value,
+        category: 'BRANDING',
+        isPublic: true
+      }
+    });
+    updates.push(result);
+  }
+
+  // Log this action
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.userId,
+      action: 'CONFIG_UPDATE',
+      resource: 'SYSTEM_SETTING',
+      metadata: { updatedKeys: Object.keys(settings) }
+    }
+  });
+
+  return sendSuccess(res, 200, "CMS settings updated successfully", updates);
 };
 
 // ─────────────────────────────────────────────────────
@@ -446,19 +553,26 @@ module.exports = {
   getSectionById,
   createSection,
   updateSection,
-  updateSectionContent, // ← NEW
+  updateSectionContent,
   deleteSection,
   reorderSections,
   
   // Landing Page
-  getLandingContent, // ← NEW
+  getLandingContent,
+  saveLandingContent,
+  updateLandingSection,
   
   // Footer
-  updateFooter, // ← NEW
+  getFooter,
+  updateFooter,
   
   // Theme
-  getTheme, // ← NEW
-  updateTheme, // ← NEW
+  getTheme,
+  updateTheme,
+  
+  // CMS Settings
+  getCmsSettings,
+  updateCmsSettings,
   
   // Legal
   getLegalDocuments,

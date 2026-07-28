@@ -21,6 +21,10 @@ router.use("/analytics",     require("./analytics.routes"));
 router.use("/notifications", require("./notification.routes"));
 router.use("/documents",     require("./document.routes"));
 
+// ── CMS Routes (Public & Admin) ──────────────────────────────
+router.use("/cms",           require("./cms.routes"));        // Public CMS routes
+router.use("/admin/cms",     require("./admin/cms.routes"));  // Admin CMS routes
+
 // ── Test Routes ──────────────────────────────────────────────────
 router.use("/test",          require("./test.routes"));
 
@@ -29,7 +33,6 @@ router.use("/admin/audit",        require("./admin/audit.routes"));
 router.use("/admin/security",     require("./admin/security.routes"));
 router.use("/admin/subscriptions", require("./admin/subscription.routes"));
 router.use("/admin/support",      require("./admin/support.routes"));
-router.use("/admin/cms",          require("./admin/cms.routes"));
 router.use("/admin/integrations", require("./admin/integration.routes"));
 router.use("/admin/system",       require("./admin/system.routes"));
 router.use("/admin/config",       require("./config.routes"));

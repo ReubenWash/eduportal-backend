@@ -22,19 +22,22 @@ router.get('/sections', controller.getSections);
 router.get('/sections/:id', controller.getSectionById);
 router.post('/sections', controller.createSection);
 router.patch('/sections/:id', controller.updateSection);
-router.patch('/sections/:id/content', controller.updateSectionContent); // ← NEW
+router.patch('/sections/:id/content', controller.updateSectionContent);
 router.delete('/sections/:id', controller.deleteSection);
 router.post('/sections/reorder', controller.reorderSections);
 
-// ── Landing Page ──
-router.get('/landing', controller.getLandingContent); // ← NEW
+// ── Landing Page Content ──
+router.get('/landing', controller.getLandingContent);
+router.put('/landing', controller.saveLandingContent);  // ← ADDED: Save full landing page
+router.patch('/landing/section/:type', controller.updateLandingSection);  // ← ADDED: Update specific section
 
 // ── Footer ──
-router.patch('/footer', controller.updateFooter); // ← NEW
+router.get('/footer', controller.getFooter);  // ← ADDED: Get footer
+router.patch('/footer', controller.updateFooter);
 
 // ── Theme ──
-router.get('/theme', controller.getTheme); // ← NEW
-router.patch('/theme', controller.updateTheme); // ← NEW
+router.get('/theme', controller.getTheme);
+router.patch('/theme', controller.updateTheme);
 
 // ── Legal Documents ──
 router.get('/legal', controller.getLegalDocuments);
@@ -52,5 +55,9 @@ router.patch('/email-templates/:id', controller.updateEmailTemplate);
 router.delete('/email-templates/:id', controller.deleteEmailTemplate);
 router.post('/email-templates/:id/test', controller.sendTestEmail);
 router.post('/email-templates/seed', controller.seedEmailTemplates);
+
+// ── CMS Settings ──
+router.get('/settings', controller.getCmsSettings);  // ← ADDED: Get all CMS settings
+router.patch('/settings', controller.updateCmsSettings);  // ← ADDED: Update CMS settings
 
 module.exports = router;
