@@ -1,3 +1,4 @@
+\// backend/services/email.service.js
 require("dotenv").config();
 const nodemailer = require("nodemailer");
 const logger = require("../config/logger");
@@ -11,9 +12,11 @@ const transporter = nodemailer.createTransport({
     user: process.env.BREVO_SMTP_USER,
     pass: process.env.BREVO_SMTP_PASSWORD,
   },
+  // ── Add timeout settings ──────────────────────────────────────
+  connectionTimeout: 10000, // 10 seconds
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
 });
-
-const FROM = `"${process.env.BREVO_SENDER_NAME || "EduTrack JHS"}" <${process.env.BREVO_SENDER_EMAIL || "noreply@edutrack.com"}>`;
 
 // ── Verify connection on startup ──────────────────────────────
 transporter.verify((error) => {
@@ -26,17 +29,38 @@ transporter.verify((error) => {
   }
 });
 
-// ── Generic send helper ────────────────────────────────────────
-const sendMail = async ({ to, subject, html }) => {
+const FROM = `"${process.env.BREVO_SENDER_NAME || "EduTrack JHS"}" <${process.env.BREVO_SENDER_EMAIL || "noreply@edutrack.com"}>`;
+
+// ── Generic send helper with timeout and retry ────────────────
+const sendMail = async ({ to, subject, html }, retries = 1) => {
   try {
+    console.log(`📧 Sending email to ${to}...`);
     const info = await transporter.sendMail({ from: FROM, to, subject, html });
     logger.info(`Email sent to ${to} — ${subject} [${info.messageId}]`);
     console.log(`✅ Email sent to ${to} — ${subject}`);
     return info;
   } catch (error) {
+    // If it's a timeout error and we have retries left, try again
+    if (error.message && (error.message.includes('timeout') || error.message.includes('Connection timeout')) && retries > 0) {
+      console.log(`⏳ Retrying... (${retries} retries left)`);
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+      return sendMail({ to, subject, html }, retries - 1);
+    }
+    
     logger.error(`Failed to send email to ${to}:`, error.message);
     console.error(`❌ Failed to send email to ${to}:`, error.message);
     throw error;
+  }
+};
+
+// ── Safe email sender that doesn't throw ──────────────────────
+const sendMailSafe = async ({ to, subject, html }) => {
+  try {
+    return await sendMail({ to, subject, html });
+  } catch (error) {
+    console.error(`❌ Email failed (but continuing): ${error.message}`);
+    // Return a result object instead of throwing
+    return { success: false, error: error.message };
   }
 };
 
@@ -44,7 +68,7 @@ const sendMail = async ({ to, subject, html }) => {
 
 const sendVerificationEmail = async (email, name, token) => {
   const url = `${process.env.CLIENT_URL}/verify-email/${token}`;
-  await sendMail({
+  return sendMailSafe({
     to: email,
     subject: "Verify your EduTrack account",
     html: `
@@ -76,7 +100,7 @@ const sendVerificationEmail = async (email, name, token) => {
 
 const sendPasswordResetEmail = async (email, name, token) => {
   const url = `${process.env.CLIENT_URL}/reset-password/${token}`;
-  await sendMail({
+  return sendMailSafe({
     to: email,
     subject: "Reset your EduTrack password",
     html: `
@@ -105,7 +129,7 @@ const sendPasswordResetEmail = async (email, name, token) => {
 
 const sendWelcomeStaffEmail = async (email, name, tempPassword, schoolName) => {
   const loginUrl = `${process.env.CLIENT_URL}/login`;
-  await sendMail({
+  return sendMailSafe({
     to: email,
     subject: `Welcome to ${schoolName} on EduTrack JHS`,
     html: `
@@ -140,7 +164,7 @@ const sendWelcomeStaffEmail = async (email, name, tempPassword, schoolName) => {
 };
 
 const sendReportCardEmail = async (email, parentName, studentName, term, pdfUrl, schoolName) => {
-  await sendMail({
+  return sendMailSafe({
     to: email,
     subject: `${studentName}'s ${term} Report Card — ${schoolName}`,
     html: `
@@ -171,7 +195,7 @@ const sendReportCardEmail = async (email, parentName, studentName, term, pdfUrl,
 };
 
 const sendRegistrationUnderReviewEmail = async (email, name, schoolName) => {
-  await sendMail({
+  return sendMailSafe({
     to: email,
     subject: `Registration received: ${schoolName}`,
     html: `
@@ -223,7 +247,7 @@ const sendSchoolStatusEmail = async (email, schoolName, status) => {
     content = `Your school account status for <strong>${schoolName}</strong> has been updated to <strong>${status}</strong>.`;
   }
 
-  await sendMail({
+  return sendMailSafe({
     to: email,
     subject,
     html: `
@@ -250,7 +274,7 @@ const sendSchoolStatusEmail = async (email, schoolName, status) => {
 
 const sendWelcomeGuardianEmail = async (email, name, tempPassword, schoolName) => {
   const loginUrl = `${process.env.CLIENT_URL}/login`;
-  await sendMail({
+  return sendMailSafe({
     to: email,
     subject: `Welcome to ${schoolName} Parent Portal`,
     html: `
@@ -285,7 +309,7 @@ const sendWelcomeGuardianEmail = async (email, name, tempPassword, schoolName) =
 };
 
 const sendSchoolWelcomeEmail = async (email, schoolName) => {
-  await sendMail({
+  return sendMailSafe({
     to: email,
     subject: `Welcome to EduTrack JHS, ${schoolName}!`,
     html: `
@@ -306,7 +330,10 @@ const sendSchoolWelcomeEmail = async (email, schoolName) => {
   });
 };
 
+// ─── EXPORT ALL FUNCTIONS ──────────────────────────────────────
 module.exports = {
+  sendMail,
+  sendMailSafe,  // ← Added for non-blocking email sending
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendWelcomeStaffEmail,

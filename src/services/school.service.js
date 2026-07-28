@@ -57,7 +57,7 @@ const registerSchool = async ({ name, email, password, region, district, headmas
     return { school, user };
   });
 
-  // Send verification email
+  // ─── Send verification email (non-blocking) ──────────────────
   const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
@@ -78,8 +78,18 @@ const registerSchool = async ({ name, email, password, region, district, headmas
     }
   });
 
-  await sendVerificationEmail(email, headmasterName, verificationCode);
-  await sendRegistrationUnderReviewEmail(email, headmasterName, name);
+  // ─── Try to send emails but don't fail registration if they fail ───
+  try {
+    await sendVerificationEmail(email, headmasterName, verificationCode);
+  } catch (emailError) {
+    console.warn('⚠️ Verification email failed (non-blocking):', emailError.message);
+  }
+
+  try {
+    await sendRegistrationUnderReviewEmail(email, headmasterName, name);
+  } catch (emailError) {
+    console.warn('⚠️ Under review email failed (non-blocking):', emailError.message);
+  }
 
   return {
     id:     result.school.id,
@@ -486,7 +496,11 @@ const updateSchoolStatus = async (schoolId, status) => {
 
   const recipientEmails = new Set([updatedSchool.email, ...adminUsers.map(u => u.email)]);
   for (const recipientEmail of recipientEmails) {
-    await sendSchoolStatusEmail(recipientEmail, updatedSchool.name, status);
+    try {
+      await sendSchoolStatusEmail(recipientEmail, updatedSchool.name, status);
+    } catch (emailError) {
+      console.warn('⚠️ School status email failed (non-blocking):', emailError.message);
+    }
   }
 
   return updatedSchool;
@@ -833,5 +847,5 @@ module.exports = {
   updateSchoolStatus,
   deleteSchool,
   restoreSchool,
-  generateRegistrationPdf, // ← ADDED
+  generateRegistrationPdf,
 };

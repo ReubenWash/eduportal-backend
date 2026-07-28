@@ -1,3 +1,4 @@
+// backend/routes/test.routes.js
 const express = require('express');
 const router = express.Router();
 const { sendMail } = require('../services/email.service');
@@ -13,6 +14,11 @@ router.post('/test-email', async (req, res) => {
         message: 'Email address is required'
       });
     }
+
+    console.log('📧 Sending test email to:', to);
+    console.log('SMTP Host:', process.env.BREVO_SMTP_HOST || process.env.SMTP_HOST);
+    console.log('SMTP User:', process.env.BREVO_SMTP_USER || process.env.SMTP_USER);
+    console.log('SMTP Password set:', !!(process.env.BREVO_SMTP_PASSWORD || process.env.SMTP_PASS));
 
     const result = await sendMail({
       to: to,
@@ -41,11 +47,12 @@ router.post('/test-email', async (req, res) => {
       data: result
     });
   } catch (error) {
-    console.error('Test email error:', error);
+    console.error('❌ Test email error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to send test email',
-      error: error.message
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
