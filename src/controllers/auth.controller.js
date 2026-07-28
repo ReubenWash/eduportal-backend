@@ -64,9 +64,26 @@ const resetPassword = async (req, res) => {
 const verifyEmail = async (req, res) => {
   const { code } = req.body;
 
-  await authService.verifyEmail(code);
+  if (!code) {
+    return sendSuccess(res, 400, "Verification code is required.", null);
+  }
 
-  return sendSuccess(res, 200, "Email verified successfully. You can now log in.");
+  const result = await authService.verifyEmail(code);
+
+  return sendSuccess(res, 200, result.message, result);
+};
+
+// POST /api/v1/auth/resend-verification
+const resendVerification = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return sendSuccess(res, 400, "Email is required.", null);
+  }
+
+  const result = await authService.resendVerificationCode(email);
+
+  return sendSuccess(res, 200, result.message, result);
 };
 
 // GET /api/v1/auth/me
@@ -91,6 +108,7 @@ module.exports = {
   forgotPassword,
   resetPassword,
   verifyEmail,
+  resendVerification,
   getMe,
   changePassword,
 };

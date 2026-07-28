@@ -34,7 +34,17 @@ const resetPasswordValidator = [
 const verifyEmailValidator = [
   body("code")
     .trim()
-    .notEmpty().withMessage("Verification code is required."),
+    .notEmpty().withMessage("Verification code is required.")
+    .isLength({ min: 6, max: 6 }).withMessage("Verification code must be exactly 6 digits.")
+    .isNumeric().withMessage("Verification code must be numeric."),
+];
+
+const resendVerificationValidator = [
+  body("email")
+    .trim()
+    .notEmpty().withMessage("Email is required.")
+    .isEmail().withMessage("Please enter a valid email address.")
+    .normalizeEmail(),
 ];
 
 const changePasswordValidator = [
@@ -53,5 +63,6 @@ module.exports = {
   forgotPasswordValidator,
   resetPasswordValidator,
   verifyEmailValidator,
+  resendVerificationValidator,
   changePasswordValidator,
 };

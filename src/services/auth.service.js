@@ -151,25 +151,58 @@ const resetPassword = async (rawToken, newPassword) => {
   await prisma.refreshToken.deleteMany({ where: { userId: stored.userId } });
 };
 
-// ── Verify email ───────────────────────────────────────────────
-const verifyEmail = async (rawToken) => {
+// ── Verify email with 6-digit code ────────────────────────────
+const verifyEmail = async (code) => {
+  // Find the verification token with the code
   const stored = await prisma.refreshToken.findFirst({
-    where: { token: `verify_${rawToken}` },
+    where: { 
+      token: `verify_${code}`,
+      expiresAt: { gt: new Date() } // Only valid if not expired
+    },
+    include: { user: true }
   });
 
-  if (!stored) throw createError("Invalid or expired verification link.", 400);
-
-  if (new Date() > stored.expiresAt) {
-    await prisma.refreshToken.delete({ where: { id: stored.id } });
-    throw createError("Verification link has expired. Please register again.", 400);
+  if (!stored) {
+    // Check if the code exists but expired
+    const expired = await prisma.refreshToken.findFirst({
+      where: { 
+        token: `verify_${code}`,
+        expiresAt: { lte: new Date() }
+      },
+    });
+    
+    if (expired) {
+      throw createError("Verification code has expired. Please request a new one.", 400);
+    }
+    
+    throw createError("Invalid verification code.", 400);
   }
 
+  // Check if user is already verified
+  if (stored.user.isVerified) {
+    // Delete the used token
+    await prisma.refreshToken.delete({ where: { id: stored.id } });
+    return { success: true, message: "Email already verified" };
+  }
+
+  // Update user as verified
   await prisma.user.update({
     where: { id: stored.userId },
-    data:  { isVerified: true },
+    data: { isVerified: true },
   });
 
+  // Delete the used token
   await prisma.refreshToken.delete({ where: { id: stored.id } });
+  
+  // Also delete any other verification tokens for this user
+  await prisma.refreshToken.deleteMany({
+    where: { 
+      userId: stored.userId,
+      token: { startsWith: 'verify_' }
+    },
+  });
+
+  return { success: true, message: "Email verified successfully" };
 };
 
 // ── Get current user ───────────────────────────────────────────
@@ -213,6 +246,46 @@ const changePassword = async (userId, currentPassword, newPassword) => {
   await prisma.refreshToken.deleteMany({ where: { userId } });
 };
 
+// ── Resend verification code ──────────────────────────────────
+const resendVerificationCode = async (email) => {
+  const user = await prisma.user.findUnique({ 
+    where: { email },
+    include: {
+      staff: { select: { firstName: true } }
+    }
+  });
+  
+  if (!user) throw createError("User not found.", 404);
+  if (user.isVerified) throw createError("Email is already verified.", 400);
+
+  // Delete any existing verification tokens for this user
+  await prisma.refreshToken.deleteMany({
+    where: { 
+      userId: user.id,
+      token: { startsWith: 'verify_' }
+    },
+  });
+
+  // Generate new 6-digit verification code
+  const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+  // Store the verification code
+  await prisma.refreshToken.create({
+    data: {
+      userId: user.id,
+      token: `verify_${verificationCode}`,
+      expiresAt,
+    },
+  });
+
+  // Send the verification email
+  const name = user.staff?.firstName || "User";
+  await sendVerificationEmail(email, name, verificationCode);
+
+  return { success: true, message: "Verification code sent successfully" };
+};
+
 module.exports = {
   login,
   refreshAccessToken,
@@ -222,4 +295,5 @@ module.exports = {
   verifyEmail,
   getMe,
   changePassword,
+  resendVerificationCode, // ← Added
 };

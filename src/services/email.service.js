@@ -60,8 +60,7 @@ const sendMailSafe = async ({ to, subject, html }) => {
 
 // ── Email templates ────────────────────────────────────────────
 
-const sendVerificationEmail = async (email, name, token) => {
-  const url = `${process.env.CLIENT_URL}/verify-email/${token}`;
+const sendVerificationEmail = async (email, name, code) => {
   return sendMailSafe({
     to: email,
     subject: "Verify your EduTrack account",
@@ -74,18 +73,19 @@ const sendVerificationEmail = async (email, name, token) => {
           <h2 style="color:#1A3C5E;">Hello, ${name}!</h2>
           <p style="color:#444;line-height:1.6;">
             Thank you for registering your school on EduTrack JHS.
-            Please verify your email address to activate your account.
+            Please use the verification code below to activate your account.
           </p>
-          <div style="text-align:center;margin:32px 0;">
-            <a href="${url}"
-               style="background:#2E75B6;color:#fff;padding:14px 32px;
-                      border-radius:6px;text-decoration:none;font-weight:bold;font-size:15px;">
-              Verify Email Address
-            </a>
+          <div style="text-align:center;margin:32px 0;padding:20px;background:#f0f4ff;border-radius:8px;border:2px dashed #4F46E5;">
+            <p style="font-size:36px;font-weight:bold;color:#4F46E5;letter-spacing:10px;margin:0;">
+              ${code}
+            </p>
           </div>
-          <p style="color:#888;font-size:13px;">
-            This link expires in <strong>24 hours</strong>.<br/>
+          <p style="color:#888;font-size:13px;text-align:center;">
+            This code expires in <strong>24 hours</strong>.<br/>
             If you did not register, please ignore this email.
+          </p>
+          <p style="color:#999;font-size:12px;text-align:center;margin-top:20px;">
+            Enter this code on the verification page to complete your registration.
           </p>
         </div>
       </div>`,
@@ -207,7 +207,7 @@ const sendRegistrationUnderReviewEmail = async (email, name, schoolName) => {
             Our team will review your details shortly. You will be notified via email once your school account is approved and activated.
           </p>
           <p style="color:#888;font-size:13px;margin-top:20px;">
-            Please make sure to verify your email using the link sent in the previous verification email.
+            Please make sure to verify your email using the code sent in the previous verification email.
           </p>
         </div>
       </div>`,

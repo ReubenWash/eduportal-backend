@@ -10,6 +10,7 @@ const {
   resetPasswordValidator,
   verifyEmailValidator,
   changePasswordValidator,
+  resendVerificationValidator,
 } = require("../validators/auth.validator");
 
 // ── Public routes (no auth required) ──────────────────────────
@@ -52,6 +53,14 @@ router.post(
   verifyEmailValidator,
   validate,
   controller.verifyEmail
+);
+
+// POST /api/v1/auth/resend-verification
+router.post(
+  "/resend-verification",
+  resendVerificationValidator,
+  validate,
+  controller.resendVerification
 );
 
 // ── Protected routes (auth required) ──────────────────────────

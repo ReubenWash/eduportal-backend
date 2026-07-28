@@ -57,28 +57,29 @@ const registerSchool = async ({ name, email, password, region, district, headmas
     return { school, user };
   });
 
-  // ─── Send verification email (non-blocking) ──────────────────
+  // ─── Generate 6-digit verification code ──────────────────────
   const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt   = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
+  // Store the verification code in refreshToken table with verify_ prefix
   await prisma.refreshToken.create({
     data: {
-      userId:    result.user.id,
-      token:     `verify_${verificationCode}`,
+      userId: result.user.id,
+      token: `verify_${verificationCode}`,
       expiresAt,
     },
   });
 
   await prisma.notification.create({
     data: {
-      userId:    result.user.id,
-      title:     "Registration Under Review",
-      message:   `Your registration for ${name} has been received and is currently under review.`,
-      type:      "info",
+      userId: result.user.id,
+      title: "Registration Under Review",
+      message: `Your registration for ${name} has been received and is currently under review. Please verify your email using the 6-digit code sent to your email.`,
+      type: "info",
     }
   });
 
-  // ─── Try to send emails but don't fail registration if they fail ───
+  // ─── Send emails with the verification code ──────────────────
   try {
     await sendVerificationEmail(email, headmasterName, verificationCode);
   } catch (emailError) {
