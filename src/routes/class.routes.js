@@ -9,6 +9,37 @@ const validate = require("../middleware/validate");
 
 router.use(authenticate, tenantScope);
 
+// ─── Debug Routes (Remove in production) ───
+router.get("/debug/user", (req, res) => {
+  res.json({
+    success: true,
+    user: req.user,
+    schoolId: req.user?.schoolId,
+    headers: req.headers.authorization ? 'Bearer token present' : 'No token'
+  });
+});
+
+router.get("/debug/check", async (req, res) => {
+  try {
+    const { prisma } = require("../config/db");
+    const count = await prisma.class.count();
+    const sample = await prisma.class.findFirst();
+    res.json({
+      success: true,
+      count,
+      sample,
+      schoolId: req.user?.schoolId
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// ─── Main Routes ───
 router.get("/",    isSchoolStaff, controller.list);
 router.get("/:id", isSchoolStaff, controller.getOne);
 
