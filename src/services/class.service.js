@@ -454,7 +454,7 @@ const updateSection = async (sectionId, data) => {
   return updated;
 };
 
-// ─── NEW: Update section content only ───────────────────────────
+// ─── Update section content only ───────────────────────────
 const updateSectionContent = async (sectionId, contentData) => {
   const section = await prisma.cmsSection.findUnique({
     where: { id: sectionId }
@@ -524,12 +524,11 @@ const getSectionContent = (section) => {
   switch (section.type) {
     case 'HERO':
       return {
-        heading: section.content.heading || '',
+        headline: section.content.headline || '',
+        headlineHighlight: section.content.headlineHighlight || '',
         subtitle: section.content.subtitle || '',
-        ctaText: section.content.ctaText || '',
-        ctaLink: section.content.ctaLink || '',
-        image: section.content.image || null,
-        trustBadge: section.content.trustBadge || null
+        primaryBtn: section.content.primaryBtn || '',
+        trustText: section.content.trustText || ''
       };
     case 'STATS':
       return {
@@ -599,6 +598,7 @@ const getLandingContent = async () => {
       heroHeadline: "Run your school.",
       heroHeadlineHighlight: "Not paperwork.",
       heroSubtitle: "EduPortal gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.",
+      heroPrimaryBtn: "Register your school",
       heroTrustText: "Trusted by 200+ schools across Ghana, Nigeria & Kenya",
       stats: [
         { number: "200+", label: "Schools registered" },
@@ -609,7 +609,8 @@ const getLandingContent = async () => {
       schools: ["Accra Academy", "Presec Legon", "Wesley Girls", "Achimota School", "Aburi Girls", "Holy Child"],
       testimonials: [
         {
-          quote: "We used to spend three weeks compiling report cards. With EduPortal, the whole process takes two days.",
+          id: 'testimonial-1',
+          quote: "We used to spend three weeks compiling report cards. With EduPortal, the whole process takes two days. Teachers submit scores, I approve, and parents get a PDF. That's it.",
           author: "Abena Owusu",
           role: "Headmistress, Holy Child School",
           initials: "AO",
@@ -618,6 +619,7 @@ const getLandingContent = async () => {
       ],
       plans: [
         {
+          id: 'plan-basic',
           name: "Basic",
           price: "Free",
           period: "/ term",
@@ -627,6 +629,7 @@ const getLandingContent = async () => {
           disabled: ["Analytics dashboard", "Email reports to parents"]
         },
         {
+          id: 'plan-standard',
           name: "Standard",
           price: "GHS 299",
           period: "/ term",
@@ -636,6 +639,7 @@ const getLandingContent = async () => {
           disabled: []
         },
         {
+          id: 'plan-premium',
           name: "Premium",
           price: "GHS 599",
           period: "/ term",
@@ -650,32 +654,44 @@ const getLandingContent = async () => {
   }
 
   // Parse sections into structured content
-  const content = {};
+  const content = {
+    heroHeadline: "Run your school.",
+    heroHeadlineHighlight: "Not paperwork.",
+    heroSubtitle: "EduPortal gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.",
+    heroPrimaryBtn: "Register your school",
+    heroTrustText: "Trusted by 200+ schools across Ghana, Nigeria & Kenya",
+    stats: [],
+    schools: ["Accra Academy", "Presec Legon", "Wesley Girls", "Achimota School", "Aburi Girls", "Holy Child"],
+    testimonials: [],
+    plans: [],
+    footerTagline: "A school management platform built specifically for schools in Ghana and across West Africa."
+  };
   
   homepage.sections.forEach(section => {
     const sectionData = getSectionContent(section);
     
     switch (section.type) {
       case 'HERO':
-        content.heroHeadline = sectionData.heading;
-        content.heroHeadlineHighlight = sectionData.highlight || 'Not paperwork.';
-        content.heroSubtitle = sectionData.subtitle;
-        content.heroTrustText = sectionData.trustBadge || 'Trusted by 200+ schools across Africa';
+        content.heroHeadline = sectionData.headline || content.heroHeadline;
+        content.heroHeadlineHighlight = sectionData.headlineHighlight || content.heroHeadlineHighlight;
+        content.heroSubtitle = sectionData.subtitle || content.heroSubtitle;
+        content.heroPrimaryBtn = sectionData.primaryBtn || content.heroPrimaryBtn;
+        content.heroTrustText = sectionData.trustText || content.heroTrustText;
         break;
       case 'STATS':
-        content.stats = sectionData.stats;
+        content.stats = sectionData.stats || content.stats;
         break;
       case 'TESTIMONIALS':
-        content.testimonials = sectionData.testimonials;
+        content.testimonials = sectionData.testimonials || content.testimonials;
         break;
       case 'PRICING':
-        content.plans = sectionData.plans;
+        content.plans = sectionData.plans || content.plans;
         break;
       case 'FAQ':
-        content.faqs = sectionData.faqs;
+        content.faqs = sectionData.faqs || [];
         break;
       case 'FOOTER':
-        content.footerTagline = sectionData.tagline;
+        content.footerTagline = sectionData.tagline || content.footerTagline;
         break;
       default:
         break;
@@ -683,6 +699,255 @@ const getLandingContent = async () => {
   });
 
   return content;
+};
+
+// ─────────────────────────────────────────────────────
+// SAVE LANDING PAGE CONTENT ──────────────────────────
+// ─────────────────────────────────────────────────────
+
+const saveLandingContent = async (contentData, userId = null) => {
+  // Find or create homepage
+  let homepage = await prisma.cmsPage.findFirst({
+    where: { isHomepage: true }
+  });
+
+  if (!homepage) {
+    homepage = await prisma.cmsPage.create({
+      data: {
+        title: 'Home',
+        slug: 'home',
+        isHomepage: true,
+        status: 'PUBLISHED',
+        publishedAt: new Date()
+      }
+    });
+  }
+
+  // Delete existing sections
+  await prisma.cmsSection.deleteMany({
+    where: { pageId: homepage.id }
+  });
+
+  // Create new sections
+  const sections = [];
+  let order = 0;
+
+  // Hero section
+  if (contentData.heroHeadline || contentData.heroSubtitle) {
+    sections.push({
+      pageId: homepage.id,
+      type: 'HERO',
+      title: 'Hero Section',
+      order: order++,
+      isActive: true,
+      content: {
+        headline: contentData.heroHeadline || 'Run your school.',
+        headlineHighlight: contentData.heroHeadlineHighlight || 'Not paperwork.',
+        subtitle: contentData.heroSubtitle || 'EduPortal gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.',
+        primaryBtn: contentData.heroPrimaryBtn || 'Register your school',
+        trustText: contentData.heroTrustText || 'Trusted by 200+ schools across Ghana, Nigeria & Kenya'
+      }
+    });
+  }
+
+  // Stats section
+  if (contentData.stats && contentData.stats.length > 0) {
+    sections.push({
+      pageId: homepage.id,
+      type: 'STATS',
+      title: 'Statistics',
+      order: order++,
+      isActive: true,
+      content: { stats: contentData.stats }
+    });
+  }
+
+  // Pricing section
+  if (contentData.plans && contentData.plans.length > 0) {
+    sections.push({
+      pageId: homepage.id,
+      type: 'PRICING',
+      title: 'Pricing Plans',
+      order: order++,
+      isActive: true,
+      content: { plans: contentData.plans }
+    });
+  }
+
+  // Testimonials section
+  if (contentData.testimonials && contentData.testimonials.length > 0) {
+    sections.push({
+      pageId: homepage.id,
+      type: 'TESTIMONIALS',
+      title: 'Testimonials',
+      order: order++,
+      isActive: true,
+      content: { testimonials: contentData.testimonials }
+    });
+  }
+
+  // Footer section
+  if (contentData.footerTagline) {
+    sections.push({
+      pageId: homepage.id,
+      type: 'FOOTER',
+      title: 'Footer',
+      order: order++,
+      isActive: true,
+      content: { tagline: contentData.footerTagline }
+    });
+  }
+
+  // Create all sections
+  if (sections.length > 0) {
+    await prisma.cmsSection.createMany({
+      data: sections
+    });
+  }
+
+  // Log this action
+  await prisma.auditLog.create({
+    data: {
+      userId: userId || null,
+      action: 'CONFIG_UPDATE',
+      resource: 'CMS_PAGE',
+      resourceId: homepage.id,
+      metadata: { 
+        action: 'save_landing_content',
+        sectionsCreated: sections.length
+      }
+    }
+  });
+
+  // Return updated homepage
+  return prisma.cmsPage.findUnique({
+    where: { id: homepage.id },
+    include: {
+      sections: {
+        orderBy: { order: 'asc' },
+        where: { isActive: true }
+      }
+    }
+  });
+};
+
+// ─────────────────────────────────────────────────────
+// UPDATE LANDING SECTION ─────────────────────────────
+// ─────────────────────────────────────────────────────
+
+const updateLandingSection = async (sectionType, contentData, userId = null) => {
+  // Find homepage
+  let homepage = await prisma.cmsPage.findFirst({
+    where: { isHomepage: true }
+  });
+
+  if (!homepage) {
+    homepage = await prisma.cmsPage.create({
+      data: {
+        title: 'Home',
+        slug: 'home',
+        isHomepage: true,
+        status: 'PUBLISHED',
+        publishedAt: new Date()
+      }
+    });
+  }
+
+  // Find or create section
+  let section = await prisma.cmsSection.findFirst({
+    where: {
+      pageId: homepage.id,
+      type: sectionType
+    }
+  });
+
+  if (section) {
+    // Update existing section
+    section = await prisma.cmsSection.update({
+      where: { id: section.id },
+      data: {
+        content: contentData,
+        updatedAt: new Date()
+      }
+    });
+  } else {
+    // Create new section
+    const maxOrder = await prisma.cmsSection.aggregate({
+      where: { pageId: homepage.id },
+      _max: { order: true }
+    });
+
+    section = await prisma.cmsSection.create({
+      data: {
+        pageId: homepage.id,
+        type: sectionType,
+        title: `${sectionType} Section`,
+        content: contentData,
+        order: (maxOrder._max.order || 0) + 1,
+        isActive: true
+      }
+    });
+  }
+
+  // Log this action
+  await prisma.auditLog.create({
+    data: {
+      userId: userId || null,
+      action: 'CONFIG_UPDATE',
+      resource: 'CMS_PAGE',
+      resourceId: homepage.id,
+      metadata: { 
+        action: 'update_landing_section',
+        sectionType: sectionType,
+        sectionId: section.id
+      }
+    }
+  });
+
+  return section;
+};
+
+// ─────────────────────────────────────────────────────
+// GET FOOTER ──────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+
+const getFooter = async () => {
+  const homepage = await prisma.cmsPage.findFirst({
+    where: { isHomepage: true },
+    include: {
+      sections: {
+        where: { type: 'FOOTER' },
+        orderBy: { order: 'asc' }
+      }
+    }
+  });
+
+  const defaultFooter = {
+    tagline: 'A school management platform built specifically for schools in Ghana and across West Africa.',
+    links: {
+      product: ['Features', 'Pricing', 'Changelog', 'Roadmap', 'Team'],
+      support: ['Documentation', 'Contact us', 'Status', 'Community'],
+      legal: ['Privacy policy', 'Terms of service', 'Data processing']
+    },
+    social: {
+      facebook: 'https://facebook.com/eduportal',
+      twitter: 'https://twitter.com/eduportal',
+      linkedin: 'https://linkedin.com/company/eduportal',
+      instagram: 'https://instagram.com/eduportal'
+    }
+  };
+
+  if (homepage && homepage.sections.length > 0) {
+    const section = homepage.sections[0];
+    if (section.content) {
+      return {
+        ...defaultFooter,
+        ...section.content
+      };
+    }
+  }
+
+  return defaultFooter;
 };
 
 // ─────────────────────────────────────────────────────
@@ -706,12 +971,17 @@ module.exports = {
   getSectionById,
   createSection,
   updateSection,
-  updateSectionContent, // ← NEW
+  updateSectionContent,
   deleteSection,
   reorderSections,
   
   // Landing Page
-  getLandingContent, // ← NEW
+  getLandingContent,
+  saveLandingContent,
+  updateLandingSection,
+  
+  // Footer
+  getFooter,
   
   // Helpers
   getSectionContent
