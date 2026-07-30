@@ -29,6 +29,9 @@ router.use("/admin/cms",     require("./admin/cms.routes"));  // Admin CMS route
 router.use("/legal",         require("./legal.routes"));       // Public legal routes
 router.use("/admin/legal",   require("./admin/legal.routes")); // Admin legal routes
 
+// ── Super Admin School Management Routes ─────────────────────
+router.use("/admin/schools", require("./admin/school.routes")); // Admin school routes
+
 // ── Test Routes ──────────────────────────────────────────────────
 router.use("/test",          require("./test.routes"));
 

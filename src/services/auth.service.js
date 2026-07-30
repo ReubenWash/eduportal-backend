@@ -21,7 +21,7 @@ const login = async (email, password) => {
       staff:          { select: { firstName: true, lastName: true, photoUrl: true } },
       studentProfile: { select: { firstName: true, lastName: true, photoUrl: true, studentNumber: true } },
       guardianProfile: { select: { firstName: true, lastName: true } },
-      school:          { select: { status: true } }
+      school:         { select: { id: true, status: true, name: true } }
     },
   });
 
@@ -31,6 +31,32 @@ const login = async (email, password) => {
   if (!isMatch) throw createError("Invalid email or password.", 401);
 
   if (!user.isVerified) throw createError("Please verify your email address before logging in.", 403);
+
+  // ─── Check school status if user belongs to a school ───
+  if (user.schoolId) {
+    // Get the latest school data (bypass cache)
+    const school = await prisma.school.findUnique({
+      where: { id: user.schoolId },
+      select: { status: true, name: true }
+    });
+
+    if (!school) {
+      throw createError("School not found. Please contact support.", 403);
+    }
+
+    // Check school status
+    if (school.status !== 'ACTIVE') {
+      const statusMessages = {
+        'PENDING': 'Your school registration is pending approval. Please wait for administrator verification.',
+        'SUSPENDED': 'Your school account has been suspended. Please contact support for assistance.',
+        'DEACTIVATED': 'Your school account has been deactivated. Please contact support for assistance.',
+        'REJECTED': 'Your school registration has been rejected. Please contact support for more information.'
+      };
+      
+      const message = statusMessages[school.status] || 'School is not verified. Please contact support.';
+      throw createError(message, 403);
+    }
+  }
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
 
@@ -52,7 +78,8 @@ const login = async (email, password) => {
       email:    user.studentProfile ? user.studentProfile.studentNumber : user.email,
       role:     user.role,
       schoolId: user.schoolId,
-      schoolStatus: user.school?.status,
+      schoolStatus: user.school?.status || 'UNKNOWN',
+      schoolName: user.school?.name || null,
       name:     profile ? `${profile.firstName} ${profile.lastName}` : user.email,
       photoUrl: profile?.photoUrl || null,
       mustChangePassword: user.mustChangePassword,
@@ -75,6 +102,20 @@ const refreshAccessToken = async (token) => {
     throw createError("Refresh token has expired. Please log in again.", 401);
   }
   if (!stored.user.isActive) throw createError("Account is deactivated.", 403);
+
+  // ─── Check school status on token refresh ───
+  if (stored.user.schoolId) {
+    const school = await prisma.school.findUnique({
+      where: { id: stored.user.schoolId },
+      select: { status: true }
+    });
+
+    if (!school || school.status !== 'ACTIVE') {
+      // Delete the refresh token
+      await prisma.refreshToken.delete({ where: { id: stored.id } });
+      throw createError("Your school account is not active. Please contact support.", 403);
+    }
+  }
 
   const newAccessToken  = signAccessToken(stored.user);
   await prisma.refreshToken.delete({ where: { id: stored.id } });
@@ -295,5 +336,5 @@ module.exports = {
   verifyEmail,
   getMe,
   changePassword,
-  resendVerificationCode, // ← Added
+  resendVerificationCode,
 };

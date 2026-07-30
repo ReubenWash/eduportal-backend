@@ -493,6 +493,25 @@ const updateSchoolStatus = async (schoolId, status) => {
     data: { status },
   });
 
+  // ─── FIX: Invalidate all sessions for users of this school ───
+  // Get all users for this school
+  const schoolUsers = await prisma.user.findMany({
+    where: { schoolId },
+    select: { id: true, email: true, role: true }
+  });
+
+  // Delete all refresh tokens for users of this school
+  // This forces them to re-authenticate and get fresh tokens
+  if (schoolUsers.length > 0) {
+    const userIds = schoolUsers.map(u => u.id);
+    await prisma.refreshToken.deleteMany({
+      where: {
+        userId: { in: userIds }
+      }
+    });
+    console.log(`[AUTH] Invalidated sessions for ${schoolUsers.length} users of school ${school.name}`);
+  }
+
   // Create audit log
   await prisma.auditLog.create({
     data: {
@@ -503,27 +522,20 @@ const updateSchoolStatus = async (schoolId, status) => {
       newData: { status: updatedSchool.status },
       metadata: { 
         schoolName: school.name,
-        changedBy: 'SUPER_ADMIN'
+        changedBy: 'SUPER_ADMIN',
+        affectedUsers: schoolUsers.length
       },
     },
   });
 
-  // Get all admin users for this school
-  const adminUsers = await prisma.user.findMany({
-    where: { 
-      schoolId, 
-      role: "SCHOOL_ADMIN" 
-    },
-    include: {
-      staff: true
-    }
-  });
+  // Get admin users for notifications
+  const adminUsers = schoolUsers.filter(u => u.role === "SCHOOL_ADMIN");
 
   // Create notifications for admin users
   const statusMessages = {
     'ACTIVE': {
       title: '✅ School Approved!',
-      message: `Your school "${school.name}" has been approved and is now ACTIVE. You can now log in and start managing your school.`,
+      message: `Your school "${school.name}" has been approved and is now ACTIVE. Please log in again to continue.`,
       type: 'success'
     },
     'REJECTED': {
@@ -578,6 +590,22 @@ const deleteSchool = async (schoolId, userId = null) => {
   });
 
   if (!school) throw createError("School not found", 404);
+
+  // Get all users for this school
+  const schoolUsers = await prisma.user.findMany({
+    where: { schoolId },
+    select: { id: true }
+  });
+
+  // Delete all refresh tokens for users of this school
+  if (schoolUsers.length > 0) {
+    const userIds = schoolUsers.map(u => u.id);
+    await prisma.refreshToken.deleteMany({
+      where: {
+        userId: { in: userIds }
+      }
+    });
+  }
 
   // Soft delete - set status to DEACTIVATED
   const updated = await prisma.school.update({
@@ -653,7 +681,7 @@ const restoreSchool = async (schoolId, userId = null) => {
         data: {
           userId: u.id,
           title: `School Account Restored`,
-          message: `Your school account for ${school.name} has been restored by the system administrator. You can now access your account again.`,
+          message: `Your school account for ${school.name} has been restored by the system administrator. Please log in again to continue.`,
           type: "success",
         }
       });
