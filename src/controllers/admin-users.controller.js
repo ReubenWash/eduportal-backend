@@ -31,6 +31,7 @@ const getAllUsers = async (req, res) => {
       schoolId: u.schoolId || null,
       school: u.school?.name || "System",
       status: u.isActive ? "ACTIVE" : "SUSPENDED",
+      isVerified: u.isVerified,
       joinedAt: u.createdAt
     };
   });
@@ -38,7 +39,46 @@ const getAllUsers = async (req, res) => {
   sendSuccess(res, 200, "Users retrieved", formatted);
 };
 
-// ─── FIXED: ADD USER - SUPPORT BOTH SCHOOL ID AND NAME ────────
+// ─── GET USER BY ID ────────────────────────────────────────────
+const getUserById = async (req, res) => {
+  const { id } = req.params;
+
+  const user = await prisma.user.findUnique({
+    where: { id },
+    include: {
+      school: { select: { id: true, name: true, status: true } },
+      staff: { select: { firstName: true, lastName: true, phone: true, photoUrl: true } },
+      studentProfile: { select: { firstName: true, lastName: true, studentNumber: true } },
+      guardianProfile: { select: { firstName: true, lastName: true, phone: true } }
+    }
+  });
+
+  if (!user) {
+    throw createError("User not found", 404);
+  }
+
+  let name = "Unknown";
+  if (user.role === "SUPER_ADMIN") name = "Super Admin";
+  else if (user.staff) name = `${user.staff.firstName} ${user.staff.lastName}`;
+  else if (user.studentProfile) name = `${user.studentProfile.firstName} ${user.studentProfile.lastName}`;
+  else if (user.guardianProfile) name = `${user.guardianProfile.firstName} ${user.guardianProfile.lastName}`;
+
+  return sendSuccess(res, 200, "User retrieved", {
+    id: user.id,
+    name,
+    email: user.email,
+    role: user.role,
+    schoolId: user.schoolId,
+    school: user.school,
+    isVerified: user.isVerified,
+    isActive: user.isActive,
+    mustChangePassword: user.mustChangePassword,
+    lastLoginAt: user.lastLoginAt,
+    createdAt: user.createdAt
+  });
+};
+
+// ─── ADD USER - SUPPORT BOTH SCHOOL ID AND NAME ──────────────
 const addUser = async (req, res) => {
   const { name, email, role, schoolName } = req.body;
   
@@ -134,10 +174,67 @@ const addUser = async (req, res) => {
     role: result.user.role,
     school: school.name,
     status: result.user.isActive ? "ACTIVE" : "SUSPENDED",
+    isVerified: result.user.isVerified,
     joinedAt: result.user.createdAt
   });
 };
 
+// ─── UPDATE USER ──────────────────────────────────────────────
+const updateUser = async (req, res) => {
+  const { id } = req.params;
+  const { name, email, role, isActive, schoolId } = req.body;
+
+  const user = await prisma.user.findUnique({
+    where: { id },
+    include: {
+      staff: true,
+      studentProfile: true,
+      guardianProfile: true
+    }
+  });
+
+  if (!user) {
+    throw createError("User not found", 404);
+  }
+
+  // Update user
+  const updatedUser = await prisma.user.update({
+    where: { id },
+    data: {
+      email: email || user.email,
+      role: role || user.role,
+      isActive: isActive !== undefined ? isActive : user.isActive,
+      schoolId: schoolId || user.schoolId
+    }
+  });
+
+  // Update profile based on role
+  if (name && user.staff) {
+    const [firstName, ...rest] = name.split(" ");
+    await prisma.staff.update({
+      where: { userId: id },
+      data: {
+        firstName: firstName || user.staff.firstName,
+        lastName: rest.join(" ") || user.staff.lastName
+      }
+    });
+  }
+
+  // Log the action
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user?.userId || null,
+      action: "UPDATE",
+      resource: "USER",
+      resourceId: id,
+      metadata: { changes: req.body }
+    }
+  });
+
+  return sendSuccess(res, 200, "User updated successfully", updatedUser);
+};
+
+// ─── UPDATE USER STATUS ──────────────────────────────────────
 const updateUserStatus = async (req, res) => {
   const { status } = req.body;
   if (!["ACTIVE", "SUSPENDED"].includes(status)) {
@@ -152,10 +249,21 @@ const updateUserStatus = async (req, res) => {
     data: { isActive: status === "ACTIVE" }
   });
 
+  // Log the action
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user?.userId || null,
+      action: "UPDATE",
+      resource: "USER",
+      resourceId: req.params.id,
+      metadata: { newStatus: status }
+    }
+  });
+
   sendSuccess(res, 200, "User status updated", user);
 };
 
-// ─── FIXED: DELETE USER WITH PROPER RESPONSE ──────────────────
+// ─── DELETE USER WITH PROPER RESPONSE ────────────────────────
 const deleteUser = async (req, res) => {
   const userId = req.params.id;
 
@@ -260,10 +368,17 @@ const deleteUser = async (req, res) => {
   }
 };
 
-// ─── Super Admin manually verify a user ───────────────────
+// ─── VERIFY A SINGLE USER ─────────────────────────────────────
 const verifyUser = async (req, res) => {
   const { userId } = req.params;
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  
+  const user = await prisma.user.findUnique({ 
+    where: { id: userId },
+    include: {
+      school: { select: { name: true } }
+    }
+  });
+  
   if (!user) {
     return res.status(404).json({
       success: false,
@@ -272,34 +387,149 @@ const verifyUser = async (req, res) => {
   }
 
   if (user.isVerified) {
-    return sendSuccess(res, 200, "User is already verified", { id: user.id, isVerified: true });
+    return sendSuccess(res, 200, "User is already verified", { 
+      id: user.id, 
+      isVerified: true,
+      email: user.email
+    });
   }
 
   const updated = await prisma.user.update({
     where: { id: userId },
-    data: { isVerified: true },
+    data: { 
+      isVerified: true,
+      verificationCode: null,
+      verificationCodeExpiresAt: null
+    },
   });
 
+  // Create notification
+  await prisma.notification.create({
+    data: {
+      userId: userId,
+      title: "✅ Email Verified",
+      message: `Your email (${user.email}) has been verified by the administrator. You can now log in.`,
+      type: "success"
+    }
+  });
+
+  // Log the action
   await prisma.auditLog.create({
     data: {
       userId: req.user?.userId || null,
       action: "UPDATE",
       resource: "USER",
       resourceId: userId,
-      metadata: { action: "manual_verify", email: user.email },
+      metadata: { 
+        action: "manual_verify", 
+        email: user.email,
+        school: user.school?.name
+      },
     },
   });
 
   return sendSuccess(res, 200, "User verified successfully", {
     id: updated.id,
+    email: updated.email,
     isVerified: updated.isVerified,
+  });
+};
+
+// ─── VERIFY ALL USERS IN A SCHOOL ─────────────────────────────
+const verifyAllUsersBySchool = async (req, res) => {
+  const { schoolId } = req.params;
+
+  // Check if school exists
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: { id: true, name: true }
+  });
+
+  if (!school) {
+    return res.status(404).json({
+      success: false,
+      message: "School not found"
+    });
+  }
+
+  // Get all unverified users in the school
+  const unverifiedUsers = await prisma.user.findMany({
+    where: {
+      schoolId: schoolId,
+      isVerified: false
+    },
+    select: {
+      id: true,
+      email: true,
+      role: true
+    }
+  });
+
+  if (unverifiedUsers.length === 0) {
+    return sendSuccess(res, 200, "All users in this school are already verified", {
+      school: school.name,
+      verifiedCount: 0,
+      totalUsers: await prisma.user.count({ where: { schoolId } })
+    });
+  }
+
+  // Update all unverified users
+  const updated = await prisma.user.updateMany({
+    where: {
+      schoolId: schoolId,
+      isVerified: false
+    },
+    data: {
+      isVerified: true,
+      verificationCode: null,
+      verificationCodeExpiresAt: null
+    }
+  });
+
+  // Create notifications for verified users
+  for (const user of unverifiedUsers) {
+    await prisma.notification.create({
+      data: {
+        userId: user.id,
+        title: "✅ Email Verified",
+        message: `Your email (${user.email}) has been verified by the administrator. You can now log in.`,
+        type: "success"
+      }
+    });
+  }
+
+  // Log the action
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user?.userId || null,
+      action: "UPDATE",
+      resource: "USER",
+      metadata: { 
+        action: "bulk_verify",
+        schoolId: schoolId,
+        schoolName: school.name,
+        usersVerified: updated.count
+      },
+    },
+  });
+
+  return sendSuccess(res, 200, `Verified ${updated.count} users in ${school.name}`, {
+    school: {
+      id: school.id,
+      name: school.name
+    },
+    verifiedCount: updated.count,
+    totalUsers: await prisma.user.count({ where: { schoolId } })
   });
 };
 
 module.exports = {
   getAllUsers,
+  getUserById,
   addUser,
+  updateUser,
   updateUserStatus,
   deleteUser,
   verifyUser,
+  verifyAllUsersBySchool,
 };
