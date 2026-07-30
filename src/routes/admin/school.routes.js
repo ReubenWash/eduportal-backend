@@ -7,6 +7,9 @@ const { isSuperAdmin } = require('../../middleware/roles');
 // All admin school routes require authentication and SUPER_ADMIN role
 router.use(authenticate, isSuperAdmin);
 
+// ── School Statistics ──
+router.get('/stats/overview', controller.getSchoolStats);
+
 // ── School Management ──
 router.get('/', controller.getAllSchools);
 router.get('/:id', controller.getSchoolById);
@@ -17,7 +20,8 @@ router.delete('/:id', controller.deleteSchool);
 router.post('/:id/restore', controller.restoreSchool);
 router.get('/:id/registration-pdf', controller.downloadRegistrationPdf);
 
-// ── School Statistics ──
-router.get('/stats/overview', controller.getSchoolStats);
+// ── Debug Endpoints (Remove in production) ──
+router.get('/debug/check/:id', controller.debugCheckSchool);
+router.get('/debug/status/:id', controller.debugGetStatus);
 
 module.exports = router;

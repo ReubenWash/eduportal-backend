@@ -471,6 +471,8 @@ const getAllSchools = async (query) => {
 
 // ── Super admin: update school status ─────────────────────────
 const updateSchoolStatus = async (schoolId, status) => {
+  console.log(`[updateSchoolStatus] Starting update for school ${schoolId} to status ${status}`);
+  
   // Validate status
   const validStatuses = ['PENDING', 'ACTIVE', 'SUSPENDED', 'DEACTIVATED', 'REJECTED'];
   if (!validStatuses.includes(status)) {
@@ -487,11 +489,18 @@ const updateSchoolStatus = async (schoolId, status) => {
     throw createError("School not found.", 404);
   }
 
-  // Update school status
+  console.log(`[updateSchoolStatus] Current school status: ${school.status}`);
+
+  // ─── Update school status ───
   const updatedSchool = await prisma.school.update({
     where: { id: schoolId },
-    data: { status },
+    data: { 
+      status: status,
+      updatedAt: new Date() // Explicitly update the updatedAt timestamp
+    },
   });
+
+  console.log(`[updateSchoolStatus] Updated school status: ${updatedSchool.status}`);
 
   // ─── FIX: Invalidate all sessions for users of this school ───
   // Get all users for this school
@@ -504,12 +513,12 @@ const updateSchoolStatus = async (schoolId, status) => {
   // This forces them to re-authenticate and get fresh tokens
   if (schoolUsers.length > 0) {
     const userIds = schoolUsers.map(u => u.id);
-    await prisma.refreshToken.deleteMany({
+    const deletedTokens = await prisma.refreshToken.deleteMany({
       where: {
         userId: { in: userIds }
       }
     });
-    console.log(`[AUTH] Invalidated sessions for ${schoolUsers.length} users of school ${school.name}`);
+    console.log(`[AUTH] Invalidated ${deletedTokens.count} sessions for ${schoolUsers.length} users of school ${school.name}`);
   }
 
   // Create audit log
@@ -579,6 +588,7 @@ const updateSchoolStatus = async (schoolId, status) => {
     }
   }
 
+  console.log(`[updateSchoolStatus] Successfully updated school ${school.name} to ${status}`);
   return updatedSchool;
 };
 
@@ -591,6 +601,8 @@ const deleteSchool = async (schoolId, userId = null) => {
 
   if (!school) throw createError("School not found", 404);
 
+  console.log(`[deleteSchool] Deactivating school: ${school.name}`);
+
   // Get all users for this school
   const schoolUsers = await prisma.user.findMany({
     where: { schoolId },
@@ -600,17 +612,21 @@ const deleteSchool = async (schoolId, userId = null) => {
   // Delete all refresh tokens for users of this school
   if (schoolUsers.length > 0) {
     const userIds = schoolUsers.map(u => u.id);
-    await prisma.refreshToken.deleteMany({
+    const deletedTokens = await prisma.refreshToken.deleteMany({
       where: {
         userId: { in: userIds }
       }
     });
+    console.log(`[AUTH] Invalidated ${deletedTokens.count} sessions for ${schoolUsers.length} users`);
   }
 
   // Soft delete - set status to DEACTIVATED
   const updated = await prisma.school.update({
     where: { id: schoolId },
-    data: { status: "DEACTIVATED" },
+    data: { 
+      status: "DEACTIVATED",
+      updatedAt: new Date()
+    },
   });
 
   // Notify school admins
@@ -664,10 +680,15 @@ const restoreSchool = async (schoolId, userId = null) => {
     throw createError("This school is not deactivated", 400);
   }
 
+  console.log(`[restoreSchool] Restoring school: ${school.name}`);
+
   // Restore - set status back to ACTIVE
   const updated = await prisma.school.update({
     where: { id: schoolId },
-    data: { status: "ACTIVE" },
+    data: { 
+      status: "ACTIVE",
+      updatedAt: new Date()
+    },
   });
 
   // Notify school admins

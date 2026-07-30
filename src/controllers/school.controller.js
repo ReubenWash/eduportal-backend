@@ -1,100 +1,321 @@
 const schoolService = require("../services/school.service");
 const { sendSuccess } = require("../utils/apiResponse");
+const { createError } = require("../middleware/errorHandler");
 const { uploadSchoolLogo } = require("../middleware/upload");
+const { prisma } = require("../config/db");
 
 // POST /api/v1/schools/register
 const register = async (req, res) => {
-  const school = await schoolService.registerSchool(req.body);
-  return sendSuccess(res, 201, "School registered. Please check your email to verify your account.", school);
+  try {
+    const school = await schoolService.registerSchool(req.body);
+    return sendSuccess(res, 201, "School registered. Please check your email to verify your account.", school);
+  } catch (error) {
+    console.error('Register school error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to register school'
+    });
+  }
 };
 
 // POST /api/v1/schools/manual (SUPER_ADMIN)
 const manualCreate = async (req, res) => {
-  const school = await schoolService.manualCreateSchool(req.body);
-  return sendSuccess(res, 201, "School created successfully.", school);
+  try {
+    const school = await schoolService.manualCreateSchool(req.body);
+    return sendSuccess(res, 201, "School created successfully.", school);
+  } catch (error) {
+    console.error('Manual create school error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create school'
+    });
+  }
 };
 
 // GET /api/v1/schools/me
 const getProfile = async (req, res) => {
-  const school = await schoolService.getSchoolProfile(req.user.schoolId);
-  return sendSuccess(res, 200, "School profile fetched.", school);
+  try {
+    const school = await schoolService.getSchoolProfile(req.user.schoolId);
+    return sendSuccess(res, 200, "School profile fetched.", school);
+  } catch (error) {
+    console.error('Get school profile error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch school profile'
+    });
+  }
 };
 
 // PATCH /api/v1/schools/me
 const updateProfile = async (req, res) => {
-  // Handle logo upload via middleware before this controller runs
-  const logoUrl = req.file?.path || null;
-  const school  = await schoolService.updateSchoolProfile(req.user.schoolId, req.body, logoUrl);
-  return sendSuccess(res, 200, "School profile updated.", school);
+  try {
+    // Handle logo upload via middleware before this controller runs
+    const logoUrl = req.file?.path || null;
+    const school = await schoolService.updateSchoolProfile(req.user.schoolId, req.body, logoUrl);
+    return sendSuccess(res, 200, "School profile updated.", school);
+  } catch (error) {
+    console.error('Update school profile error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update school profile'
+    });
+  }
 };
 
 // GET /api/v1/schools/me/dashboard
 const getDashboard = async (req, res) => {
-  const stats = await schoolService.getDashboardStats(req.user.schoolId, req.user);
-  return sendSuccess(res, 200, "Dashboard stats fetched.", stats);
+  try {
+    const stats = await schoolService.getDashboardStats(req.user.schoolId, req.user);
+    return sendSuccess(res, 200, "Dashboard stats fetched.", stats);
+  } catch (error) {
+    console.error('Get dashboard stats error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch dashboard stats'
+    });
+  }
 };
 
 // GET /api/v1/schools/admin/dashboard
 const getSuperAdminDashboard = async (req, res) => {
-  const dashboard = await schoolService.getSuperAdminDashboard();
-  return sendSuccess(res, 200, "Super admin dashboard fetched.", dashboard);
+  try {
+    const dashboard = await schoolService.getSuperAdminDashboard();
+    return sendSuccess(res, 200, "Super admin dashboard fetched.", dashboard);
+  } catch (error) {
+    console.error('Get super admin dashboard error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch super admin dashboard'
+    });
+  }
 };
 
 // GET /api/v1/schools/me/terms
 const getTerms = async (req, res) => {
-  const terms = await schoolService.getTerms(req.user.schoolId, req.query.academicYear);
-  return sendSuccess(res, 200, "Terms fetched.", terms);
+  try {
+    const terms = await schoolService.getTerms(req.user.schoolId, req.query.academicYear);
+    return sendSuccess(res, 200, "Terms fetched.", terms);
+  } catch (error) {
+    console.error('Get terms error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch terms'
+    });
+  }
 };
 
 // POST /api/v1/schools/me/terms
 const createTerm = async (req, res) => {
-  const term = await schoolService.createTerm(req.user.schoolId, req.body);
-  return sendSuccess(res, 201, "Term created.", term);
+  try {
+    const term = await schoolService.createTerm(req.user.schoolId, req.body);
+    return sendSuccess(res, 201, "Term created.", term);
+  } catch (error) {
+    console.error('Create term error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create term'
+    });
+  }
 };
 
 // PATCH /api/v1/schools/me/terms/:id
 const updateTerm = async (req, res) => {
-  const term = await schoolService.updateTerm(req.user.schoolId, req.params.id, req.body);
-  return sendSuccess(res, 200, "Term updated.", term);
+  try {
+    const term = await schoolService.updateTerm(req.user.schoolId, req.params.id, req.body);
+    return sendSuccess(res, 200, "Term updated.", term);
+  } catch (error) {
+    console.error('Update term error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update term'
+    });
+  }
 };
 
-// GET /api/v1/schools  (SUPER_ADMIN)
+// GET /api/v1/schools (SUPER_ADMIN)
 const getAllSchools = async (req, res) => {
-  const result = await schoolService.getAllSchools(req.query);
-  return sendSuccess(res, 200, "Schools fetched.", result);
+  try {
+    const result = await schoolService.getAllSchools(req.query);
+    return sendSuccess(res, 200, "Schools fetched.", result);
+  } catch (error) {
+    console.error('Get all schools error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch schools'
+    });
+  }
 };
 
-// PATCH /api/v1/schools/:id/status  (SUPER_ADMIN)
+// PATCH /api/v1/schools/:id/status (SUPER_ADMIN)
 const updateStatus = async (req, res) => {
-  const school = await schoolService.updateSchoolStatus(req.params.id, req.body.status);
-  return sendSuccess(res, 200, "School status updated.", school);
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      throw createError("Status is required", 400);
+    }
+
+    console.log(`[updateStatus] Updating school ${id} to ${status}`);
+    
+    const school = await schoolService.updateSchoolStatus(id, status);
+    
+    console.log(`[updateStatus] Successfully updated school to ${school.status}`);
+    
+    return sendSuccess(res, 200, `School status updated to ${status}`, school);
+  } catch (error) {
+    console.error('Update status error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update school status'
+    });
+  }
 };
 
-// PATCH /api/v1/schools/:id  (SUPER_ADMIN)
+// PATCH /api/v1/schools/:id (SUPER_ADMIN)
 const updateSchool = async (req, res) => {
-  const school = await schoolService.updateSchoolById(req.params.id, req.body);
-  return sendSuccess(res, 200, "School updated.", school);
+  try {
+    const school = await schoolService.updateSchoolById(req.params.id, req.body);
+    return sendSuccess(res, 200, "School updated.", school);
+  } catch (error) {
+    console.error('Update school error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update school'
+    });
+  }
 };
 
-// PATCH /api/v1/schools/:id/plan  (SUPER_ADMIN)
+// PATCH /api/v1/schools/:id/plan (SUPER_ADMIN)
 const updateSchoolPlan = async (req, res) => {
-  const school = await schoolService.updateSchoolPlan(req.params.id, req.body.plan);
-  return sendSuccess(res, 200, "School plan updated.", school);
+  try {
+    const { id } = req.params;
+    const { plan } = req.body;
+
+    if (!plan) {
+      throw createError("Plan is required", 400);
+    }
+
+    const school = await schoolService.updateSchoolPlan(id, plan);
+    return sendSuccess(res, 200, `School plan updated to ${plan}`, school);
+  } catch (error) {
+    console.error('Update school plan error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update school plan'
+    });
+  }
 };
 
-// DELETE /api/v1/schools/:id  (SUPER_ADMIN)
+// DELETE /api/v1/schools/:id (SUPER_ADMIN)
 const deleteSchool = async (req, res) => {
-  const result = await schoolService.deleteSchool(req.params.id, req.user.userId);
-  return sendSuccess(res, 200, "School deactivated successfully.", result);
+  try {
+    const { id } = req.params;
+    const result = await schoolService.deleteSchool(id, req.user.userId);
+    return sendSuccess(res, 200, "School deactivated successfully.", result);
+  } catch (error) {
+    console.error('Delete school error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to deactivate school'
+    });
+  }
 };
 
-// PATCH /api/v1/schools/:id/restore  (SUPER_ADMIN)
+// POST /api/v1/schools/:id/restore (SUPER_ADMIN)
 const restoreSchool = async (req, res) => {
-  const result = await schoolService.restoreSchool(req.params.id, req.user.userId);
-  return sendSuccess(res, 200, "School restored successfully.", result);
+  try {
+    const { id } = req.params;
+    const result = await schoolService.restoreSchool(id, req.user.userId);
+    return sendSuccess(res, 200, "School restored successfully.", result);
+  } catch (error) {
+    console.error('Restore school error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to restore school'
+    });
+  }
 };
 
-// GET /api/v1/schools/:id/registration-pdf  (SUPER_ADMIN)
+// GET /api/v1/schools/:id/registration-pdf (SUPER_ADMIN)
 const downloadRegistrationPdf = async (req, res) => {
   try {
     const { id } = req.params;
@@ -103,14 +324,165 @@ const downloadRegistrationPdf = async (req, res) => {
     // Set response headers for PDF download
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=${result.filename}`);
+    res.setHeader('Content-Length', result.pdfBuffer.length);
     
     // Send the PDF buffer
     res.send(result.pdfBuffer);
   } catch (error) {
     console.error('PDF Generation error:', error);
-    res.status(500).json({
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
       success: false,
       message: error.message || 'Failed to generate registration PDF'
+    });
+  }
+};
+
+// ── Debug Endpoints (Remove in production) ──
+
+// GET /api/v1/schools/debug/check/:id
+const debugCheckSchool = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const school = await prisma.school.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    if (!school) {
+      return res.status(404).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    console.log('🔍 School Debug Check:', {
+      id: school.id,
+      name: school.name,
+      status: school.status,
+      updatedAt: school.updatedAt
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: school,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Debug check error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// GET /api/v1/schools/debug/status/:id
+const debugGetStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const [school, users, refreshTokens] = await Promise.all([
+      prisma.school.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          updatedAt: true,
+          createdAt: true
+        }
+      }),
+      prisma.user.count({
+        where: { schoolId: id }
+      }),
+      prisma.refreshToken.count({
+        where: {
+          user: {
+            schoolId: id
+          }
+        }
+      })
+    ]);
+
+    if (!school) {
+      return res.status(404).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    const response = {
+      school: {
+        id: school.id,
+        name: school.name,
+        status: school.status,
+        createdAt: school.createdAt,
+        updatedAt: school.updatedAt
+      },
+      stats: {
+        totalUsers: users,
+        activeSessions: refreshTokens,
+        hasUsers: users > 0,
+        hasSessions: refreshTokens > 0
+      },
+      timestamp: new Date().toISOString()
+    };
+
+    console.log('🔍 Detailed Status Check:', response);
+
+    return res.status(200).json({
+      success: true,
+      data: response
+    });
+  } catch (error) {
+    console.error('Debug status error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// GET /api/v1/schools/debug/all
+const debugGetAllSchools = async (req, res) => {
+  try {
+    const schools = await prisma.school.findMany({
+      select: {
+        id: true,
+        name: true,
+        status: true,
+        updatedAt: true,
+        createdAt: true
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    console.log(`🔍 Found ${schools.length} schools in database`);
+
+    return res.status(200).json({
+      success: true,
+      data: schools,
+      count: schools.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Debug get all schools error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 };
@@ -131,5 +503,8 @@ module.exports = {
   updateSchoolPlan,
   deleteSchool,
   restoreSchool,
-  downloadRegistrationPdf, // ← ADDED
+  downloadRegistrationPdf,
+  debugCheckSchool,
+  debugGetStatus,
+  debugGetAllSchools,
 };
