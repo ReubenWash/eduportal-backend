@@ -1,5 +1,5 @@
-const express = require("express");
-const router  = express.Router();
+const express      = require("express");
+const router       = express.Router();
 const { apiLimiter } = require("../middleware/rateLimiter");
 
 // Apply general rate limit to all API routes
@@ -24,6 +24,10 @@ router.use("/documents",     require("./document.routes"));
 // ── CMS Routes (Public & Admin) ──────────────────────────────
 router.use("/cms",           require("./cms.routes"));        // Public CMS routes
 router.use("/admin/cms",     require("./admin/cms.routes"));  // Admin CMS routes
+
+// ── Legal Routes (Public & Admin) ────────────────────────────
+router.use("/legal",         require("./legal.routes"));       // Public legal routes
+router.use("/admin/legal",   require("./admin/legal.routes")); // Admin legal routes
 
 // ── Test Routes ──────────────────────────────────────────────────
 router.use("/test",          require("./test.routes"));
