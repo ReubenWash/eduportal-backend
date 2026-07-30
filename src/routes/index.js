@@ -29,26 +29,53 @@ router.use("/admin/cms",     require("./admin/cms.routes"));  // Admin CMS route
 router.use("/legal",         require("./legal.routes"));       // Public legal routes
 router.use("/admin/legal",   require("./admin/legal.routes")); // Admin legal routes
 
-// ── Super Admin School Management Routes ─────────────────────
-router.use("/admin/schools", require("./admin/school.routes")); // Admin school routes
+// ── Super Admin Routes ────────────────────────────────────────
+// School Management
+router.use("/admin/schools", require("./admin/school.routes"));
+
+// Security
+router.use("/admin/security", require("./admin/security.routes"));
+
+// Audit
+router.use("/admin/audit",   require("./admin/audit.routes"));
+
+// Subscriptions & Billing
+router.use("/admin/subscriptions", require("./admin/subscription.routes"));
+
+// Support
+router.use("/admin/support", require("./admin/support.routes"));
+
+// Integrations
+router.use("/admin/integrations", require("./admin/integration.routes"));
+
+// System
+router.use("/admin/system",  require("./admin/system.routes"));
+
+// Config
+router.use("/admin/config",  require("./config.routes"));
+
+// Users
+router.use("/admin/users",   require("./admin-users.routes"));
+
+// Emails
+router.use("/admin/emails",  require("./admin/email.routes"));
+
+// Notifications
+router.use("/admin/notifications", require("./admin/notification.routes"));
+
+// Broadcasts
+router.use("/admin/broadcasts", require("./admin/broadcast.routes"));
+
+// Roles
+router.use("/admin/roles",   require("./admin/role.routes"));
+
+// Analytics
+router.use("/admin/analytics", require("./admin/analytics.routes"));
+
+// Media
+router.use("/admin/media",   require("./admin/media.routes"));
 
 // ── Test Routes ──────────────────────────────────────────────────
 router.use("/test",          require("./test.routes"));
-
-// ── Super Admin Routes (All Phases) ──────────────────────────
-router.use("/admin/audit",        require("./admin/audit.routes"));
-router.use("/admin/security",     require("./admin/security.routes"));
-router.use("/admin/subscriptions", require("./admin/subscription.routes"));
-router.use("/admin/support",      require("./admin/support.routes"));
-router.use("/admin/integrations", require("./admin/integration.routes"));
-router.use("/admin/system",       require("./admin/system.routes"));
-router.use("/admin/config",       require("./config.routes"));
-router.use("/admin/users",        require("./admin-users.routes"));
-router.use("/admin/emails",       require("./admin/email.routes"));
-router.use("/admin/notifications", require("./admin/notification.routes"));
-router.use("/admin/broadcasts",   require("./admin/broadcast.routes"));
-router.use("/admin/roles",        require("./admin/role.routes"));
-router.use("/admin/analytics",    require("./admin/analytics.routes"));
-router.use("/admin/media",        require("./admin/media.routes"));
 
 module.exports = router;
