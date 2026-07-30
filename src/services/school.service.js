@@ -471,34 +471,97 @@ const getAllSchools = async (query) => {
 
 // ── Super admin: update school status ─────────────────────────
 const updateSchoolStatus = async (schoolId, status) => {
-  const updatedSchool = await prisma.school.update({
-    where: { id: schoolId },
-    data:  { status },
-  });
-
-  const adminUsers = await prisma.user.findMany({
-    where: { schoolId, role: "SCHOOL_ADMIN" }
-  });
-
-  for (const u of adminUsers) {
-    await prisma.notification.create({
-      data: {
-        userId:  u.id,
-        title:   `School Status: ${status}`,
-        message: status === "ACTIVE"
-          ? `Your school account for ${updatedSchool.name} has been approved! You now have full access.`
-          : status === "REJECTED"
-          ? `Your registration for ${updatedSchool.name} has been rejected.`
-          : `Your school account status has been updated to ${status}.`,
-        type:    status === "ACTIVE" ? "success" : status === "REJECTED" ? "error" : "warning",
-      }
-    });
+  // Validate status
+  const validStatuses = ['PENDING', 'ACTIVE', 'SUSPENDED', 'DEACTIVATED', 'REJECTED'];
+  if (!validStatuses.includes(status)) {
+    throw createError(`Invalid status. Must be one of: ${validStatuses.join(', ')}`, 400);
   }
 
-  const recipientEmails = new Set([updatedSchool.email, ...adminUsers.map(u => u.email)]);
+  // Check if school exists
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: { id: true, name: true, status: true, email: true }
+  });
+
+  if (!school) {
+    throw createError("School not found.", 404);
+  }
+
+  // Update school status
+  const updatedSchool = await prisma.school.update({
+    where: { id: schoolId },
+    data: { status },
+  });
+
+  // Create audit log
+  await prisma.auditLog.create({
+    data: {
+      action: "UPDATE",
+      resource: "SCHOOL",
+      resourceId: schoolId,
+      oldData: { status: school.status },
+      newData: { status: updatedSchool.status },
+      metadata: { 
+        schoolName: school.name,
+        changedBy: 'SUPER_ADMIN'
+      },
+    },
+  });
+
+  // Get all admin users for this school
+  const adminUsers = await prisma.user.findMany({
+    where: { 
+      schoolId, 
+      role: "SCHOOL_ADMIN" 
+    },
+    include: {
+      staff: true
+    }
+  });
+
+  // Create notifications for admin users
+  const statusMessages = {
+    'ACTIVE': {
+      title: '✅ School Approved!',
+      message: `Your school "${school.name}" has been approved and is now ACTIVE. You can now log in and start managing your school.`,
+      type: 'success'
+    },
+    'REJECTED': {
+      title: '❌ School Registration Rejected',
+      message: `Your school "${school.name}" registration has been rejected. Please contact support for more information.`,
+      type: 'error'
+    },
+    'SUSPENDED': {
+      title: '⚠️ School Suspended',
+      message: `Your school "${school.name}" has been suspended. Please contact support for more information.`,
+      type: 'warning'
+    },
+    'DEACTIVATED': {
+      title: '⚠️ School Deactivated',
+      message: `Your school "${school.name}" has been deactivated. Please contact support for more information.`,
+      type: 'warning'
+    }
+  };
+
+  for (const user of adminUsers) {
+    const message = statusMessages[status];
+    if (message) {
+      await prisma.notification.create({
+        data: {
+          userId: user.id,
+          title: message.title,
+          message: message.message,
+          type: message.type,
+        }
+      });
+    }
+  }
+
+  // Send email notifications
+  const recipientEmails = new Set([school.email, ...adminUsers.map(u => u.email)]);
   for (const recipientEmail of recipientEmails) {
     try {
-      await sendSchoolStatusEmail(recipientEmail, updatedSchool.name, status);
+      await sendSchoolStatusEmail(recipientEmail, school.name, status);
     } catch (emailError) {
       console.warn('⚠️ School status email failed (non-blocking):', emailError.message);
     }
