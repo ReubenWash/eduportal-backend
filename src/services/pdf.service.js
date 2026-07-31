@@ -201,12 +201,12 @@ const buildReportHTML = (data) => {
   td.remark { font-style: italic; color: #475569; }
 
   /* Grade colours */
-  .grade-1 { color: #166534; font-weight: bold; }
-  .grade-2 { color: #1e40af; font-weight: bold; }
-  .grade-3 { color: #854d0e; font-weight: bold; }
-  .grade-4 { color: #92400e; font-weight: bold; }
-  .grade-5 { color: #b45309; font-weight: bold; }
-  .grade-6 { color: #991b1b; font-weight: bold; }
+  .grade-A { color: #166534; font-weight: bold; }
+  .grade-B { color: #1e40af; font-weight: bold; }
+  .grade-C { color: #854d0e; font-weight: bold; }
+  .grade-D { color: #92400e; font-weight: bold; }
+  .grade-E { color: #b45309; font-weight: bold; }
+  .grade-F { color: #991b1b; font-weight: bold; }
 
   /* ── BOTTOM PANELS ── */
   .panels {
@@ -559,7 +559,7 @@ function getOrdinalSuffix(n) {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Launch Puppeteer with correct options for both local and Koyeb
+ * Launch Puppeteer with correct options for both local and Render
  */
 const launchBrowser = async () => {
   const options = {
@@ -573,12 +573,32 @@ const launchBrowser = async () => {
       "--no-zygote",
       "--single-process",
       "--disable-gpu",
+      "--disable-webgl",
+      "--disable-software-rasterizer",
+      "--disable-gl-drawing-for-tests",
     ],
   };
 
   // Use custom Chromium path if set (required on some Linux servers)
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
     options.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  // For Render, try to find the Chrome executable in common locations
+  if (process.env.RENDER) {
+    const chromePaths = [
+      '/opt/render/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/chromium',
+      '/usr/bin/google-chrome',
+    ];
+    
+    for (const chromePath of chromePaths) {
+      if (fs.existsSync(chromePath)) {
+        options.executablePath = chromePath;
+        break;
+      }
+    }
   }
 
   return puppeteer.launch(options);
@@ -593,7 +613,13 @@ const renderPDF = async (html) => {
     browser = await launchBrowser();
     const page = await browser.newPage();
 
-    await page.setContent(html, { waitUntil: "networkidle0", timeout: 30000 });
+    await page.setContent(html, { 
+      waitUntil: "networkidle0", 
+      timeout: 60000 
+    });
+
+    // Ensure content is rendered
+    await page.waitForSelector('.student-section', { timeout: 10000 });
 
     const pdfBuffer = await page.pdf({
       format:             "A4",
@@ -603,6 +629,9 @@ const renderPDF = async (html) => {
     });
 
     return pdfBuffer;
+  } catch (error) {
+    logger.error("PDF rendering error:", error);
+    throw error;
   } finally {
     if (browser) await browser.close();
   }
@@ -753,6 +782,7 @@ const generateBulkPDFs = async (reportIds) => {
  */
 const generateClassZIP = async (schoolId, classId, termId) => {
   const archiver = require("archiver");
+  const axios = require("axios");
 
   // Get all released reports for this class and term
   const enrollments = await prisma.enrollment.findMany({
@@ -795,16 +825,40 @@ const generateClassZIP = async (schoolId, classId, termId) => {
     archive.on("error", reject);
     archive.pipe(output);
 
+    let addedFiles = 0;
     for (const report of reports) {
       if (!report.pdfUrl) continue;
-      // We'll fetch the PDF from Cloudinary URL and add to archive
-      // This is handled by appending the URL reference — in production
-      // you'd stream the PDF bytes directly into the archive
+      
+      // Download PDF from Cloudinary URL and add to archive
       const filename = `${report.student.studentNumber}_${report.student.lastName}_${report.student.firstName}.pdf`;
-      archive.append(Buffer.from(`PDF URL: ${report.pdfUrl}`), { name: filename });
+      
+      // Use axios to stream the PDF from Cloudinary
+      axios({
+        method: 'get',
+        url: report.pdfUrl,
+        responseType: 'stream',
+      })
+      .then(response => {
+        archive.append(response.data, { name: filename });
+        addedFiles++;
+        if (addedFiles === reports.filter(r => r.pdfUrl).length) {
+          archive.finalize();
+        }
+      })
+      .catch(error => {
+        logger.error(`Failed to download PDF for ${report.student.studentNumber}:`, error.message);
+        archive.append(Buffer.from(`Error: PDF not available for ${report.student.studentNumber}`), { name: filename });
+        addedFiles++;
+        if (addedFiles === reports.filter(r => r.pdfUrl).length) {
+          archive.finalize();
+        }
+      });
     }
 
-    archive.finalize();
+    // If no PDFs were added, finalize the archive
+    if (reports.filter(r => r.pdfUrl).length === 0) {
+      archive.finalize();
+    }
   });
 
   return zipPath;

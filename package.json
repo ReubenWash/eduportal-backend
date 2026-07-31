@@ -7,6 +7,7 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "postinstall": "node scripts/postinstall.js",
+    "puppeteer:install": "npx puppeteer browsers install chrome",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
@@ -51,5 +52,9 @@
     "eslint": "^9.5.0",
     "nodemon": "^3.1.14",
     "prisma": "^5.14.0"
+  },
+  "puppeteer": {
+    "cache_directory": "/opt/render/.cache/puppeteer",
+    "skip_download": false
   }
 }
