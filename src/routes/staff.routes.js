@@ -33,23 +33,28 @@ router.get("/:id",  isSchoolStaff, controller.getOne);
 //   controller.create
 // );
 
-router.patch("/:id", isSchoolAdmin, uploadStaffPhoto, controller.update);
-router.delete("/:id", isSchoolAdmin, controller.deactivate);
+// ─── TEMPORARILY COMMENTED OUT - Fix controller.update ───
+// router.patch("/:id", isSchoolAdmin, uploadStaffPhoto, controller.update);
+
+// ─── TEMPORARILY COMMENTED OUT - Fix controller.deactivate ───
+// router.delete("/:id", isSchoolAdmin, controller.deactivate);
 
 // ─── Subject Assignment ───
-router.post("/:id/assign",
-  isSchoolAdmin,
-  [body("subjectId").notEmpty(), body("classId").notEmpty()],
-  validate,
-  controller.assignSubject
-);
+// ─── TEMPORARILY COMMENTED OUT - Fix controller.assignSubject ───
+// router.post("/:id/assign",
+//   isSchoolAdmin,
+//   [body("subjectId").notEmpty(), body("classId").notEmpty()],
+//   validate,
+//   controller.assignSubject
+// );
 
-router.delete("/:id/assign",
-  isSchoolAdmin,
-  [body("subjectId").notEmpty(), body("classId").notEmpty()],
-  validate,
-  controller.removeAssignment
-);
+// ─── TEMPORARILY COMMENTED OUT - Fix controller.removeAssignment ───
+// router.delete("/:id/assign",
+//   isSchoolAdmin,
+//   [body("subjectId").notEmpty(), body("classId").notEmpty()],
+//   validate,
+//   controller.removeAssignment
+// );
 
 // ─── Super Admin routes ───
 router.get("/admin/all", isSuperAdmin, controller.getAllStaff);
