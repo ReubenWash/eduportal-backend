@@ -17,7 +17,7 @@ const uploadPhoto = async (req, res) => {
     }
 
     // Upload to Cloudinary
-    const result = await cloudinary.uploader.upload(req.file.path, {
+    const result = await cloudinary.uploader.upload(req.file.path || req.file.buffer, {
       folder: 'students',
       transformation: [
         { width: 400, height: 400, crop: 'fill' }
@@ -43,38 +43,4 @@ const uploadPhoto = async (req, res) => {
   }
 };
 
-// POST /api/v1/upload/document
-const uploadDocument = async (req, res) => {
-  try {
-    if (!req.file) {
-      throw createError('No file uploaded', 400);
-    }
-
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: 'documents',
-      resource_type: 'auto'
-    });
-
-    return sendSuccess(res, 200, 'Document uploaded successfully', {
-      url: result.secure_url,
-      publicId: result.public_id
-    });
-  } catch (error) {
-    console.error('Upload error:', error);
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({
-        success: false,
-        message: error.message
-      });
-    }
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to upload document'
-    });
-  }
-};
-
-module.exports = {
-  uploadPhoto,
-  uploadDocument
-};
+module.exports = { uploadPhoto };
