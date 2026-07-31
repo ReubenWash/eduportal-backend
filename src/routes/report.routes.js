@@ -14,20 +14,27 @@ const {
 
 router.use(authenticate, tenantScope);
 
-// Class ZIP — must be before /:id to avoid route conflict
+// ─── Stats ───
+router.get("/stats", isSchoolAdmin, controller.getStats);
+
+// ─── Class ZIP — must be before /:id to avoid route conflict ───
 router.get("/class/:classId/term/:termId", isSchoolAdmin, controller.downloadClassZIP);
 
-// Bulk operations — also before /:id
-router.post("/generate",     isSchoolAdmin, generateReportValidator, validate, controller.generate);
-router.post("/release-bulk", isSchoolAdmin, bulkReleaseValidator,    validate, controller.bulkRelease);
-router.post("/email",        isSchoolAdmin, emailReportValidator,    validate, controller.emailReports);
+// ─── Student Reports ───
+router.get("/student/:studentId", isSchoolStaff, controller.getStudentReports);
 
-// List / filter
+// ─── Bulk operations — also before /:id ───
+router.post("/generate", isSchoolAdmin, generateReportValidator, validate, controller.generate);
+router.post("/generate-batch", isSchoolAdmin, controller.generateBatch);
+router.post("/release-bulk", isSchoolAdmin, bulkReleaseValidator, validate, controller.bulkRelease);
+router.post("/email", isSchoolAdmin, emailReportValidator, validate, controller.emailReports);
+
+// ─── List / filter ───
 router.get("/", isSchoolStaff, controller.list);
 
-// Single report operations
-router.get("/:id",            isSchoolStaff, controller.getOne);
-router.get("/:id/preview",    isSchoolStaff, controller.preview);
+// ─── Single report operations ───
+router.get("/:id", isSchoolStaff, controller.getOne);
+router.get("/:id/preview", isSchoolStaff, controller.preview);
 
 router.patch("/:id/remarks",
   isSchoolStaff,
@@ -36,8 +43,8 @@ router.patch("/:id/remarks",
   controller.updateRemarks
 );
 
-router.post("/:id/approve",        isSchoolAdmin, controller.approve);
-router.post("/:id/release",        isSchoolAdmin, controller.release);
+router.post("/:id/approve", isSchoolAdmin, controller.approve);
+router.post("/:id/release", isSchoolAdmin, controller.release);
 router.post("/:id/regenerate-pdf", isSchoolAdmin, controller.regeneratePDF);
 
 module.exports = router;
