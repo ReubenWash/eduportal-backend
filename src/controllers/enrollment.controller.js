@@ -5,29 +5,49 @@ const { createError } = require("../middleware/errorHandler");
 const enroll = async (req, res) => {
   try {
     const { studentId, classId, termId } = req.body;
-    
+    const { schoolId } = req.user;
+
+    console.log('[Enrollment Controller] Enroll request:', { 
+      studentId, 
+      classId, 
+      termId, 
+      schoolId,
+      body: req.body 
+    });
+
     // Validate input
     if (!studentId || !classId || !termId) {
-      throw createError("studentId, classId, and termId are required", 400);
+      console.log('[Enrollment Controller] Missing required fields');
+      return res.status(400).json({
+        success: false,
+        message: "studentId, classId, and termId are required",
+        errors: [
+          { param: 'studentId', msg: 'Student ID is required' },
+          { param: 'classId', msg: 'Class ID is required' },
+          { param: 'termId', msg: 'Term ID is required' }
+        ]
+      });
     }
 
-    console.log('[Enrollment] Enrolling student:', { studentId, classId, termId, schoolId: req.user.schoolId });
-
-    const enrollment = await enrollmentService.enroll(req.user.schoolId, {
+    const enrollment = await enrollmentService.enroll(schoolId, {
       studentId,
       classId,
       termId
     });
 
+    console.log('[Enrollment Controller] Enrollment successful:', enrollment.id);
+
     return sendSuccess(res, 201, "Student enrolled successfully.", enrollment);
   } catch (error) {
-    console.error('[Enrollment] Enroll error:', error);
+    console.error('[Enrollment Controller] Enroll error:', error);
+    
     if (error.statusCode) {
       return res.status(error.statusCode).json({
         success: false,
         message: error.message
       });
     }
+    
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to enroll student'
@@ -38,37 +58,48 @@ const enroll = async (req, res) => {
 const bulkEnroll = async (req, res) => {
   try {
     const { studentIds, classId, termId } = req.body;
+    const { schoolId } = req.user;
+
+    console.log('[Enrollment Controller] Bulk enroll request:', { 
+      count: studentIds?.length, 
+      classId, 
+      termId, 
+      schoolId 
+    });
 
     if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
-      throw createError("studentIds array is required", 400);
+      return res.status(400).json({
+        success: false,
+        message: "studentIds array is required"
+      });
     }
 
     if (!classId || !termId) {
-      throw createError("classId and termId are required", 400);
+      return res.status(400).json({
+        success: false,
+        message: "classId and termId are required"
+      });
     }
 
-    console.log('[Enrollment] Bulk enrolling students:', { 
-      count: studentIds.length, 
-      classId, 
-      termId, 
-      schoolId: req.user.schoolId 
-    });
-
-    const result = await enrollmentService.bulkEnroll(req.user.schoolId, {
+    const result = await enrollmentService.bulkEnroll(schoolId, {
       studentIds,
       classId,
       termId
     });
 
+    console.log('[Enrollment Controller] Bulk enroll complete:', result);
+
     return sendSuccess(res, 200, "Bulk enrollment complete.", result);
   } catch (error) {
-    console.error('[Enrollment] Bulk enroll error:', error);
+    console.error('[Enrollment Controller] Bulk enroll error:', error);
+    
     if (error.statusCode) {
       return res.status(error.statusCode).json({
         success: false,
         message: error.message
       });
     }
+    
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to bulk enroll students'
@@ -78,10 +109,13 @@ const bulkEnroll = async (req, res) => {
 
 const list = async (req, res) => {
   try {
-    const enrollments = await enrollmentService.getEnrollments(req.user.schoolId, req.query);
+    const { schoolId } = req.user;
+    console.log('[Enrollment Controller] List request:', { schoolId, query: req.query });
+
+    const enrollments = await enrollmentService.getEnrollments(schoolId, req.query);
     return sendSuccess(res, 200, "Enrollments fetched.", enrollments);
   } catch (error) {
-    console.error('[Enrollment] List error:', error);
+    console.error('[Enrollment Controller] List error:', error);
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch enrollments'
@@ -92,23 +126,29 @@ const list = async (req, res) => {
 const remove = async (req, res) => {
   try {
     const { id } = req.params;
-    
+    const { schoolId } = req.user;
+
+    console.log('[Enrollment Controller] Remove request:', { id, schoolId });
+
     if (!id) {
-      throw createError("Enrollment ID is required", 400);
+      return res.status(400).json({
+        success: false,
+        message: "Enrollment ID is required"
+      });
     }
 
-    console.log('[Enrollment] Removing enrollment:', { id, schoolId: req.user.schoolId });
-
-    await enrollmentService.removeEnrollment(req.user.schoolId, id);
+    await enrollmentService.removeEnrollment(schoolId, id);
     return sendSuccess(res, 200, "Enrollment removed successfully.");
   } catch (error) {
-    console.error('[Enrollment] Remove error:', error);
+    console.error('[Enrollment Controller] Remove error:', error);
+    
     if (error.statusCode) {
       return res.status(error.statusCode).json({
         success: false,
         message: error.message
       });
     }
+    
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to remove enrollment'

@@ -2,8 +2,11 @@ const { prisma }      = require("../config/db");
 const { createError } = require("../middleware/errorHandler");
 
 const enroll = async (schoolId, { studentId, classId, termId }) => {
+  console.log('[Enrollment Service] enroll called:', { schoolId, studentId, classId, termId });
+
   // Validate required fields
   if (!studentId || !classId || !termId) {
+    console.log('[Enrollment Service] Missing required fields');
     throw createError("studentId, classId, and termId are required", 400);
   }
 
@@ -13,6 +16,7 @@ const enroll = async (schoolId, { studentId, classId, termId }) => {
   });
   
   if (!s) {
+    console.log('[Enrollment Service] Student not found:', studentId);
     throw createError("Student not found in this school", 404);
   }
 
@@ -22,6 +26,7 @@ const enroll = async (schoolId, { studentId, classId, termId }) => {
   });
   
   if (!c) {
+    console.log('[Enrollment Service] Class not found:', classId);
     throw createError("Class not found in this school", 404);
   }
 
@@ -31,28 +36,38 @@ const enroll = async (schoolId, { studentId, classId, termId }) => {
   });
   
   if (!t) {
+    console.log('[Enrollment Service] Term not found:', termId);
     throw createError("Term not found in this school", 404);
   }
 
-  // Create or update enrollment using upsert
-  const enrollment = await prisma.enrollment.upsert({
-    where: { 
-      studentId_termId: { studentId, termId } 
-    },
-    create: { 
-      studentId, 
-      classId, 
-      termId 
-    },
-    update: { 
-      classId 
-    },
+  // Check if enrollment already exists
+  const existing = await prisma.enrollment.findFirst({
+    where: {
+      studentId,
+      termId
+    }
   });
+
+  let enrollment;
+  if (existing) {
+    console.log('[Enrollment Service] Updating existing enrollment:', existing.id);
+    enrollment = await prisma.enrollment.update({
+      where: { id: existing.id },
+      data: { classId }
+    });
+  } else {
+    console.log('[Enrollment Service] Creating new enrollment');
+    enrollment = await prisma.enrollment.create({
+      data: { studentId, classId, termId }
+    });
+  }
 
   return enrollment;
 };
 
 const bulkEnroll = async (schoolId, { studentIds, classId, termId }) => {
+  console.log('[Enrollment Service] bulkEnroll called:', { schoolId, count: studentIds?.length, classId, termId });
+
   if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
     throw createError("studentIds array is required", 400);
   }
@@ -78,12 +93,14 @@ const bulkEnroll = async (schoolId, { studentIds, classId, termId }) => {
 };
 
 const getEnrollments = async (schoolId, query) => {
+  console.log('[Enrollment Service] getEnrollments called:', { schoolId, query });
+
   const where = { student: { schoolId } };
   if (query.classId)   where.classId   = query.classId;
   if (query.termId)    where.termId    = query.termId;
   if (query.studentId) where.studentId = query.studentId;
   
-  return prisma.enrollment.findMany({
+  const enrollments = await prisma.enrollment.findMany({
     where,
     include: {
       student: { 
@@ -112,9 +129,14 @@ const getEnrollments = async (schoolId, query) => {
     },
     orderBy: { createdAt: 'desc' },
   });
+
+  console.log('[Enrollment Service] Found enrollments:', enrollments.length);
+  return enrollments;
 };
 
 const removeEnrollment = async (schoolId, enrollmentId) => {
+  console.log('[Enrollment Service] removeEnrollment called:', { schoolId, enrollmentId });
+
   const e = await prisma.enrollment.findFirst({ 
     where: { 
       id: enrollmentId, 
@@ -126,7 +148,6 @@ const removeEnrollment = async (schoolId, enrollmentId) => {
     throw createError("Enrollment not found.", 404);
   }
   
-  // Check if scores exist for this student in this term
   const hasScores = await prisma.score.count({ 
     where: { 
       studentId: e.studentId, 
