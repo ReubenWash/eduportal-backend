@@ -4,6 +4,7 @@ const { generateStudentNumber } = require("../utils/generateId");
 const { createError } = require("../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 
+// ─── Admit Student ───
 const admitStudent = async (schoolId, data, photoUrl) => {
   const studentNumber = await generateStudentNumber(schoolId);
 
@@ -23,37 +24,43 @@ const admitStudent = async (schoolId, data, photoUrl) => {
       },
     });
 
+    // ─── FIX: Remove classId and guardianId from student data ───
+    const { classId, guardianId, ...studentData } = data;
+
     const newStudent = await tx.student.create({
       data: {
         schoolId,
-        userId:       user.id,
+        userId: user.id,
         studentNumber,
-        firstName:    data.firstName,
-        lastName:     data.lastName,
-        otherNames:   data.otherNames || null,
-        gender:       data.gender,
-        dateOfBirth:  new Date(data.dateOfBirth),
-        photoUrl:     photoUrl || null,
+        firstName: studentData.firstName,
+        lastName: studentData.lastName,
+        otherNames: studentData.otherNames || null,
+        gender: studentData.gender,
+        dateOfBirth: new Date(studentData.dateOfBirth),
+        photoUrl: photoUrl || null,
         admissionDate: new Date(),
+        status: studentData.status || 'ACTIVE',
       },
     });
 
     // Link primary guardian
-    if (data.guardianId) {
+    if (guardianId) {
       await tx.studentGuardian.create({
-        data: { studentId: newStudent.id, guardianId: data.guardianId, isPrimary: true },
+        data: { studentId: newStudent.id, guardianId: guardianId, isPrimary: true },
       });
     }
 
     // Enroll in class for active term
-    const activeTerm = await tx.term.findFirst({
-      where: { schoolId, status: "ACTIVE" },
-    });
-
-    if (activeTerm && data.classId) {
-      await tx.enrollment.create({
-        data: { studentId: newStudent.id, classId: data.classId, termId: activeTerm.id },
+    if (classId) {
+      const activeTerm = await tx.term.findFirst({
+        where: { schoolId, status: "ACTIVE" },
       });
+
+      if (activeTerm) {
+        await tx.enrollment.create({
+          data: { studentId: newStudent.id, classId: classId, termId: activeTerm.id },
+        });
+      }
     }
 
     return newStudent;
@@ -62,6 +69,7 @@ const admitStudent = async (schoolId, data, photoUrl) => {
   return student;
 };
 
+// ─── Get Students ───
 const getStudents = async (schoolId, query) => {
   const { skip, take, page, limit } = getPagination(query);
 
@@ -104,6 +112,7 @@ const getStudents = async (schoolId, query) => {
   return paginatedResponse(students, total, page, limit);
 };
 
+// ─── Get Student By ID ───
 const getStudentById = async (schoolId, studentId) => {
   const student = await prisma.student.findFirst({
     where: { id: studentId, schoolId },
@@ -131,23 +140,88 @@ const getStudentById = async (schoolId, studentId) => {
   return student;
 };
 
+// ─── Update Student ───
 const updateStudent = async (schoolId, studentId, data, photoUrl) => {
-  const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
+  const student = await prisma.student.findFirst({ 
+    where: { id: studentId, schoolId } 
+  });
   if (!student) throw createError("Student not found.", 404);
 
-  const updateData = { ...data };
-  if (data.dateOfBirth) updateData.dateOfBirth = new Date(data.dateOfBirth);
-  if (photoUrl) updateData.photoUrl = photoUrl;
+  // ─── FIX: Separate classId from student data ───
+  const { classId, ...studentData } = data;
+  
+  // Prepare update data for student
+  const updateData = { ...studentData };
+  if (updateData.dateOfBirth) {
+    updateData.dateOfBirth = new Date(updateData.dateOfBirth);
+  }
+  if (photoUrl) {
+    updateData.photoUrl = photoUrl;
+  }
 
-  return prisma.student.update({ where: { id: studentId }, data: updateData });
+  // Update the student
+  const updatedStudent = await prisma.student.update({
+    where: { id: studentId },
+    data: updateData,
+  });
+
+  // If classId is provided, update the enrollment
+  if (classId) {
+    const activeTerm = await prisma.term.findFirst({
+      where: { schoolId, status: "ACTIVE" },
+    });
+
+    if (activeTerm) {
+      const existingEnrollment = await prisma.enrollment.findFirst({
+        where: {
+          studentId: studentId,
+          termId: activeTerm.id,
+        },
+      });
+
+      if (existingEnrollment) {
+        await prisma.enrollment.update({
+          where: { id: existingEnrollment.id },
+          data: { classId },
+        });
+      } else {
+        await prisma.enrollment.create({
+          data: {
+            studentId: studentId,
+            classId: classId,
+            termId: activeTerm.id,
+          },
+        });
+      }
+    }
+  }
+
+  return prisma.student.findFirst({
+    where: { id: studentId, schoolId },
+    include: {
+      guardians: {
+        include: { guardian: true },
+      },
+      enrollments: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: {
+          class: { select: { level: true, section: true } },
+          term: { select: { academicYear: true, termNumber: true } },
+        },
+      },
+    },
+  });
 };
 
+// ─── Withdraw Student ───
 const withdrawStudent = async (schoolId, studentId) => {
   const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
   if (!student) throw createError("Student not found.", 404);
   return prisma.student.update({ where: { id: studentId }, data: { status: "WITHDRAWN" } });
 };
 
+// ─── Transfer Student ───
 const transferStudent = async (schoolId, studentId, destinationSchool) => {
   const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
   if (!student) throw createError("Student not found.", 404);
@@ -157,6 +231,7 @@ const transferStudent = async (schoolId, studentId, destinationSchool) => {
   });
 };
 
+// ─── Get Student Reports ───
 const getStudentReports = async (schoolId, studentId) => {
   const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
   if (!student) throw createError("Student not found.", 404);
@@ -170,6 +245,7 @@ const getStudentReports = async (schoolId, studentId) => {
   });
 };
 
+// ─── Get Student Transcript ───
 const getStudentTranscript = async (schoolId, studentId) => {
   const student = await prisma.student.findFirst({
     where: { id: studentId, schoolId },
@@ -205,6 +281,7 @@ const getStudentTranscript = async (schoolId, studentId) => {
   return { student, transcript: transcript.filter((t) => t.scores.length > 0) };
 };
 
+// ─── Bulk Import Students ───
 const bulkImportStudents = async (schoolId, records) => {
   let created = 0, skipped = 0;
   const failed = [];
@@ -237,9 +314,6 @@ const bulkImportStudentsFromExcelRows = async (schoolId, rows) => {
     guardianId: r.guardianId ? String(r.guardianId).trim() : null,
   }));
 
-  // Reuses bulkImportStudents() already defined in this file, which in
-  // turn calls admitStudent() — so each imported row still gets a proper
-  // User + login account created exactly like a single manual admission.
   return bulkImportStudents(schoolId, records);
 };
 
@@ -276,7 +350,7 @@ const getStudentsForExport = async (schoolId, query) => {
   }));
 };
 
-// ─── NEW: Get all students for Super Admin ───
+// ─── Get all students for Super Admin ───
 const getAllStudents = async (query = {}) => {
   try {
     const where = {};
@@ -420,7 +494,7 @@ module.exports = {
   bulkImportStudents,
   bulkImportStudentsFromExcelRows,
   getStudentsForExport,
-  getAllStudents,      // ← NEW
-  getStudentByUserId,  // ← NEW
-  getStudentGrades,    // ← NEW
+  getAllStudents,
+  getStudentByUserId,
+  getStudentGrades,
 };
