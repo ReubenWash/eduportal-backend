@@ -555,12 +555,9 @@ function getOrdinalSuffix(n) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// CORE PDF GENERATION
+// ─── UPDATED: Launch Browser with Render Chrome Support ───
 // ─────────────────────────────────────────────────────────────
 
-/**
- * Launch Puppeteer with correct options for both local and Render
- */
 const launchBrowser = async () => {
   const options = {
     headless: "new",
@@ -579,28 +576,49 @@ const launchBrowser = async () => {
     ],
   };
 
-  // Use custom Chromium path if set (required on some Linux servers)
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    options.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-  }
-
-  // For Render, try to find the Chrome executable in common locations
+  // For Render, try to find Chrome
   if (process.env.RENDER) {
     const chromePaths = [
-      '/opt/render/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome',
+      '/usr/bin/google-chrome',
       '/usr/bin/chromium-browser',
       '/usr/bin/chromium',
-      '/usr/bin/google-chrome',
+      '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
     ];
     
-    for (const chromePath of chromePaths) {
-      if (fs.existsSync(chromePath)) {
-        options.executablePath = chromePath;
-        break;
+    for (const path of chromePaths) {
+      try {
+        if (fs.existsSync(path)) {
+          options.executablePath = path;
+          console.log(`[Puppeteer] ✅ Using Chrome at: ${path}`);
+          break;
+        }
+      } catch (err) {
+        // Continue to next path
+      }
+    }
+
+    // If no Chrome found, try with wildcard
+    if (!options.executablePath) {
+      try {
+        const glob = require('glob');
+        const matches = glob.sync('/opt/render/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome');
+        if (matches.length > 0) {
+          options.executablePath = matches[0];
+          console.log(`[Puppeteer] ✅ Using Chrome from cache: ${options.executablePath}`);
+        }
+      } catch (err) {
+        console.warn('[Puppeteer] No Chrome found in cache');
       }
     }
   }
 
+  // Use custom Chromium path if set in environment
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    options.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+    console.log(`[Puppeteer] Using Chrome from env: ${options.executablePath}`);
+  }
+
+  console.log('[Puppeteer] Launching browser...');
   return puppeteer.launch(options);
 };
 
@@ -610,6 +628,7 @@ const launchBrowser = async () => {
 const renderPDF = async (html) => {
   let browser;
   try {
+    console.log('[Puppeteer] Starting PDF generation...');
     browser = await launchBrowser();
     const page = await browser.newPage();
 
@@ -628,9 +647,10 @@ const renderPDF = async (html) => {
       displayHeaderFooter: false,
     });
 
+    console.log('[Puppeteer] PDF generated successfully');
     return pdfBuffer;
   } catch (error) {
-    logger.error("PDF rendering error:", error);
+    console.error('[Puppeteer] PDF rendering error:', error);
     throw error;
   } finally {
     if (browser) await browser.close();
@@ -826,13 +846,17 @@ const generateClassZIP = async (schoolId, classId, termId) => {
     archive.pipe(output);
 
     let addedFiles = 0;
-    for (const report of reports) {
-      if (!report.pdfUrl) continue;
-      
-      // Download PDF from Cloudinary URL and add to archive
+    const pdfReports = reports.filter(r => r.pdfUrl);
+    
+    if (pdfReports.length === 0) {
+      archive.finalize();
+      return;
+    }
+
+    for (const report of pdfReports) {
       const filename = `${report.student.studentNumber}_${report.student.lastName}_${report.student.firstName}.pdf`;
       
-      // Use axios to stream the PDF from Cloudinary
+      // Download PDF from Cloudinary URL and add to archive
       axios({
         method: 'get',
         url: report.pdfUrl,
@@ -841,23 +865,18 @@ const generateClassZIP = async (schoolId, classId, termId) => {
       .then(response => {
         archive.append(response.data, { name: filename });
         addedFiles++;
-        if (addedFiles === reports.filter(r => r.pdfUrl).length) {
+        if (addedFiles === pdfReports.length) {
           archive.finalize();
         }
       })
       .catch(error => {
-        logger.error(`Failed to download PDF for ${report.student.studentNumber}:`, error.message);
+        console.error(`Failed to download PDF for ${report.student.studentNumber}:`, error.message);
         archive.append(Buffer.from(`Error: PDF not available for ${report.student.studentNumber}`), { name: filename });
         addedFiles++;
-        if (addedFiles === reports.filter(r => r.pdfUrl).length) {
+        if (addedFiles === pdfReports.length) {
           archive.finalize();
         }
       });
-    }
-
-    // If no PDFs were added, finalize the archive
-    if (reports.filter(r => r.pdfUrl).length === 0) {
-      archive.finalize();
     }
   });
 
