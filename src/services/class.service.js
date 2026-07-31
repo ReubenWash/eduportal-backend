@@ -592,6 +592,9 @@ const getLandingContent = async () => {
     }
   });
 
+  // Default schools list
+  const defaultSchools = ["Accra Academy", "Presec Legon", "Wesley Girls", "Achimota School", "Aburi Girls", "Holy Child"];
+
   if (!homepage) {
     // Return default content if no homepage exists
     return {
@@ -606,7 +609,7 @@ const getLandingContent = async () => {
         { number: "1.2M", label: "Reports generated" },
         { number: "99.9%", label: "Platform uptime" }
       ],
-      schools: ["Accra Academy", "Presec Legon", "Wesley Girls", "Achimota School", "Aburi Girls", "Holy Child"],
+      schools: defaultSchools,
       testimonials: [
         {
           id: 'testimonial-1',
@@ -661,7 +664,7 @@ const getLandingContent = async () => {
     heroPrimaryBtn: "Register your school",
     heroTrustText: "Trusted by 200+ schools across Ghana, Nigeria & Kenya",
     stats: [],
-    schools: ["Accra Academy", "Presec Legon", "Wesley Girls", "Achimota School", "Aburi Girls", "Holy Child"],
+    schools: defaultSchools,
     testimonials: [],
     plans: [],
     footerTagline: "A school management platform built specifically for schools in Ghana and across West Africa."
@@ -697,6 +700,11 @@ const getLandingContent = async () => {
         break;
     }
   });
+
+  // Ensure schools is always included
+  if (!content.schools || content.schools.length === 0) {
+    content.schools = defaultSchools;
+  }
 
   return content;
 };
