@@ -3,8 +3,8 @@ const router     = express.Router();
 const controller = require("../controllers/auth.controller");
 const validate   = require("../middleware/validate");
 const authenticate = require("../middleware/auth");
-const { isSchoolAdmin, isSuperAdmin } = require("../middleware/roles");
 const { authLimiter } = require("../middleware/rateLimiter");
+const { body } = require("express-validator"); // ← ADD THIS IMPORT
 const {
   loginValidator,
   forgotPasswordValidator,
