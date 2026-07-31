@@ -24,8 +24,15 @@ const admitStudent = async (schoolId, data, photoUrl) => {
       },
     });
 
-    // ─── FIX: Remove classId and guardianId from student data ───
-    const { classId, guardianId, ...studentData } = data;
+    // ─── FIX: Remove guardian fields from student data ───
+    const { 
+      classId, 
+      guardianName, 
+      guardianPhone, 
+      guardianEmail, 
+      relationship,
+      ...studentData 
+    } = data;
 
     const newStudent = await tx.student.create({
       data: {
@@ -43,10 +50,28 @@ const admitStudent = async (schoolId, data, photoUrl) => {
       },
     });
 
-    // Link primary guardian
-    if (guardianId) {
+    // ─── Create Guardian if provided ───
+    if (guardianName) {
+      const [firstName, ...lastNameParts] = guardianName.split(' ');
+      const lastName = lastNameParts.join(' ') || '';
+      
+      const guardian = await tx.guardian.create({
+        data: {
+          schoolId: schoolId,
+          firstName: firstName,
+          lastName: lastName,
+          phone: guardianPhone || null,
+          email: guardianEmail || null,
+          relationship: relationship || 'Guardian',
+        }
+      });
+
       await tx.studentGuardian.create({
-        data: { studentId: newStudent.id, guardianId: guardianId, isPrimary: true },
+        data: { 
+          studentId: newStudent.id, 
+          guardianId: guardian.id, 
+          isPrimary: true 
+        },
       });
     }
 
@@ -147,10 +172,17 @@ const updateStudent = async (schoolId, studentId, data, photoUrl) => {
   });
   if (!student) throw createError("Student not found.", 404);
 
-  // ─── FIX: Separate classId from student data ───
-  const { classId, ...studentData } = data;
+  // ─── FIX: Remove guardian fields from student data ───
+  const { 
+    classId, 
+    guardianName, 
+    guardianPhone, 
+    guardianEmail, 
+    relationship,
+    ...studentData 
+  } = data;
   
-  // Prepare update data for student
+  // Prepare update data for student (only fields that exist in Student model)
   const updateData = { ...studentData };
   if (updateData.dateOfBirth) {
     updateData.dateOfBirth = new Date(updateData.dateOfBirth);
@@ -165,7 +197,61 @@ const updateStudent = async (schoolId, studentId, data, photoUrl) => {
     data: updateData,
   });
 
-  // If classId is provided, update the enrollment
+  // ─── Update Guardian Information if provided ───
+  if (guardianName || guardianPhone || guardianEmail || relationship) {
+    // Find existing guardian for this student
+    const existingGuardianLink = await prisma.studentGuardian.findFirst({
+      where: { 
+        studentId: studentId,
+        isPrimary: true
+      },
+      include: { guardian: true }
+    });
+
+    if (existingGuardianLink) {
+      // Update existing guardian
+      const guardianData = {};
+      if (guardianName) {
+        const [firstName, ...lastNameParts] = guardianName.split(' ');
+        guardianData.firstName = firstName;
+        guardianData.lastName = lastNameParts.join(' ') || '';
+      }
+      if (guardianPhone) guardianData.phone = guardianPhone;
+      if (guardianEmail) guardianData.email = guardianEmail;
+      if (relationship) guardianData.relationship = relationship;
+
+      await prisma.guardian.update({
+        where: { id: existingGuardianLink.guardianId },
+        data: guardianData,
+      });
+    } else if (guardianName) {
+      // Create new guardian
+      const [firstName, ...lastNameParts] = guardianName.split(' ');
+      const lastName = lastNameParts.join(' ') || '';
+      
+      const newGuardian = await prisma.guardian.create({
+        data: {
+          schoolId: schoolId,
+          firstName: firstName,
+          lastName: lastName,
+          phone: guardianPhone || null,
+          email: guardianEmail || null,
+          relationship: relationship || 'Guardian',
+        }
+      });
+
+      // Link guardian to student
+      await prisma.studentGuardian.create({
+        data: {
+          studentId: studentId,
+          guardianId: newGuardian.id,
+          isPrimary: true,
+        }
+      });
+    }
+  }
+
+  // ─── Update Class Enrollment if classId provided ───
   if (classId) {
     const activeTerm = await prisma.term.findFirst({
       where: { schoolId, status: "ACTIVE" },
@@ -196,6 +282,7 @@ const updateStudent = async (schoolId, studentId, data, photoUrl) => {
     }
   }
 
+  // Return the updated student with relations
   return prisma.student.findFirst({
     where: { id: studentId, schoolId },
     include: {
@@ -311,7 +398,10 @@ const bulkImportStudentsFromExcelRows = async (schoolId, rows) => {
     gender: String(r.gender || "").trim().toUpperCase(),
     dateOfBirth: r.dateOfBirth instanceof Date ? r.dateOfBirth.toISOString() : String(r.dateOfBirth || ""),
     classId: r.classId ? String(r.classId).trim() : null,
-    guardianId: r.guardianId ? String(r.guardianId).trim() : null,
+    guardianName: r.guardianName ? String(r.guardianName).trim() : null,
+    guardianPhone: r.guardianPhone ? String(r.guardianPhone).trim() : null,
+    guardianEmail: r.guardianEmail ? String(r.guardianEmail).trim() : null,
+    relationship: r.relationship ? String(r.relationship).trim() : null,
   }));
 
   return bulkImportStudents(schoolId, records);
