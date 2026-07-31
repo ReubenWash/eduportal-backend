@@ -7,9 +7,13 @@ const { uploadMediaAsset } = require('../../middleware/upload');
 
 router.use(authenticate, isSuperAdmin);
 
-// ─── Media Management ───
+// ─── Media Management (GET only) ───
 router.get('/', controller.list);
-router.post('/upload', uploadMediaAsset, controller.upload);
-router.post('/delete', controller.remove);
+
+// ─── TEMPORARILY COMMENTED OUT - Fix controller.upload ───
+// router.post('/upload', uploadMediaAsset, controller.upload);
+
+// ─── TEMPORARILY COMMENTED OUT - Fix controller.remove ───
+// router.post('/delete', controller.remove);
 
 module.exports = router;
