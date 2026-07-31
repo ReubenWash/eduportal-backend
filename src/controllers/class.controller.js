@@ -1,4 +1,4 @@
-const classService    = require("../services/class.service");
+const classService = require("../services/class.service");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
 
@@ -75,38 +75,6 @@ const list = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to fetch classes',
-      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
-    });
-  }
-};
-
-// ─── Get All Classes (For SUPER_ADMIN) ───
-const getAllForSuperAdmin = async (req, res) => {
-  try {
-    if (!req.user) {
-      throw createError("User not authenticated", 401);
-    }
-    
-    // Check if user is SUPER_ADMIN
-    if (req.user.role !== 'SUPER_ADMIN') {
-      throw createError("Access denied. Super Admin only.", 403);
-    }
-    
-    console.log('[ClassController] SUPER_ADMIN fetching all classes');
-    
-    const r = await classService.getAllClasses(req.query);
-    return sendSuccess(res, 200, "All classes fetched successfully.", r);
-  } catch (error) {
-    console.error('[ClassController] getAllForSuperAdmin error:', error);
-    if (error.statusCode) {
-      return res.status(error.statusCode).json({
-        success: false,
-        message: error.message
-      });
-    }
-    return res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to fetch all classes',
       error: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
@@ -273,7 +241,6 @@ const removeSubject = async (req, res) => {
 module.exports = { 
   create, 
   list, 
-  getAllForSuperAdmin,
   getOne, 
   update, 
   remove, 
