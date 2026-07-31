@@ -18,7 +18,7 @@ router.get("/me/grades",         controller.getMyGrades);
 
 // Excel — also before "/:id"
 router.get("/export",        isSchoolStaff, controller.exportExcel);
-router.post("/import-excel", isSchoolAdmin, uploadExcel, controller.importExcel);
+// router.post("/import-excel", isSchoolAdmin, uploadExcel, controller.importExcel); // Commented out
 
 router.get("/",                isSchoolStaff, controller.list);
 router.get("/:id",             isSchoolStaff, controller.getOne);
@@ -57,7 +57,7 @@ router.get("/:id/transcript",  isSchoolStaff, controller.getTranscript);
 //   controller.transfer
 // );
 
-// ─── Super Admin routes ───
-router.get("/admin/all", isSuperAdmin, controller.getAllStudents);
+// ─── TEMPORARILY COMMENTED OUT - Fix controller.getAllStudents ───
+// router.get("/admin/all", isSuperAdmin, controller.getAllStudents);
 
 module.exports = router;
