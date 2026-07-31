@@ -291,6 +291,20 @@ const approveReport = async (schoolId, reportId) => {
       throw createError("Only DRAFT reports can be approved.", 400);
     }
 
+    // Check if PDF exists, if not generate it
+    let pdfUrl = report.pdfUrl;
+    if (!pdfUrl) {
+      logger.info(`No PDF found for report ${reportId}, generating...`);
+      const { generateReportPDF } = require("./pdf.service");
+      pdfUrl = await generateReportPDF(reportId);
+      
+      // Update report with PDF URL
+      await prisma.report.update({
+        where: { id: reportId },
+        data: { pdfUrl }
+      });
+    }
+
     return prisma.report.update({ 
       where: { id: reportId }, 
       data: { status: "APPROVED" } 
@@ -308,20 +322,59 @@ const releaseReport = async (schoolId, reportId) => {
       where: { id: reportId, student: { schoolId } },
     });
     if (!report) throw createError("Report not found.", 404);
-    if (report.status !== "APPROVED") {
-      throw createError("Only APPROVED reports can be released.", 400);
+    
+    // Check if report is already released
+    if (report.status === "RELEASED") {
+      throw createError("Report is already released.", 400);
     }
-    if (!report.pdfUrl) {
-      throw createError("PDF has not been generated yet. Please regenerate.", 400);
+    
+    // Check if report is APPROVED
+    if (report.status !== "APPROVED") {
+      throw createError(`Only APPROVED reports can be released. Current status: ${report.status}`, 400);
+    }
+    
+    // Check if PDF exists, if not generate it
+    let pdfUrl = report.pdfUrl;
+    if (!pdfUrl) {
+      logger.info(`No PDF found for report ${reportId}, generating...`);
+      const { generateReportPDF } = require("./pdf.service");
+      pdfUrl = await generateReportPDF(reportId);
+      
+      // Update report with PDF URL
+      await prisma.report.update({
+        where: { id: reportId },
+        data: { pdfUrl }
+      });
     }
 
-    return prisma.report.update({
+    // Release the report
+    const released = await prisma.report.update({
       where: { id: reportId },
       data: { 
         status: "RELEASED", 
         releasedAt: new Date() 
       },
     });
+
+    // Update class positions
+    try {
+      // Get the student's class for this term
+      const enrollment = await prisma.enrollment.findFirst({
+        where: {
+          studentId: report.studentId,
+          termId: report.termId
+        },
+        select: { classId: true }
+      });
+
+      if (enrollment) {
+        await updateClassPositions(schoolId, enrollment.classId, report.termId);
+      }
+    } catch (posError) {
+      logger.error("Failed to update class positions:", posError.message);
+    }
+
+    return released;
   } catch (error) {
     logger.error("Release report error:", error);
     throw error;
@@ -350,10 +403,50 @@ const bulkReleaseReports = async (schoolId, classId, termId) => {
       throw createError("No students found in this class for this term.", 404);
     }
 
-    const result = await prisma.report.updateMany({
+    // Get all reports for these students
+    const reports = await prisma.report.findMany({
       where: {
         studentId: { in: studentIds },
         termId,
+      },
+      select: {
+        id: true,
+        studentId: true,
+        pdfUrl: true,
+        status: true
+      }
+    });
+
+    // Separate reports that need PDF generation
+    const reportsWithoutPdf = reports.filter(r => !r.pdfUrl);
+    const approvedReports = reports.filter(r => r.status === 'APPROVED' && r.pdfUrl);
+    const reportIdsToRelease = approvedReports.map(r => r.id);
+
+    // Generate PDFs for reports that don't have them
+    if (reportsWithoutPdf.length > 0) {
+      logger.info(`Generating PDFs for ${reportsWithoutPdf.length} reports...`);
+      const { generateBulkPDFs } = require("./pdf.service");
+      const pdfResults = await generateBulkPDFs(reportsWithoutPdf.map(r => r.id));
+      
+      // Update reports with PDF URLs and approve them
+      for (const result of pdfResults.results || []) {
+        if (result.success) {
+          await prisma.report.update({
+            where: { id: result.reportId },
+            data: { 
+              pdfUrl: result.pdfUrl,
+              status: 'APPROVED'
+            }
+          });
+          reportIdsToRelease.push(result.reportId);
+        }
+      }
+    }
+
+    // Release all approved reports
+    const result = await prisma.report.updateMany({
+      where: {
+        id: { in: reportIdsToRelease },
         status: "APPROVED",
         pdfUrl: { not: null },
       },
@@ -567,6 +660,77 @@ const getReportStats = async (schoolId, termId) => {
   }
 };
 
+// ─── Send single report email ──────────────────────────────────
+const sendSingleReportEmail = async (schoolId, reportId) => {
+  try {
+    const report = await prisma.report.findFirst({
+      where: { id: reportId, student: { schoolId } },
+      include: {
+        student: true,
+        term: true
+      }
+    });
+
+    if (!report) {
+      throw createError("Report not found", 404);
+    }
+
+    if (report.status !== 'RELEASED') {
+      throw createError("Report must be RELEASED before emailing", 400);
+    }
+
+    if (!report.pdfUrl) {
+      throw createError("PDF has not been generated for this report", 400);
+    }
+
+    const school = await prisma.school.findUnique({
+      where: { id: schoolId },
+      select: { name: true }
+    });
+
+    const guardians = await prisma.studentGuardian.findMany({
+      where: { studentId: report.studentId },
+      include: {
+        guardian: {
+          select: { firstName: true, email: true }
+        }
+      }
+    });
+
+    const emailableGuardians = guardians.filter(g => g.guardian.email);
+    if (emailableGuardians.length === 0) {
+      throw createError("No guardian email found for this student", 404);
+    }
+
+    const termLabel = `${report.term.academicYear} ${report.term.termNumber.replace("TERM", "Term ")}`;
+    const studentName = `${report.student.firstName} ${report.student.lastName}`;
+
+    let sent = 0, failed = 0;
+
+    for (const g of emailableGuardians) {
+      try {
+        await sendReportCardEmail(
+          g.guardian.email,
+          g.guardian.firstName,
+          studentName,
+          termLabel,
+          report.pdfUrl,
+          school?.name || 'School'
+        );
+        sent++;
+      } catch (err) {
+        logger.error(`Failed to email report: ${err.message}`);
+        failed++;
+      }
+    }
+
+    return { sent, failed, total: emailableGuardians.length };
+  } catch (error) {
+    logger.error("Send single report email error:", error);
+    throw error;
+  }
+};
+
 module.exports = {
   generateReports,
   getReports,
@@ -580,4 +744,5 @@ module.exports = {
   emailReports,
   getClassZIPPath,
   getReportStats,
+  sendSingleReportEmail,
 };
