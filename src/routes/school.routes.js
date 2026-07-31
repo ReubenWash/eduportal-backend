@@ -32,15 +32,15 @@ router.get("/me", isSchoolStaff, controller.getProfile);
 router.get("/me/dashboard", isSchoolStaff, controller.getDashboard);
 router.get("/me/terms", isSchoolStaff, controller.getTerms);
 
-// ─── TEMPORARILY COMMENTED OUT - Fix controller.updateProfile ───
-// router.patch(
-//   "/me",
-//   isSchoolAdmin,
-//   uploadSchoolLogo,
-//   updateSchoolValidator,
-//   validate,
-//   controller.updateProfile
-// );
+// ✅ UNCOMMENTED - School Admin can update profile
+router.patch(
+  "/me",
+  isSchoolAdmin,  // Now allows both SCHOOL_ADMIN and SUPER_ADMIN
+  uploadSchoolLogo,
+  updateSchoolValidator,
+  validate,
+  controller.updateProfile
+);
 
 // ─── Term Management ───
 router.post(
@@ -51,14 +51,14 @@ router.post(
   controller.createTerm
 );
 
-// ─── TEMPORARILY COMMENTED OUT - Fix controller.updateTerm ───
-// router.patch(
-//   "/me/terms/:id",
-//   isSchoolAdmin,
-//   updateTermValidator,
-//   validate,
-//   controller.updateTerm
-// );
+// ✅ UNCOMMENTED - School Admin can update terms
+router.patch(
+  "/me/terms/:id",
+  isSchoolAdmin,
+  updateTermValidator,
+  validate,
+  controller.updateTerm
+);
 
 // ── Super Admin only ───────────────────────────────────────────
 router.get("/", isSuperAdmin, controller.getAllSchools);

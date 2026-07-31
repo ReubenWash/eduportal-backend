@@ -1,3 +1,4 @@
+// backend/src/middleware/roles.js
 const { sendError } = require("../utils/apiResponse");
 
 /**
@@ -34,12 +35,12 @@ const ROLES = {
 };
 
 // ── Common role groups ─────────────────────────────────────────
-const isAdmin        = authorize("SUPER_ADMIN", "SCHOOL_ADMIN");
-const isTeacher      = authorize("CLASS_TEACHER", "SUBJECT_TEACHER");
-const isSchoolStaff  = authorize("SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER");
-const isSuperAdmin   = authorize("SUPER_ADMIN");
+const isAdmin = authorize("SUPER_ADMIN", "SCHOOL_ADMIN");
+const isTeacher = authorize("CLASS_TEACHER", "SUBJECT_TEACHER");
+const isSchoolStaff = authorize("SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER");
+const isSuperAdmin = authorize("SUPER_ADMIN");
 
-// ✅ FIX: Allow both SCHOOL_ADMIN and SUPER_ADMIN for school admin routes
+// ✅ FIX: Allow both SCHOOL_ADMIN and SUPER_ADMIN
 const isSchoolAdmin = (req, res, next) => {
   if (!req.user) {
     return sendError(res, 401, "Authentication required.");
