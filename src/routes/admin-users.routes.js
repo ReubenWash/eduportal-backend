@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const controller = require("../controllers/admin-users.controller");
 const authenticate = require("../middleware/auth");
-const { isSuperAdmin } = require("../middleware/roles");
+const { isSuperAdmin, isSchoolAdmin } = require("../middleware/roles");
 
 // All routes require authentication and SUPER_ADMIN role
 router.use(authenticate, isSuperAdmin);
@@ -18,5 +18,12 @@ router.delete("/:id", controller.deleteUser);
 // ─── User Verification ──
 router.patch("/:userId/verify", controller.verifyUser);
 router.post("/school/:schoolId/verify-all", controller.verifyAllUsersBySchool);
+
+// ─── Password Management ──
+// POST /api/v1/admin/users/:id/reset-password
+router.post(
+  "/:id/reset-password",
+  controller.resetStudentPassword
+);
 
 module.exports = router;

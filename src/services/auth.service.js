@@ -9,12 +9,14 @@ const { sendVerificationEmail, sendPasswordResetEmail } = require("./email.servi
 const { createError } = require("../middleware/errorHandler");
 
 // ── Login ──────────────────────────────────────────────────────
-const login = async (email, password) => {
+const login = async (identifier, password) => {
+  // identifier can be email OR student number
   const user = await prisma.user.findFirst({
     where: {
       OR: [
-        { email },
-        { studentProfile: { studentNumber: email.toUpperCase() } }
+        { email: identifier },
+        { studentProfile: { studentNumber: identifier.toUpperCase() } },
+        { studentProfile: { studentNumber: identifier } }
       ]
     },
     include: {
@@ -25,16 +27,21 @@ const login = async (email, password) => {
     },
   });
 
-  if (!user || !user.isActive) throw createError("Invalid email or password.", 401);
+  if (!user || !user.isActive) {
+    throw createError("Invalid email/student number or password.", 401);
+  }
 
   const isMatch = await bcrypt.compare(password, user.passwordHash);
-  if (!isMatch) throw createError("Invalid email or password.", 401);
+  if (!isMatch) {
+    throw createError("Invalid email/student number or password.", 401);
+  }
 
-  if (!user.isVerified) throw createError("Please verify your email address before logging in.", 403);
+  if (!user.isVerified) {
+    throw createError("Please verify your email address before logging in.", 403);
+  }
 
   // ─── Check school status if user belongs to a school ───
   if (user.schoolId) {
-    // Get the latest school data (bypass cache)
     const school = await prisma.school.findUnique({
       where: { id: user.schoolId },
       select: { status: true, name: true }
@@ -44,7 +51,6 @@ const login = async (email, password) => {
       throw createError("School not found. Please contact support.", 403);
     }
 
-    // Check school status
     if (school.status !== 'ACTIVE') {
       const statusMessages = {
         'PENDING': 'Your school registration is pending approval. Please wait for administrator verification.',
@@ -58,11 +64,26 @@ const login = async (email, password) => {
     }
   }
 
-  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  // ─── Check if user must change password ───
+  if (user.mustChangePassword) {
+    // Allow login but flag for password change
+    // The frontend will handle this
+  }
 
-  // Fire-and-forget: don't let audit logging break the login flow.
+  await prisma.user.update({ 
+    where: { id: user.id }, 
+    data: { lastLoginAt: new Date() } 
+  });
+
+  // Fire-and-forget audit log
   prisma.auditLog.create({
-    data: { userId: user.id, schoolId: user.schoolId, action: "LOGIN", resource: "USER", resourceId: user.id },
+    data: { 
+      userId: user.id, 
+      schoolId: user.schoolId, 
+      action: "LOGIN", 
+      resource: "USER", 
+      resourceId: user.id 
+    },
   }).catch(() => {});
 
   const accessToken  = signAccessToken(user);
@@ -70,19 +91,24 @@ const login = async (email, password) => {
 
   const profile = user.staff || user.studentProfile || user.guardianProfile || null;
 
+  // Determine login identifier for display
+  const loginIdentifier = user.studentProfile?.studentNumber || user.email;
+
   return {
     accessToken,
     refreshToken,
     user: {
-      id:       user.id,
-      email:    user.studentProfile ? user.studentProfile.studentNumber : user.email,
-      role:     user.role,
+      id: user.id,
+      email: user.email,
+      loginIdentifier: loginIdentifier,
+      role: user.role,
       schoolId: user.schoolId,
       schoolStatus: user.school?.status || 'UNKNOWN',
       schoolName: user.school?.name || null,
-      name:     profile ? `${profile.firstName} ${profile.lastName}` : user.email,
+      name: profile ? `${profile.firstName} ${profile.lastName}` : user.email,
       photoUrl: profile?.photoUrl || null,
       mustChangePassword: user.mustChangePassword,
+      studentNumber: user.studentProfile?.studentNumber || null,
     },
   };
 };
@@ -111,7 +137,6 @@ const refreshAccessToken = async (token) => {
     });
 
     if (!school || school.status !== 'ACTIVE') {
-      // Delete the refresh token
       await prisma.refreshToken.delete({ where: { id: stored.id } });
       throw createError("Your school account is not active. Please contact support.", 403);
     }
@@ -127,28 +152,30 @@ const refreshAccessToken = async (token) => {
 // ── Logout ─────────────────────────────────────────────────────
 const logout = async (token) => {
   if (!token) return;
-  // Only delete non-prefixed tokens (actual session tokens, not verify/reset)
   await prisma.refreshToken.deleteMany({
-    where: { token, NOT: [{ token: { startsWith: "verify_" } }, { token: { startsWith: "reset_" } }] },
+    where: { 
+      token, 
+      NOT: [
+        { token: { startsWith: "verify_" } }, 
+        { token: { startsWith: "reset_" } }
+      ] 
+    },
   });
 };
 
-// ── Forgot password ────────────────────────────────────────────
+// ── Forgot password (for users with email) ────────────────────
 const forgotPassword = async (email) => {
   const user = await prisma.user.findUnique({ where: { email } });
-  // Always return silently — prevents email enumeration attacks
   if (!user) return;
 
-  // Delete any existing reset tokens for this user
   await prisma.refreshToken.deleteMany({
     where: { userId: user.id, token: { startsWith: "reset_" } },
   });
 
   const rawToken  = crypto.randomBytes(32).toString("hex");
   const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-  // Store hashed token with a "reset_" prefix in the refreshToken table
   await prisma.refreshToken.create({
     data: {
       userId:    user.id,
@@ -165,7 +192,7 @@ const forgotPassword = async (email) => {
   await sendPasswordResetEmail(email, profile?.firstName || "User", rawToken);
 };
 
-// ── Reset password ─────────────────────────────────────────────
+// ── Reset password (for users with email) ─────────────────────
 const resetPassword = async (rawToken, newPassword) => {
   const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 
@@ -188,23 +215,157 @@ const resetPassword = async (rawToken, newPassword) => {
     data:  { passwordHash, mustChangePassword: false },
   });
 
-  // Invalidate reset token AND all active session tokens
   await prisma.refreshToken.deleteMany({ where: { userId: stored.userId } });
+};
+
+// ─── NEW: Reset student password by student number ────────────
+const resetStudentPassword = async (studentNumber, dateOfBirth, newPassword) => {
+  // Find student by student number and date of birth
+  const student = await prisma.student.findFirst({
+    where: {
+      studentNumber: studentNumber.toUpperCase(),
+      dateOfBirth: new Date(dateOfBirth),
+    },
+    include: { user: true }
+  });
+
+  if (!student) {
+    throw createError("Student not found. Please verify your student number and date of birth.", 404);
+  }
+
+  if (!student.user) {
+    throw createError("Student account not found. Please contact support.", 404);
+  }
+
+  // Validate password strength
+  if (newPassword.length < 6) {
+    throw createError("Password must be at least 6 characters.", 400);
+  }
+
+  // Update password
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await prisma.user.update({
+    where: { id: student.userId },
+    data: {
+      passwordHash: passwordHash,
+      mustChangePassword: false,
+    }
+  });
+
+  // Invalidate all existing sessions
+  await prisma.refreshToken.deleteMany({
+    where: { userId: student.userId }
+  });
+
+  // Log the reset
+  await prisma.auditLog.create({
+    data: {
+      userId: student.userId,
+      action: 'PASSWORD_RESET',
+      resource: 'USER',
+      resourceId: student.userId,
+      metadata: { 
+        method: 'student_self_reset',
+        studentNumber: student.studentNumber
+      }
+    }
+  });
+
+  return { 
+    success: true, 
+    message: "Password reset successfully. Please log in with your new password." 
+  };
+};
+
+// ─── NEW: Admin reset student password ────────────────────────
+const adminResetStudentPassword = async (schoolId, studentId) => {
+  // Find student
+  const student = await prisma.student.findFirst({
+    where: { id: studentId, schoolId },
+    include: { user: true }
+  });
+
+  if (!student) {
+    throw createError("Student not found.", 404);
+  }
+
+  // Generate new temporary password
+  const tempPassword = crypto.randomBytes(6).toString('hex').toUpperCase();
+  const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+  // Update password
+  await prisma.user.update({
+    where: { id: student.userId },
+    data: {
+      passwordHash: passwordHash,
+      mustChangePassword: true,
+    }
+  });
+
+  // Invalidate all existing sessions
+  await prisma.refreshToken.deleteMany({
+    where: { userId: student.userId }
+  });
+
+  // Log the reset
+  await prisma.auditLog.create({
+    data: {
+      userId: student.userId,
+      action: 'PASSWORD_RESET',
+      resource: 'USER',
+      resourceId: student.userId,
+      metadata: { 
+        method: 'admin_reset',
+        studentNumber: student.studentNumber
+      }
+    }
+  });
+
+  return {
+    success: true,
+    tempPassword: tempPassword,
+    studentNumber: student.studentNumber,
+    message: "Password reset successfully. Student must change password on next login."
+  };
+};
+
+// ─── NEW: Change password without current password (for admins) ───
+const adminChangePassword = async (userId, newPassword) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw createError("User not found.", 404);
+
+  if (newPassword.length < 6) {
+    throw createError("Password must be at least 6 characters.", 400);
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      passwordHash: passwordHash,
+      mustChangePassword: true,
+    }
+  });
+
+  // Invalidate all existing sessions
+  await prisma.refreshToken.deleteMany({
+    where: { userId: userId }
+  });
+
+  return { success: true, message: "Password changed successfully." };
 };
 
 // ── Verify email with 6-digit code ────────────────────────────
 const verifyEmail = async (code) => {
-  // Find the verification token with the code
   const stored = await prisma.refreshToken.findFirst({
     where: { 
       token: `verify_${code}`,
-      expiresAt: { gt: new Date() } // Only valid if not expired
+      expiresAt: { gt: new Date() }
     },
     include: { user: true }
   });
 
   if (!stored) {
-    // Check if the code exists but expired
     const expired = await prisma.refreshToken.findFirst({
       where: { 
         token: `verify_${code}`,
@@ -219,23 +380,18 @@ const verifyEmail = async (code) => {
     throw createError("Invalid verification code.", 400);
   }
 
-  // Check if user is already verified
   if (stored.user.isVerified) {
-    // Delete the used token
     await prisma.refreshToken.delete({ where: { id: stored.id } });
     return { success: true, message: "Email already verified" };
   }
 
-  // Update user as verified
   await prisma.user.update({
     where: { id: stored.userId },
     data: { isVerified: true },
   });
 
-  // Delete the used token
   await prisma.refreshToken.delete({ where: { id: stored.id } });
   
-  // Also delete any other verification tokens for this user
   await prisma.refreshToken.deleteMany({
     where: { 
       userId: stored.userId,
@@ -280,10 +436,16 @@ const changePassword = async (userId, currentPassword, newPassword) => {
   const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
   if (!isMatch) throw createError("Current password is incorrect.", 400);
 
-  const passwordHash = await bcrypt.hash(newPassword, 12);
-  await prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false } });
+  if (newPassword.length < 6) {
+    throw createError("Password must be at least 6 characters.", 400);
+  }
 
-  // Force re-login on all other devices
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await prisma.user.update({ 
+    where: { id: userId }, 
+    data: { passwordHash, mustChangePassword: false } 
+  });
+
   await prisma.refreshToken.deleteMany({ where: { userId } });
 };
 
@@ -299,7 +461,6 @@ const resendVerificationCode = async (email) => {
   if (!user) throw createError("User not found.", 404);
   if (user.isVerified) throw createError("Email is already verified.", 400);
 
-  // Delete any existing verification tokens for this user
   await prisma.refreshToken.deleteMany({
     where: { 
       userId: user.id,
@@ -307,11 +468,9 @@ const resendVerificationCode = async (email) => {
     },
   });
 
-  // Generate new 6-digit verification code
   const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-  // Store the verification code
   await prisma.refreshToken.create({
     data: {
       userId: user.id,
@@ -320,7 +479,6 @@ const resendVerificationCode = async (email) => {
     },
   });
 
-  // Send the verification email
   const name = user.staff?.firstName || "User";
   await sendVerificationEmail(email, name, verificationCode);
 
@@ -333,6 +491,9 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
+  resetStudentPassword,      // ← NEW
+  adminResetStudentPassword, // ← NEW
+  adminChangePassword,       // ← NEW
   verifyEmail,
   getMe,
   changePassword,

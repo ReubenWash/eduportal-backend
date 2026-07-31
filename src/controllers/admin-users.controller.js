@@ -523,6 +523,99 @@ const verifyAllUsersBySchool = async (req, res) => {
   });
 };
 
+// ─── NEW: ADMIN RESET STUDENT PASSWORD ─────────────────────────
+const resetStudentPassword = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { schoolId } = req.user;
+
+    // Find the student with their user account
+    const student = await prisma.student.findFirst({
+      where: { 
+        id: id,
+        schoolId: schoolId 
+      },
+      include: { 
+        user: true,
+        school: {
+          select: { name: true }
+        }
+      }
+    });
+
+    if (!student) {
+      throw createError("Student not found", 404);
+    }
+
+    if (!student.user) {
+      throw createError("Student user account not found", 404);
+    }
+
+    // Generate new temporary password (6 characters uppercase)
+    const tempPassword = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+    // Update user password
+    await prisma.user.update({
+      where: { id: student.userId },
+      data: {
+        passwordHash: passwordHash,
+        mustChangePassword: true,
+      }
+    });
+
+    // Invalidate all existing sessions
+    await prisma.refreshToken.deleteMany({
+      where: { userId: student.userId }
+    });
+
+    // Create notification for student
+    await prisma.notification.create({
+      data: {
+        userId: student.userId,
+        title: "🔑 Password Reset",
+        message: `Your password has been reset by the administrator. Please log in with your temporary password and change it immediately.`,
+        type: "warning"
+      }
+    });
+
+    // Log the action
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.userId,
+        action: 'PASSWORD_RESET',
+        resource: 'USER',
+        resourceId: student.userId,
+        metadata: { 
+          studentNumber: student.studentNumber,
+          studentName: `${student.firstName} ${student.lastName}`,
+          schoolName: student.school?.name
+        }
+      }
+    });
+
+    return sendSuccess(res, 200, "Password reset successfully", {
+      studentId: student.id,
+      studentNumber: student.studentNumber,
+      studentName: `${student.firstName} ${student.lastName}`,
+      tempPassword: tempPassword,
+      message: "Student must change password on next login"
+    });
+  } catch (error) {
+    console.error('Admin reset student password error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to reset password'
+    });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
@@ -532,4 +625,5 @@ module.exports = {
   deleteUser,
   verifyUser,
   verifyAllUsersBySchool,
+  resetStudentPassword, // ← NEW
 };
