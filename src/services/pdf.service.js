@@ -555,10 +555,18 @@ function getOrdinalSuffix(n) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// ─── UPDATED: Launch Browser with Render Chrome Support ───
+// ─── UPDATED: Launch Browser with Comprehensive Chrome Detection ───
 // ─────────────────────────────────────────────────────────────
 
 const launchBrowser = async () => {
+  console.log('[Puppeteer] ========== Starting Chrome Detection ==========');
+  console.log('[Puppeteer] Environment:', {
+    RENDER: process.env.RENDER,
+    NODE_ENV: process.env.NODE_ENV,
+    PUPPETEER_CACHE_DIR: process.env.PUPPETEER_CACHE_DIR,
+    PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH,
+  });
+
   const options = {
     headless: "new",
     args: [
@@ -573,53 +581,142 @@ const launchBrowser = async () => {
       "--disable-webgl",
       "--disable-software-rasterizer",
       "--disable-gl-drawing-for-tests",
+      "--disable-features=IsolateOrigins,site-per-process",
     ],
   };
 
-  // For Render, try to find Chrome
+  // Define all possible Chrome paths to check
+  const chromePaths = [];
+
+  // 1. From environment variable
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    chromePaths.push(process.env.PUPPETEER_EXECUTABLE_PATH);
+  }
+
+  // 2. Render-specific paths
   if (process.env.RENDER) {
-    const chromePaths = [
+    chromePaths.push(
       '/usr/bin/google-chrome',
       '/usr/bin/chromium-browser',
       '/usr/bin/chromium',
       '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
-    ];
+      '/opt/render/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome',
+    );
+  }
+
+  // 3. Common Linux paths
+  chromePaths.push(
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/snap/bin/chromium',
+    '/usr/local/bin/chromium',
+  );
+
+  // 4. Puppeteer cache paths (local and Render)
+  const cacheDirs = [
+    process.env.PUPPETEER_CACHE_DIR || '/opt/render/.cache/puppeteer',
+    path.join(os.homedir(), '.cache', 'puppeteer'),
+    path.join(process.cwd(), '.cache', 'puppeteer'),
+  ];
+
+  for (const cacheDir of cacheDirs) {
+    chromePaths.push(
+      path.join(cacheDir, 'chrome', 'linux-*/chrome-linux64/chrome'),
+      path.join(cacheDir, 'chrome', 'linux-*', 'chrome-linux64', 'chrome'),
+      path.join(cacheDir, 'chrome', 'linux-127.0.6533.88', 'chrome-linux64', 'chrome'),
+    );
+  }
+
+  // Find first existing Chrome path
+  let foundPath = null;
+
+  for (const p of chromePaths) {
+    try {
+      // Handle wildcard paths
+      if (p.includes('*')) {
+        try {
+          const glob = require('glob');
+          const matches = glob.sync(p);
+          if (matches.length > 0) {
+            foundPath = matches[0];
+            console.log(`[Puppeteer] ✅ Found Chrome via glob: ${foundPath}`);
+            break;
+          }
+        } catch (globErr) {
+          // Skip glob errors
+        }
+      } else if (fs.existsSync(p)) {
+        foundPath = p;
+        console.log(`[Puppeteer] ✅ Found Chrome at: ${foundPath}`);
+        break;
+      }
+    } catch (err) {
+      // Skip errors
+    }
+  }
+
+  if (foundPath) {
+    // Verify it's executable
+    try {
+      fs.accessSync(foundPath, fs.constants.X_OK);
+      options.executablePath = foundPath;
+      console.log(`[Puppeteer] ✅ Chrome is executable: ${foundPath}`);
+    } catch (accessErr) {
+      console.warn(`[Puppeteer] ⚠️ Chrome found but not executable: ${foundPath}`);
+    }
+  } else {
+    console.warn('[Puppeteer] ⚠️ No Chrome found in any location');
+    console.warn('[Puppeteer] Checked paths:', chromePaths);
     
-    for (const path of chromePaths) {
+    // Try one more time with find command if on Linux
+    if (process.platform === 'linux') {
       try {
-        if (fs.existsSync(path)) {
-          options.executablePath = path;
-          console.log(`[Puppeteer] ✅ Using Chrome at: ${path}`);
-          break;
+        const { execSync } = require('child_process');
+        const result = execSync('find /usr -name "chrome" -o -name "chromium" -o -name "google-chrome" 2>/dev/null | head -5', { 
+          encoding: 'utf8',
+          timeout: 5000 
+        });
+        const paths = result.trim().split('\n').filter(Boolean);
+        if (paths.length > 0) {
+          foundPath = paths[0];
+          console.log(`[Puppeteer] ✅ Found Chrome via find: ${foundPath}`);
+          options.executablePath = foundPath;
         }
-      } catch (err) {
-        // Continue to next path
-      }
-    }
-
-    // If no Chrome found, try with wildcard
-    if (!options.executablePath) {
-      try {
-        const glob = require('glob');
-        const matches = glob.sync('/opt/render/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome');
-        if (matches.length > 0) {
-          options.executablePath = matches[0];
-          console.log(`[Puppeteer] ✅ Using Chrome from cache: ${options.executablePath}`);
-        }
-      } catch (err) {
-        console.warn('[Puppeteer] No Chrome found in cache');
+      } catch (findErr) {
+        console.warn('[Puppeteer] find command failed:', findErr.message);
       }
     }
   }
 
-  // Use custom Chromium path if set in environment
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    options.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-    console.log(`[Puppeteer] Using Chrome from env: ${options.executablePath}`);
-  }
+  console.log('[Puppeteer] Launching browser with options:', JSON.stringify({
+    headless: options.headless,
+    args: options.args.length,
+    executablePath: options.executablePath || 'default (will use Puppeteer\'s bundled Chrome)',
+  }));
 
-  console.log('[Puppeteer] Launching browser...');
-  return puppeteer.launch(options);
+  try {
+    const browser = await puppeteer.launch(options);
+    console.log('[Puppeteer] ✅ Browser launched successfully!');
+    return browser;
+  } catch (launchError) {
+    console.error('[Puppeteer] ❌ Failed to launch browser:', launchError.message);
+    
+    // If launch fails and we have a path, try without it (use bundled)
+    if (options.executablePath) {
+      console.log('[Puppeteer] Trying without custom executable path...');
+      delete options.executablePath;
+      try {
+        const browser = await puppeteer.launch(options);
+        console.log('[Puppeteer] ✅ Browser launched successfully (without custom path)!');
+        return browser;
+      } catch (retryError) {
+        console.error('[Puppeteer] ❌ Retry also failed:', retryError.message);
+        throw retryError;
+      }
+    }
+    throw launchError;
+  }
 };
 
 /**
@@ -638,7 +735,11 @@ const renderPDF = async (html) => {
     });
 
     // Ensure content is rendered
-    await page.waitForSelector('.student-section', { timeout: 10000 });
+    try {
+      await page.waitForSelector('.student-section', { timeout: 10000 });
+    } catch (timeoutErr) {
+      console.warn('[Puppeteer] Student section not found, continuing anyway');
+    }
 
     const pdfBuffer = await page.pdf({
       format:             "A4",
@@ -647,10 +748,10 @@ const renderPDF = async (html) => {
       displayHeaderFooter: false,
     });
 
-    console.log('[Puppeteer] PDF generated successfully');
+    console.log('[Puppeteer] ✅ PDF generated successfully');
     return pdfBuffer;
   } catch (error) {
-    console.error('[Puppeteer] PDF rendering error:', error);
+    console.error('[Puppeteer] ❌ PDF rendering error:', error);
     throw error;
   } finally {
     if (browser) await browser.close();
