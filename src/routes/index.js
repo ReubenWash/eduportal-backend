@@ -72,6 +72,9 @@ router.use("/admin/roles",   require("./admin/role.routes"));
 // Analytics
 router.use("/admin/analytics", require("./admin/analytics.routes"));
 
+// Media Upload
+router.use("/upload", require("./upload.routes"));
+
 // Media
 router.use("/admin/media",   require("./admin/media.routes"));
 
