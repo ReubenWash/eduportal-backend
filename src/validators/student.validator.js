@@ -7,8 +7,13 @@ const admitStudentValidator = [
   body("dateOfBirth")
     .notEmpty().withMessage("Date of birth is required.")
     .isISO8601().withMessage("Date of birth must be a valid date."),
+  body("studentNumber").trim().notEmpty().withMessage("Student number is required."),
   body("classId").notEmpty().withMessage("Class is required."),
-  body("guardianId").notEmpty().withMessage("Guardian is required."),
+  // ─── Make guardian fields optional ───
+  body("guardianName").optional().trim(),
+  body("guardianPhone").optional().trim(),
+  body("guardianEmail").optional().isEmail().withMessage("Invalid email format."),
+  body("relationship").optional().trim(),
 ];
 
 const updateStudentValidator = [
@@ -17,6 +22,12 @@ const updateStudentValidator = [
   body("lastName").optional().trim().notEmpty().withMessage("Last name cannot be empty."),
   body("gender").optional().isIn(["MALE", "FEMALE"]).withMessage("Invalid gender."),
   body("dateOfBirth").optional().isISO8601().withMessage("Invalid date."),
+  body("classId").optional().trim(),
+  body("studentNumber").optional().trim(),
+  body("guardianName").optional().trim(),
+  body("guardianPhone").optional().trim(),
+  body("guardianEmail").optional().isEmail().withMessage("Invalid email format."),
+  body("relationship").optional().trim(),
 ];
 
 const transferValidator = [
