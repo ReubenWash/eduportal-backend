@@ -42,6 +42,7 @@
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "speakeasy": "^2.0.0",
+    "streamifier": "^0.1.1",
     "uuid": "^10.0.0",
     "winston": "^3.13.0"
   },
