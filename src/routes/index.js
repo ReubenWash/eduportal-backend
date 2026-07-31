@@ -76,6 +76,9 @@ router.use("/admin/analytics", require("./admin/analytics.routes"));
 router.use("/upload", require("./upload.routes"));
 // In routes/index.js, make sure this line exists
 
+// In routes/index.js
+
+
 
 // Media
 router.use("/admin/media",   require("./admin/media.routes"));
