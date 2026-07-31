@@ -57,7 +57,7 @@ router.post("/:id/transfer",
   controller.transfer
 );
 
-// ─── Super Admin routes ───
-router.get("/admin/all", isSuperAdmin, controller.getAllStudents);
+// ─── TEMPORARILY COMMENTED OUT - Super Admin only ───
+// router.get("/admin/all", isSuperAdmin, controller.getAllStudents);
 
 module.exports = router;
