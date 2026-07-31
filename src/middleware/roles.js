@@ -38,6 +38,31 @@ const isAdmin        = authorize("SUPER_ADMIN", "SCHOOL_ADMIN");
 const isTeacher      = authorize("CLASS_TEACHER", "SUBJECT_TEACHER");
 const isSchoolStaff  = authorize("SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER");
 const isSuperAdmin   = authorize("SUPER_ADMIN");
-const isSchoolAdmin  = authorize("SCHOOL_ADMIN");
 
-module.exports = { authorize, ROLES, isAdmin, isTeacher, isSchoolStaff, isSuperAdmin, isSchoolAdmin };
+// ✅ FIX: Allow both SCHOOL_ADMIN and SUPER_ADMIN for school admin routes
+const isSchoolAdmin = (req, res, next) => {
+  if (!req.user) {
+    return sendError(res, 401, "Authentication required.");
+  }
+  
+  // Allow both SCHOOL_ADMIN and SUPER_ADMIN
+  if (req.user.role === "SCHOOL_ADMIN" || req.user.role === "SUPER_ADMIN") {
+    return next();
+  }
+  
+  return sendError(
+    res,
+    403,
+    "Access denied. Required role: SCHOOL_ADMIN or SUPER_ADMIN."
+  );
+};
+
+module.exports = { 
+  authorize, 
+  ROLES, 
+  isAdmin, 
+  isTeacher, 
+  isSchoolStaff, 
+  isSuperAdmin, 
+  isSchoolAdmin 
+};
