@@ -73,7 +73,6 @@ const updateProfile = async (req, res) => {
     if (!req.user.schoolId) {
       throw createError("School ID not found. Please contact administrator.", 400);
     }
-    // Handle logo upload via middleware before this controller runs
     const logoUrl = req.file?.path || null;
     const school = await schoolService.updateSchoolProfile(req.user.schoolId, req.body, logoUrl);
     return sendSuccess(res, 200, "School profile updated.", school);
@@ -340,12 +339,10 @@ const downloadRegistrationPdf = async (req, res) => {
     const { id } = req.params;
     const result = await schoolService.generateRegistrationPdf(id, req.user);
     
-    // Set response headers for PDF download
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename=${result.filename}`);
     res.setHeader('Content-Length', result.pdfBuffer.length);
     
-    // Send the PDF buffer
     res.send(result.pdfBuffer);
   } catch (error) {
     console.error('PDF Generation error:', error);
@@ -362,13 +359,10 @@ const downloadRegistrationPdf = async (req, res) => {
   }
 };
 
-// ─── Debug Endpoints (Remove in production) ───
-
-// GET /api/v1/schools/debug/check/:id
+// ─── Debug Endpoints ───
 const debugCheckSchool = async (req, res) => {
   try {
     const { id } = req.params;
-    
     const school = await prisma.school.findUnique({
       where: { id },
       select: {
@@ -387,13 +381,6 @@ const debugCheckSchool = async (req, res) => {
       });
     }
 
-    console.log('🔍 School Debug Check:', {
-      id: school.id,
-      name: school.name,
-      status: school.status,
-      updatedAt: school.updatedAt
-    });
-
     return res.status(200).json({
       success: true,
       data: school,
@@ -408,11 +395,9 @@ const debugCheckSchool = async (req, res) => {
   }
 };
 
-// GET /api/v1/schools/debug/status/:id
 const debugGetStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    
     const [school, users, refreshTokens] = await Promise.all([
       prisma.school.findUnique({
         where: { id },
@@ -443,28 +428,18 @@ const debugGetStatus = async (req, res) => {
       });
     }
 
-    const response = {
-      school: {
-        id: school.id,
-        name: school.name,
-        status: school.status,
-        createdAt: school.createdAt,
-        updatedAt: school.updatedAt
-      },
-      stats: {
-        totalUsers: users,
-        activeSessions: refreshTokens,
-        hasUsers: users > 0,
-        hasSessions: refreshTokens > 0
-      },
-      timestamp: new Date().toISOString()
-    };
-
-    console.log('🔍 Detailed Status Check:', response);
-
     return res.status(200).json({
       success: true,
-      data: response
+      data: {
+        school,
+        stats: {
+          totalUsers: users,
+          activeSessions: refreshTokens,
+          hasUsers: users > 0,
+          hasSessions: refreshTokens > 0
+        }
+      },
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     console.error('Debug status error:', error);
@@ -475,7 +450,6 @@ const debugGetStatus = async (req, res) => {
   }
 };
 
-// GET /api/v1/schools/debug/all
 const debugGetAllSchools = async (req, res) => {
   try {
     const schools = await prisma.school.findMany({
@@ -488,8 +462,6 @@ const debugGetAllSchools = async (req, res) => {
       },
       orderBy: { updatedAt: 'desc' }
     });
-
-    console.log(`🔍 Found ${schools.length} schools in database`);
 
     return res.status(200).json({
       success: true,
