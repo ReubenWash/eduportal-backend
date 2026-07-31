@@ -3,7 +3,7 @@ const router       = express.Router();
 const controller   = require("../controllers/school.controller");
 const authenticate = require("../middleware/auth");
 const tenantScope  = require("../middleware/tenant");
-const { isSchoolAdmin, isSuperAdmin } = require("../middleware/roles");
+const { isSchoolAdmin, isSuperAdmin, isSchoolStaff } = require("../middleware/roles");
 const validate     = require("../middleware/validate");
 const { publicLimiter } = require("../middleware/rateLimiter");
 const { uploadSchoolLogo } = require("../middleware/upload");
@@ -27,9 +27,10 @@ router.post(
 // ── Protected — school-scoped ──────────────────────────────────
 router.use(authenticate, tenantScope);
 
-router.get("/me",           controller.getProfile);
-router.get("/me/dashboard", controller.getDashboard);
-router.get("/me/terms",     controller.getTerms);
+// ─── School Profile Routes ───
+router.get("/me", isSchoolStaff, controller.getProfile);
+router.get("/me/dashboard", isSchoolStaff, controller.getDashboard);
+router.get("/me/terms", isSchoolStaff, controller.getTerms);
 
 router.patch(
   "/me",
@@ -40,6 +41,7 @@ router.patch(
   controller.updateProfile
 );
 
+// ─── Term Management ───
 router.post(
   "/me/terms",
   isSchoolAdmin,
@@ -76,39 +78,54 @@ router.patch(
   controller.updateStatus
 );
 
-// ── DELETE /api/v1/schools/:id (Super Admin only) ─────────────
-router.delete(
-  "/:id",
-  isSuperAdmin,
-  controller.deleteSchool
-);
-
-// ── RESTORE /api/v1/schools/:id/restore (Super Admin only) ────
-router.patch(
-  "/:id/restore",
-  isSuperAdmin,
-  controller.restoreSchool
-);
-
-// ── DOWNLOAD REGISTRATION PDF /api/v1/schools/:id/registration-pdf (Super Admin only) ────
-router.get(
-  "/:id/registration-pdf",
-  isSuperAdmin,
-  controller.downloadRegistrationPdf
-);
-
-// ── PATCH /api/v1/schools/:id (Super Admin only) ──────────────
+// ─── Super Admin School Management ───
 router.patch(
   "/:id",
   isSuperAdmin,
   controller.updateSchool
 );
 
-// ── PATCH /api/v1/schools/:id/plan (Super Admin only) ─────────
 router.patch(
   "/:id/plan",
   isSuperAdmin,
   controller.updateSchoolPlan
+);
+
+router.delete(
+  "/:id",
+  isSuperAdmin,
+  controller.deleteSchool
+);
+
+router.patch(
+  "/:id/restore",
+  isSuperAdmin,
+  controller.restoreSchool
+);
+
+router.get(
+  "/:id/registration-pdf",
+  isSuperAdmin,
+  controller.downloadRegistrationPdf
+);
+
+// ─── Debug Endpoints (Super Admin only - Remove in production) ───
+router.get(
+  "/debug/check/:id",
+  isSuperAdmin,
+  controller.debugCheckSchool
+);
+
+router.get(
+  "/debug/status/:id",
+  isSuperAdmin,
+  controller.debugGetStatus
+);
+
+router.get(
+  "/debug/all",
+  isSuperAdmin,
+  controller.debugGetAllSchools
 );
 
 module.exports = router;

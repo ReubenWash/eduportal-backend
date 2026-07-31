@@ -4,7 +4,7 @@ const { createError } = require("../middleware/errorHandler");
 const { uploadSchoolLogo } = require("../middleware/upload");
 const { prisma } = require("../config/db");
 
-// POST /api/v1/schools/register
+// ─── POST /api/v1/schools/register ───
 const register = async (req, res) => {
   try {
     const school = await schoolService.registerSchool(req.body);
@@ -24,7 +24,7 @@ const register = async (req, res) => {
   }
 };
 
-// POST /api/v1/schools/manual (SUPER_ADMIN)
+// ─── POST /api/v1/schools/manual (SUPER_ADMIN) ───
 const manualCreate = async (req, res) => {
   try {
     const school = await schoolService.manualCreateSchool(req.body);
@@ -44,9 +44,12 @@ const manualCreate = async (req, res) => {
   }
 };
 
-// GET /api/v1/schools/me
+// ─── GET /api/v1/schools/me ───
 const getProfile = async (req, res) => {
   try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
     const school = await schoolService.getSchoolProfile(req.user.schoolId);
     return sendSuccess(res, 200, "School profile fetched.", school);
   } catch (error) {
@@ -64,9 +67,12 @@ const getProfile = async (req, res) => {
   }
 };
 
-// PATCH /api/v1/schools/me
+// ─── PATCH /api/v1/schools/me ───
 const updateProfile = async (req, res) => {
   try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
     // Handle logo upload via middleware before this controller runs
     const logoUrl = req.file?.path || null;
     const school = await schoolService.updateSchoolProfile(req.user.schoolId, req.body, logoUrl);
@@ -86,9 +92,12 @@ const updateProfile = async (req, res) => {
   }
 };
 
-// GET /api/v1/schools/me/dashboard
+// ─── GET /api/v1/schools/me/dashboard ───
 const getDashboard = async (req, res) => {
   try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
     const stats = await schoolService.getDashboardStats(req.user.schoolId, req.user);
     return sendSuccess(res, 200, "Dashboard stats fetched.", stats);
   } catch (error) {
@@ -106,7 +115,7 @@ const getDashboard = async (req, res) => {
   }
 };
 
-// GET /api/v1/schools/admin/dashboard
+// ─── GET /api/v1/schools/admin/dashboard ───
 const getSuperAdminDashboard = async (req, res) => {
   try {
     const dashboard = await schoolService.getSuperAdminDashboard();
@@ -120,9 +129,12 @@ const getSuperAdminDashboard = async (req, res) => {
   }
 };
 
-// GET /api/v1/schools/me/terms
+// ─── GET /api/v1/schools/me/terms ───
 const getTerms = async (req, res) => {
   try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
     const terms = await schoolService.getTerms(req.user.schoolId, req.query.academicYear);
     return sendSuccess(res, 200, "Terms fetched.", terms);
   } catch (error) {
@@ -140,9 +152,12 @@ const getTerms = async (req, res) => {
   }
 };
 
-// POST /api/v1/schools/me/terms
+// ─── POST /api/v1/schools/me/terms ───
 const createTerm = async (req, res) => {
   try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
     const term = await schoolService.createTerm(req.user.schoolId, req.body);
     return sendSuccess(res, 201, "Term created.", term);
   } catch (error) {
@@ -160,9 +175,12 @@ const createTerm = async (req, res) => {
   }
 };
 
-// PATCH /api/v1/schools/me/terms/:id
+// ─── PATCH /api/v1/schools/me/terms/:id ───
 const updateTerm = async (req, res) => {
   try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
     const term = await schoolService.updateTerm(req.user.schoolId, req.params.id, req.body);
     return sendSuccess(res, 200, "Term updated.", term);
   } catch (error) {
@@ -180,7 +198,7 @@ const updateTerm = async (req, res) => {
   }
 };
 
-// GET /api/v1/schools (SUPER_ADMIN)
+// ─── GET /api/v1/schools (SUPER_ADMIN) ───
 const getAllSchools = async (req, res) => {
   try {
     const result = await schoolService.getAllSchools(req.query);
@@ -194,7 +212,7 @@ const getAllSchools = async (req, res) => {
   }
 };
 
-// PATCH /api/v1/schools/:id/status (SUPER_ADMIN)
+// ─── PATCH /api/v1/schools/:id/status (SUPER_ADMIN) ───
 const updateStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -226,10 +244,11 @@ const updateStatus = async (req, res) => {
   }
 };
 
-// PATCH /api/v1/schools/:id (SUPER_ADMIN)
+// ─── PATCH /api/v1/schools/:id (SUPER_ADMIN) ───
 const updateSchool = async (req, res) => {
   try {
-    const school = await schoolService.updateSchoolById(req.params.id, req.body);
+    const { id } = req.params;
+    const school = await schoolService.updateSchoolById(id, req.body);
     return sendSuccess(res, 200, "School updated.", school);
   } catch (error) {
     console.error('Update school error:', error);
@@ -246,7 +265,7 @@ const updateSchool = async (req, res) => {
   }
 };
 
-// PATCH /api/v1/schools/:id/plan (SUPER_ADMIN)
+// ─── PATCH /api/v1/schools/:id/plan (SUPER_ADMIN) ───
 const updateSchoolPlan = async (req, res) => {
   try {
     const { id } = req.params;
@@ -273,7 +292,7 @@ const updateSchoolPlan = async (req, res) => {
   }
 };
 
-// DELETE /api/v1/schools/:id (SUPER_ADMIN)
+// ─── DELETE /api/v1/schools/:id (SUPER_ADMIN) ───
 const deleteSchool = async (req, res) => {
   try {
     const { id } = req.params;
@@ -294,7 +313,7 @@ const deleteSchool = async (req, res) => {
   }
 };
 
-// POST /api/v1/schools/:id/restore (SUPER_ADMIN)
+// ─── POST /api/v1/schools/:id/restore (SUPER_ADMIN) ───
 const restoreSchool = async (req, res) => {
   try {
     const { id } = req.params;
@@ -315,7 +334,7 @@ const restoreSchool = async (req, res) => {
   }
 };
 
-// GET /api/v1/schools/:id/registration-pdf (SUPER_ADMIN)
+// ─── GET /api/v1/schools/:id/registration-pdf (SUPER_ADMIN) ───
 const downloadRegistrationPdf = async (req, res) => {
   try {
     const { id } = req.params;
@@ -343,7 +362,7 @@ const downloadRegistrationPdf = async (req, res) => {
   }
 };
 
-// ── Debug Endpoints (Remove in production) ──
+// ─── Debug Endpoints (Remove in production) ───
 
 // GET /api/v1/schools/debug/check/:id
 const debugCheckSchool = async (req, res) => {
