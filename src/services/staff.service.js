@@ -123,8 +123,7 @@ const removeAssignment = async (schoolId, staffId, subjectId, classId) => {
   return { message: "Assignment removed." };
 };
 
-// ═══ NEW FUNCTIONS (appended) ═══
-
+// ─── Bulk Import from Excel ───
 const bulkImportStaffFromExcelRows = async (schoolId, rows) => {
   let created = 0, skipped = 0;
   const failed = [];
@@ -165,6 +164,7 @@ const bulkImportStaffFromExcelRows = async (schoolId, rows) => {
   return { created, skipped, failed };
 };
 
+// ─── Export Staff for Excel ───
 const getStaffForExport = async (schoolId, query) => {
   const where = { schoolId };
   if (query.status) where.user = { isActive: query.status === "ACTIVE" };
@@ -197,8 +197,53 @@ const getStaffForExport = async (schoolId, query) => {
   }));
 };
 
-// ═══ UPDATED EXPORTS (new functions added) ═══
+// ─── NEW: Get All Staff (For Super Admin) ───
+const getAllStaff = async (query = {}) => {
+  try {
+    const where = {};
+    if (query.role) where.user = { role: query.role };
+    if (query.schoolId) where.schoolId = query.schoolId;
+    if (query.search) {
+      where.OR = [
+        { firstName: { contains: query.search, mode: 'insensitive' } },
+        { lastName: { contains: query.search, mode: 'insensitive' } },
+        { user: { email: { contains: query.search, mode: 'insensitive' } } }
+      ];
+    }
+    
+    const staff = await prisma.staff.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            isActive: true,
+            isVerified: true
+          }
+        },
+        school: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        subjectAssignments: {
+          include: { subject: { select: { name: true } } }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    
+    return staff;
+  } catch (error) {
+    console.error('[staff.service] getAllStaff error:', error);
+    throw error;
+  }
+};
 
+// ─── EXPORTS ───
 module.exports = {
   createStaff,
   getStaff,
@@ -207,6 +252,7 @@ module.exports = {
   deactivateStaff,
   assignSubject,
   removeAssignment,
-  bulkImportStaffFromExcelRows,   // NEW
-  getStaffForExport,              // NEW
+  bulkImportStaffFromExcelRows,
+  getStaffForExport,
+  getAllStaff, // ← NEW
 };
