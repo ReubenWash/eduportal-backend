@@ -1,7 +1,6 @@
 const schoolService = require("../services/school.service");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
-const { uploadSchoolLogo } = require("../middleware/upload");
 const { prisma } = require("../config/db");
 
 // ─── POST /api/v1/schools/register ───
@@ -67,13 +66,17 @@ const getProfile = async (req, res) => {
   }
 };
 
-// ─── PATCH /api/v1/schools/me ───
+// ─── PATCH /api/v1/schools/me (Placeholder) ───
 const updateProfile = async (req, res) => {
   try {
     if (!req.user.schoolId) {
       throw createError("School ID not found. Please contact administrator.", 400);
     }
+    
+    // Get the logo URL from uploaded file (if any)
     const logoUrl = req.file?.path || null;
+    
+    // Update the school profile
     const school = await schoolService.updateSchoolProfile(req.user.schoolId, req.body, logoUrl);
     return sendSuccess(res, 200, "School profile updated.", school);
   } catch (error) {
@@ -174,7 +177,7 @@ const createTerm = async (req, res) => {
   }
 };
 
-// ─── PATCH /api/v1/schools/me/terms/:id ───
+// ─── PATCH /api/v1/schools/me/terms/:id (Placeholder) ───
 const updateTerm = async (req, res) => {
   try {
     if (!req.user.schoolId) {
@@ -221,12 +224,7 @@ const updateStatus = async (req, res) => {
       throw createError("Status is required", 400);
     }
 
-    console.log(`[updateStatus] Updating school ${id} to ${status}`);
-    
     const school = await schoolService.updateSchoolStatus(id, status);
-    
-    console.log(`[updateStatus] Successfully updated school to ${school.status}`);
-    
     return sendSuccess(res, 200, `School status updated to ${status}`, school);
   } catch (error) {
     console.error('Update status error:', error);
