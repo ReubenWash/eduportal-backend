@@ -225,8 +225,7 @@ const bulkImportStudents = async (schoolId, records) => {
   return { created, skipped, failed };
 };
 
-// ═══ NEW FUNCTIONS (appended) ═══
-
+// ─── Bulk Import from Excel ───
 const bulkImportStudentsFromExcelRows = async (schoolId, rows) => {
   const records = rows.map((r) => ({
     firstName: String(r.firstName || "").trim(),
@@ -244,6 +243,7 @@ const bulkImportStudentsFromExcelRows = async (schoolId, rows) => {
   return bulkImportStudents(schoolId, records);
 };
 
+// ─── Export Students for Excel ───
 const getStudentsForExport = async (schoolId, query) => {
   const where = { schoolId };
   if (query.status) where.status = query.status;
@@ -276,8 +276,138 @@ const getStudentsForExport = async (schoolId, query) => {
   }));
 };
 
-// ═══ UPDATED EXPORTS (new functions added) ═══
+// ─── NEW: Get all students for Super Admin ───
+const getAllStudents = async (query = {}) => {
+  try {
+    const where = {};
+    if (query.schoolId) where.schoolId = query.schoolId;
+    if (query.status) where.status = query.status;
+    if (query.search) {
+      where.OR = [
+        { firstName: { contains: query.search, mode: 'insensitive' } },
+        { lastName: { contains: query.search, mode: 'insensitive' } },
+        { studentNumber: { contains: query.search, mode: 'insensitive' } }
+      ];
+    }
+    if (query.classId) {
+      where.enrollments = { some: { classId: query.classId } };
+    }
 
+    const students = await prisma.student.findMany({
+      where,
+      include: {
+        school: {
+          select: {
+            id: true,
+            name: true
+          }
+        },
+        user: {
+          select: {
+            id: true,
+            email: true,
+            role: true,
+            isActive: true,
+            isVerified: true
+          }
+        },
+        guardians: {
+          include: {
+            guardian: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                phone: true,
+                email: true
+              }
+            }
+          }
+        },
+        enrollments: {
+          include: {
+            class: {
+              select: {
+                id: true,
+                level: true,
+                section: true
+              }
+            },
+            term: {
+              select: {
+                id: true,
+                academicYear: true,
+                termNumber: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        },
+        _count: {
+          select: {
+            scores: true,
+            attendances: true,
+            reports: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    return students;
+  } catch (error) {
+    console.error('[student.service] getAllStudents error:', error);
+    throw error;
+  }
+};
+
+// ─── Get student by user ID ───
+const getStudentByUserId = async (userId, schoolId) => {
+  try {
+    const student = await prisma.student.findFirst({
+      where: { userId, schoolId },
+      include: {
+        enrollments: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: { class: true }
+        },
+        guardians: {
+          include: { guardian: true }
+        }
+      }
+    });
+    return student;
+  } catch (error) {
+    console.error('[student.service] getStudentByUserId error:', error);
+    throw error;
+  }
+};
+
+// ─── Get student grades ───
+const getStudentGrades = async (studentId) => {
+  try {
+    const scores = await prisma.score.findMany({
+      where: { studentId },
+      include: {
+        subject: { select: { name: true, code: true } },
+        term: { select: { academicYear: true, termNumber: true } }
+      },
+      orderBy: [
+        { term: { academicYear: 'desc' } },
+        { term: { termNumber: 'desc' } },
+        { subject: { name: 'asc' } }
+      ]
+    });
+    return scores;
+  } catch (error) {
+    console.error('[student.service] getStudentGrades error:', error);
+    throw error;
+  }
+};
+
+// ─── EXPORTS ───
 module.exports = {
   admitStudent,
   getStudents,
@@ -288,6 +418,9 @@ module.exports = {
   getStudentReports,
   getStudentTranscript,
   bulkImportStudents,
-  bulkImportStudentsFromExcelRows,   // NEW
-  getStudentsForExport,              // NEW
+  bulkImportStudentsFromExcelRows,
+  getStudentsForExport,
+  getAllStudents,      // ← NEW
+  getStudentByUserId,  // ← NEW
+  getStudentGrades,    // ← NEW
 };
