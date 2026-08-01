@@ -30,26 +30,72 @@ const registerSchoolValidator = [
     .isIn(["BASIC", "STANDARD", "PREMIUM"]).withMessage("Invalid plan selected."),
 ];
 
+// ✅ FIX: Made all fields optional with better validation
 const updateSchoolValidator = [
   body("name")
-    .optional().trim()
-    .isLength({ min: 3, max: 100 }).withMessage("School name must be 3–100 characters."),
+    .optional({ values: "falsy" })
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage("School name must be 2–100 characters."),
 
   body("phone")
-    .optional().trim()
-    .isMobilePhone().withMessage("Enter a valid phone number."),
+    .optional({ values: "falsy" })
+    .trim()
+    .isLength({ min: 5, max: 20 })
+    .withMessage("Phone number must be 5–20 characters."),
 
   body("email")
-    .optional().trim()
-    .isEmail().withMessage("Enter a valid email address."),
+    .optional({ values: "falsy" })
+    .trim()
+    .isEmail()
+    .withMessage("Enter a valid email address.")
+    .normalizeEmail(),
+
+  body("address")
+    .optional({ values: "falsy" })
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage("Address cannot exceed 200 characters."),
 
   body("motto")
-    .optional().trim()
-    .isLength({ max: 200 }).withMessage("Motto cannot exceed 200 characters."),
+    .optional({ values: "falsy" })
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage("Motto cannot exceed 200 characters."),
+
+  body("logoUrl")
+    .optional({ values: "falsy" })
+    .isURL()
+    .withMessage("Logo URL must be a valid URL."),
 
   body("scoreLabels")
-    .optional()
-    .isObject().withMessage("Score labels must be an object."),
+    .optional({ values: "falsy" })
+    .isObject()
+    .withMessage("Score labels must be an object."),
+
+  // ✅ Allow region and district to be optional during update
+  body("region")
+    .optional({ values: "falsy" })
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Region must be 2–100 characters."),
+
+  body("district")
+    .optional({ values: "falsy" })
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage("District must be 2–100 characters."),
+
+  // ✅ Allow plan to be optional during update
+  body("plan")
+    .optional({ values: "falsy" })
+    .isIn(["BASIC", "STANDARD", "PREMIUM"])
+    .withMessage("Invalid plan selected."),
+
+  body("status")
+    .optional({ values: "falsy" })
+    .isIn(["ACTIVE", "PENDING", "SUSPENDED", "DEACTIVATED", "REJECTED"])
+    .withMessage("Invalid status."),
 ];
 
 const createTermValidator = [
@@ -87,6 +133,12 @@ const updateTermValidator = [
     .isIn(["UPCOMING", "ACTIVE", "COMPLETED"]).withMessage("Invalid term status."),
   body("startDate").optional().isISO8601().withMessage("Start date must be a valid date."),
   body("endDate").optional().isISO8601().withMessage("End date must be a valid date."),
+  body("academicYear")
+    .optional()
+    .matches(/^\d{4}\/\d{4}$/).withMessage("Academic year must be in format YYYY/YYYY (e.g. 2024/2025)."),
+  body("termNumber")
+    .optional()
+    .isIn(["TERM1", "TERM2", "TERM3"]).withMessage("Term number must be TERM1, TERM2, or TERM3."),
 ];
 
 const updateSchoolStatusValidator = [
