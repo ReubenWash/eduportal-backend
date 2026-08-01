@@ -1,69 +1,336 @@
-// backend/src/services/staff.service.js
-// Add this function if it doesn't exist
+const staffService = require("../services/staff.service");
+const { sendSuccess } = require("../utils/apiResponse");
+const { createError } = require("../middleware/errorHandler");
+const { parseExcelBuffer, generateExcelBuffer, sendExcelFile } = require("../utils/excel");
 
-const getAllStaff = async (query) => {
-  const { page = 1, limit = 20, search, role, schoolId } = query;
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-  const take = parseInt(limit);
-
-  const where = {};
-  if (role) where.user = { role };
-  if (schoolId) where.schoolId = schoolId;
-  if (search) {
-    where.OR = [
-      { firstName: { contains: search, mode: 'insensitive' } },
-      { lastName: { contains: search, mode: 'insensitive' } },
-      { user: { email: { contains: search, mode: 'insensitive' } } }
-    ];
-  }
-
-  const [staff, total] = await Promise.all([
-    prisma.staff.findMany({
-      where,
-      skip,
-      take,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            role: true,
-            isActive: true,
-          }
-        },
-        school: {
-          select: {
-            id: true,
-            name: true,
-          }
-        }
-      }
-    }),
-    prisma.staff.count({ where })
-  ]);
-
-  return {
-    data: staff,
-    pagination: {
-      total,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(total / parseInt(limit))
+// ─── Create Staff ───
+const create = async (req, res) => {
+  try {
+    console.log('📤 Creating staff with data:', req.body);
+    console.log('📤 File:', req.file);
+    console.log('📤 School ID:', req.user?.schoolId);
+    
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
     }
-  };
+    
+    const photoUrl = req.file?.path || null;
+    const staff = await staffService.createStaff(req.user.schoolId, req.body, photoUrl);
+    
+    console.log('✅ Staff created:', staff.id);
+    return sendSuccess(res, 201, "Staff created successfully.", staff);
+  } catch (error) {
+    console.error('❌ Create staff error:', error);
+    
+    if (error.message && error.message.includes('already exists')) {
+      return res.status(409).json({
+        success: false,
+        message: error.message
+      });
+    }
+    
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create staff'
+    });
+  }
 };
 
-// Don't forget to add to module.exports
-module.exports = {
-  createStaff,
-  getStaff,
-  getStaffById,
-  updateStaff,
-  deactivateStaff,
-  assignSubject,
-  removeAssignment,
-  bulkImportStaffFromExcelRows,
-  getStaffForExport,
-  getAllStaff, // ✅ Add this
+// ─── List Staff ───
+const list = async (req, res) => {
+  try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
+    const result = await staffService.getStaff(req.user.schoolId, req.query);
+    return sendSuccess(res, 200, "Staff fetched successfully.", result);
+  } catch (error) {
+    console.error('❌ List staff error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch staff'
+    });
+  }
+};
+
+// ─── Get One Staff ───
+const getOne = async (req, res) => {
+  try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
+    const staff = await staffService.getStaffById(req.user.schoolId, req.params.id);
+    return sendSuccess(res, 200, "Staff fetched successfully.", staff);
+  } catch (error) {
+    console.error('❌ Get one staff error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch staff'
+    });
+  }
+};
+
+// ─── Update Staff ───
+const update = async (req, res) => {
+  try {
+    console.log('📤 Updating staff:', req.params.id);
+    console.log('📤 Data:', req.body);
+    console.log('📤 File:', req.file);
+    
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
+    
+    const photoUrl = req.file?.path || null;
+    const staff = await staffService.updateStaff(req.user.schoolId, req.params.id, req.body, photoUrl);
+    
+    console.log('✅ Staff updated:', staff.id);
+    return sendSuccess(res, 200, "Staff updated successfully.", staff);
+  } catch (error) {
+    console.error('❌ Update staff error:', error);
+    
+    if (error.message && error.message.includes('already exists')) {
+      return res.status(409).json({
+        success: false,
+        message: error.message
+      });
+    }
+    
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update staff'
+    });
+  }
+};
+
+// ─── Deactivate Staff ───
+const deactivate = async (req, res) => {
+  try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
+    await staffService.deactivateStaff(req.user.schoolId, req.params.id);
+    return sendSuccess(res, 200, "Staff deactivated successfully.");
+  } catch (error) {
+    console.error('❌ Deactivate staff error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to deactivate staff'
+    });
+  }
+};
+
+// ─── Assign Subject to Staff ───
+const assignSubject = async (req, res) => {
+  try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
+    
+    const { subjectId, classId } = req.body;
+    
+    if (!subjectId) {
+      throw createError("Subject ID is required", 400);
+    }
+    if (!classId) {
+      throw createError("Class ID is required", 400);
+    }
+    
+    const result = await staffService.assignSubject(
+      req.user.schoolId, 
+      req.params.id, 
+      subjectId, 
+      classId
+    );
+    return sendSuccess(res, 200, "Subject assigned successfully.", result);
+  } catch (error) {
+    console.error('❌ Assign subject error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to assign subject'
+    });
+  }
+};
+
+// ─── Remove Assignment from Staff ───
+const removeAssignment = async (req, res) => {
+  try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
+    
+    const { subjectId, classId } = req.body;
+    
+    if (!subjectId) {
+      throw createError("Subject ID is required", 400);
+    }
+    if (!classId) {
+      throw createError("Class ID is required", 400);
+    }
+    
+    await staffService.removeAssignment(
+      req.user.schoolId, 
+      req.params.id, 
+      subjectId, 
+      classId
+    );
+    return sendSuccess(res, 200, "Assignment removed successfully.");
+  } catch (error) {
+    console.error('❌ Remove assignment error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to remove assignment'
+    });
+  }
+};
+
+// ─── Import Staff from Excel ───
+const importExcel = async (req, res) => {
+  try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
+    if (!req.file) {
+      throw createError("No file uploaded. Expected a .xlsx file under field name 'file'.", 422);
+    }
+    
+    console.log('📤 Importing Excel file:', req.file.originalname);
+    const rows = await parseExcelBuffer(req.file.buffer);
+    const result = await staffService.bulkImportStaffFromExcelRows(req.user.schoolId, rows);
+    
+    console.log('✅ Excel import completed:', result);
+    return sendSuccess(res, 200, "Excel import completed.", result);
+  } catch (error) {
+    console.error('❌ Import Excel error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to import Excel'
+    });
+  }
+};
+
+// ─── Export Staff to Excel ───
+const exportExcel = async (req, res) => {
+  try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
+    
+    console.log('📤 Exporting staff to Excel...');
+    const rows = await staffService.getStaffForExport(req.user.schoolId, req.query);
+    const buffer = await generateExcelBuffer({
+      sheetName: "Staff",
+      columns: [
+        { header: "Staff No.", key: "staffNumber", width: 16 },
+        { header: "First Name", key: "firstName", width: 18 },
+        { header: "Last Name", key: "lastName", width: 18 },
+        { header: "Email", key: "email", width: 26 },
+        { header: "Role", key: "role", width: 18 },
+        { header: "Phone", key: "phone", width: 16 },
+        { header: "Qualification", key: "qualification", width: 20 },
+        { header: "Status", key: "isActive", width: 12 },
+        { header: "Subjects", key: "subjects", width: 30 },
+        { header: "Classes", key: "classes", width: 20 },
+      ],
+      rows,
+    });
+    
+    console.log('✅ Export completed');
+    sendExcelFile(res, buffer, `staff-export-${Date.now()}.xlsx`);
+  } catch (error) {
+    console.error('❌ Export Excel error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to export Excel'
+    });
+  }
+};
+
+// ─── Super Admin: Get all staff across all schools ───
+const getAllStaff = async (req, res) => {
+  try {
+    console.log('📤 Fetching all staff (Super Admin)...');
+    const staff = await staffService.getAllStaff(req.query);
+    return sendSuccess(res, 200, "All staff fetched successfully.", staff);
+  } catch (error) {
+    console.error('❌ Get all staff error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch all staff'
+    });
+  }
+};
+
+// ✅ FIXED: Export all functions correctly
+module.exports = { 
+  create,        // ← This was incorrectly named createStaff before
+  list, 
+  getOne, 
+  update, 
+  deactivate, 
+  assignSubject, 
+  removeAssignment, 
+  importExcel, 
+  exportExcel,
+  getAllStaff
 };

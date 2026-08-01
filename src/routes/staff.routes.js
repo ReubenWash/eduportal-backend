@@ -9,6 +9,7 @@ const { uploadExcel } = require("../middleware/uploadExcel");
 const { body } = require("express-validator");
 const validate = require("../middleware/validate");
 
+// ─── All routes require authentication and tenant scope ───
 router.use(authenticate, tenantScope);
 
 // ─── Export/Import ───
@@ -19,7 +20,7 @@ router.post("/import-excel", isSchoolAdmin, uploadExcel, controller.importExcel)
 router.get("/", isSchoolStaff, controller.list);
 router.get("/:id", isSchoolStaff, controller.getOne);
 
-// ✅ UNCOMMENTED - Create staff
+// ─── Create Staff ───
 router.post(
   "/",
   isSchoolAdmin,
@@ -28,21 +29,30 @@ router.post(
     body("lastName").trim().notEmpty().withMessage("Last name is required."),
     body("email").trim().isEmail().withMessage("Valid email required."),
     body("role").isIn(["SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER"]).withMessage("Invalid role."),
+    body("phone").optional().trim().isLength({ min: 5, max: 20 }).withMessage("Phone must be 5-20 characters."),
   ],
   validate,
   uploadStaffPhoto,
   controller.create
 );
 
-// ✅ UNCOMMENTED - Update staff
+// ─── Update Staff ───
 router.patch(
   "/:id",
   isSchoolAdmin,
+  [
+    body("firstName").optional().trim().notEmpty().withMessage("First name cannot be empty."),
+    body("lastName").optional().trim().notEmpty().withMessage("Last name cannot be empty."),
+    body("email").optional().trim().isEmail().withMessage("Valid email required."),
+    body("role").optional().isIn(["SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER"]).withMessage("Invalid role."),
+    body("phone").optional().trim().isLength({ min: 5, max: 20 }).withMessage("Phone must be 5-20 characters."),
+  ],
+  validate,
   uploadStaffPhoto,
   controller.update
 );
 
-// ✅ UNCOMMENTED - Deactivate staff
+// ─── Deactivate Staff ───
 router.delete(
   "/:id",
   isSchoolAdmin,
@@ -50,7 +60,6 @@ router.delete(
 );
 
 // ─── Subject Assignment ───
-// ✅ UNCOMMENTED - Assign subject to staff
 router.post(
   "/:id/assign",
   isSchoolAdmin,
@@ -62,7 +71,7 @@ router.post(
   controller.assignSubject
 );
 
-// ✅ UNCOMMENTED - Remove subject assignment
+// ─── Remove Subject Assignment ───
 router.delete(
   "/:id/assign",
   isSchoolAdmin,
@@ -76,5 +85,8 @@ router.delete(
 
 // ─── Super Admin routes ───
 router.get("/admin/all", isSuperAdmin, controller.getAllStaff);
+
+// ─── Optional: Get staff by school (Super Admin) ───
+router.get("/admin/school/:schoolId", isSuperAdmin, controller.getStaffBySchool);
 
 module.exports = router;
