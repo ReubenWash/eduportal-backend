@@ -124,14 +124,19 @@ const updateProfile = async (req, res) => {
       updateData.motto = req.body.motto;
     }
     
-    // Handle scoreLabels (might be stringified JSON)
+    // ✅ FIX: Handle scoreLabels - parse if it's a string
     if (req.body.scoreLabels) {
       try {
-        updateData.scoreLabels = typeof req.body.scoreLabels === 'string' 
-          ? JSON.parse(req.body.scoreLabels) 
-          : req.body.scoreLabels;
+        // If it's a string, parse it to JSON
+        if (typeof req.body.scoreLabels === 'string') {
+          updateData.scoreLabels = JSON.parse(req.body.scoreLabels);
+          console.log('✅ Parsed scoreLabels from string:', updateData.scoreLabels);
+        } else {
+          updateData.scoreLabels = req.body.scoreLabels;
+        }
       } catch (parseError) {
         console.error('❌ Failed to parse scoreLabels:', parseError);
+        // Don't include scoreLabels if parsing fails
       }
     }
     
@@ -211,7 +216,6 @@ const getSuperAdminDashboard = async (req, res) => {
 };
 
 // ─── GET /api/v1/schools/me/terms ───
-// ✅ FIXED: Added missing arrow function syntax
 const getTerms = async (req, res) => {
   try {
     if (!req.user.schoolId) {

@@ -31,6 +31,7 @@ const registerSchoolValidator = [
 ];
 
 // ✅ FIX: Made all fields optional with better validation
+// ✅ FIX: scoreLabels now accepts both string (JSON) and object
 const updateSchoolValidator = [
   body("name")
     .optional({ values: "falsy" })
@@ -68,12 +69,28 @@ const updateSchoolValidator = [
     .isURL()
     .withMessage("Logo URL must be a valid URL."),
 
+  // ✅ FIX: Allow scoreLabels to be either an object OR a JSON string
   body("scoreLabels")
     .optional({ values: "falsy" })
-    .isObject()
-    .withMessage("Score labels must be an object."),
+    .custom((value) => {
+      // If it's a string, try to parse it
+      if (typeof value === 'string') {
+        try {
+          JSON.parse(value);
+          return true;
+        } catch {
+          throw new Error("Score labels must be a valid JSON string or object");
+        }
+      }
+      // If it's an object, it's valid
+      if (typeof value === 'object' && value !== null) {
+        return true;
+      }
+      throw new Error("Score labels must be a valid JSON string or object");
+    })
+    .withMessage("Score labels must be a valid JSON string or object"),
 
-  // ✅ Allow region and district to be optional during update
+  // Allow region and district to be optional during update
   body("region")
     .optional({ values: "falsy" })
     .trim()
@@ -86,7 +103,7 @@ const updateSchoolValidator = [
     .isLength({ min: 2, max: 100 })
     .withMessage("District must be 2–100 characters."),
 
-  // ✅ Allow plan to be optional during update
+  // Allow plan to be optional during update
   body("plan")
     .optional({ values: "falsy" })
     .isIn(["BASIC", "STANDARD", "PREMIUM"])
