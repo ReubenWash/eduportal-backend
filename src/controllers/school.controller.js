@@ -74,7 +74,6 @@ const updateProfile = async (req, res) => {
   console.log('User:', req.user);
   console.log('Body:', req.body);
   console.log('File:', req.file);
-  console.log('Files:', req.files);
   
   try {
     if (!req.user.schoolId) {
@@ -212,7 +211,8 @@ const getSuperAdminDashboard = async (req, res) => {
 };
 
 // ─── GET /api/v1/schools/me/terms ───
-const getTerms = async (req, res) {
+// ✅ FIXED: Added missing arrow function syntax
+const getTerms = async (req, res) => {
   try {
     if (!req.user.schoolId) {
       throw createError("School ID not found. Please contact administrator.", 400);
