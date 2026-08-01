@@ -321,9 +321,57 @@ const getAllStaff = async (req, res) => {
   }
 };
 
-// ✅ FIXED: Export all functions correctly
+// ─── NEW: Super Admin: Get staff by school ───
+const getStaffBySchool = async (req, res) => {
+  try {
+    const { schoolId } = req.params;
+    console.log('📤 Fetching staff for school:', schoolId);
+    
+    if (!schoolId) {
+      throw createError("School ID is required", 400);
+    }
+    
+    const staff = await staffService.getStaffBySchool(schoolId, req.query);
+    return sendSuccess(res, 200, "Staff fetched successfully.", staff);
+  } catch (error) {
+    console.error('❌ Get staff by school error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch staff by school'
+    });
+  }
+};
+
+// ─── NEW: Get staff statistics (Super Admin) ───
+const getStaffStats = async (req, res) => {
+  try {
+    console.log('📤 Fetching staff statistics...');
+    const stats = await staffService.getStaffStats();
+    return sendSuccess(res, 200, "Staff statistics fetched successfully.", stats);
+  } catch (error) {
+    console.error('❌ Get staff stats error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to fetch staff statistics'
+    });
+  }
+};
+
+// ─── EXPORTS ───
 module.exports = { 
-  create,        // ← This was incorrectly named createStaff before
+  create, 
   list, 
   getOne, 
   update, 
@@ -332,5 +380,7 @@ module.exports = {
   removeAssignment, 
   importExcel, 
   exportExcel,
-  getAllStaff
+  getAllStaff,
+  getStaffBySchool,  // ✅ NEW
+  getStaffStats      // ✅ NEW
 };

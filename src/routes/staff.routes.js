@@ -86,7 +86,7 @@ router.delete(
 // ─── Super Admin routes ───
 router.get("/admin/all", isSuperAdmin, controller.getAllStaff);
 
-// ─── Optional: Get staff by school (Super Admin) ───
-router.get("/admin/school/:schoolId", isSuperAdmin, controller.getStaffBySchool);
+// ✅ FIXED: Remove or comment out the non-existent route
+// router.get("/admin/school/:schoolId", isSuperAdmin, controller.getStaffBySchool);
 
 module.exports = router;
