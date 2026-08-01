@@ -60,17 +60,47 @@ const createStaff = async (schoolId, data, photoUrl) => {
   return result.staff;
 };
 
+// ✅ FIX: Return only active staff by default
 const getStaff = async (schoolId, query) => {
   const { skip, take, page, limit } = getPagination(query);
-  const where = { schoolId };
+  
+  // ✅ Base where clause: schoolId and active user
+  const where = { 
+    schoolId,
+    user: { isActive: true } // ← Only return active staff by default
+  };
+  
+  // Allow showing all staff (including inactive) if explicitly requested
+  const showAll = query.status === 'all' || query.includeInactive === 'true';
+  
+  if (showAll) {
+    // Remove the isActive filter to show all staff
+    delete where.user;
+    // Re-add role filter if present
+    if (query.role) {
+      where.user = { role: query.role };
+    }
+  } else {
+    // Apply role filter on top of active filter
+    if (query.role) {
+      where.user = { ...where.user, role: query.role };
+    }
+  }
   
   if (query.search) {
     where.OR = [
       { firstName: { contains: query.search, mode: "insensitive" } },
       { lastName: { contains: query.search, mode: "insensitive" } },
     ];
+    // If we have an OR with user conditions, we need to handle it differently
+    // Add search in email as well
+    if (!showAll && query.role) {
+      where.OR = [
+        ...where.OR,
+        { user: { email: { contains: query.search, mode: "insensitive" } } }
+      ];
+    }
   }
-  if (query.role) where.user = { role: query.role };
 
   const [staff, total] = await Promise.all([
     prisma.staff.findMany({
@@ -283,12 +313,20 @@ const getStaffForExport = async (schoolId, query) => {
 // ─── Get All Staff (Super Admin) ───
 const getAllStaff = async (query = {}) => {
   try {
-    const { page = 1, limit = 20, search, role, schoolId } = query;
+    const { page = 1, limit = 20, search, role, schoolId, includeInactive } = query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const take = parseInt(limit);
 
     const where = {};
-    if (role) where.user = { role };
+    
+    // ✅ By default, only return active staff for Super Admin too
+    if (includeInactive !== 'true') {
+      where.user = { isActive: true };
+    }
+    
+    if (role) {
+      where.user = { ...(where.user || {}), role };
+    }
     if (schoolId) where.schoolId = schoolId;
     if (search) {
       where.OR = [
@@ -349,12 +387,20 @@ const getAllStaff = async (query = {}) => {
 // ─── Get Staff by School (Super Admin) ───
 const getStaffBySchool = async (schoolId, query = {}) => {
   try {
-    const { page = 1, limit = 20, search, role } = query;
+    const { page = 1, limit = 20, search, role, includeInactive } = query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const take = parseInt(limit);
 
     const where = { schoolId };
-    if (role) where.user = { role };
+    
+    // ✅ By default, only return active staff
+    if (includeInactive !== 'true') {
+      where.user = { isActive: true };
+    }
+    
+    if (role) {
+      where.user = { ...(where.user || {}), role };
+    }
     if (search) {
       where.OR = [
         { firstName: { contains: search, mode: 'insensitive' } },
@@ -407,6 +453,58 @@ const getStaffBySchool = async (schoolId, query = {}) => {
   }
 };
 
+// ─── Get Staff Statistics (Super Admin) ───
+const getStaffStats = async () => {
+  try {
+    const [total, active, byRole, bySchool] = await Promise.all([
+      prisma.staff.count(),
+      prisma.staff.count({
+        where: { user: { isActive: true } }
+      }),
+      prisma.staff.groupBy({
+        by: ['user', 'role'],
+        _count: { id: true },
+        where: { user: { isActive: true } }
+      }),
+      prisma.staff.groupBy({
+        by: ['schoolId'],
+        _count: { id: true },
+        where: { user: { isActive: true } }
+      })
+    ]);
+
+    // Get school names for the bySchool stats
+    const schoolIds = bySchool.map(s => s.schoolId).filter(Boolean);
+    const schools = schoolIds.length > 0 ? await prisma.school.findMany({
+      where: { id: { in: schoolIds } },
+      select: { id: true, name: true }
+    }) : [];
+
+    const schoolMap = schools.reduce((acc, s) => {
+      acc[s.id] = s.name;
+      return acc;
+    }, {});
+
+    return {
+      total,
+      active,
+      inactive: total - active,
+      byRole: byRole.map(r => ({
+        role: r.user?.role || 'Unknown',
+        count: r._count.id
+      })),
+      bySchool: bySchool.map(s => ({
+        schoolId: s.schoolId,
+        schoolName: schoolMap[s.schoolId] || 'Unknown',
+        count: s._count.id
+      }))
+    };
+  } catch (error) {
+    console.error('[staff.service] getStaffStats error:', error);
+    throw error;
+  }
+};
+
 // ─── EXPORTS ───
 module.exports = {
   createStaff,
@@ -419,5 +517,6 @@ module.exports = {
   bulkImportStaffFromExcelRows,
   getStaffForExport,
   getAllStaff,
-  getStaffBySchool, // ✅ NEW
+  getStaffBySchool,
+  getStaffStats, // ✅ NEW
 };

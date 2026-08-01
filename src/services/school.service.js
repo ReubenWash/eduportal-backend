@@ -252,6 +252,7 @@ const updateSchoolPlan = async (schoolId, plan) => {
 };
 
 // ── Dashboard stats ────────────────────────────────────────────
+// ✅ FIX: Count only active staff
 const getDashboardStats = async (schoolId, user) => {
   const [
     totalStudents,
@@ -260,7 +261,13 @@ const getDashboardStats = async (schoolId, user) => {
     activeTerm,
   ] = await Promise.all([
     prisma.student.count({ where: { schoolId, status: "ACTIVE" } }),
-    prisma.staff.count({ where: { schoolId } }),
+    // ✅ FIX: Only count staff with active users
+    prisma.staff.count({ 
+      where: { 
+        schoolId,
+        user: { isActive: true }
+      } 
+    }),
     prisma.class.count({ where: { schoolId } }),
     prisma.term.findFirst({
       where:   { schoolId, status: "ACTIVE" },
@@ -289,8 +296,11 @@ const getDashboardStats = async (schoolId, user) => {
 
   const baseStats = { totalStudents, totalStaff, totalClasses, activeTerm, passRate };
 
+  // ─── Class Teacher Dashboard ───
   if (user && user.role === 'CLASS_TEACHER' && user.staff?.id) {
-    const staffClass = await prisma.class.findFirst({ where: { classTeacherId: user.staff.id } });
+    const staffClass = await prisma.class.findFirst({ 
+      where: { classTeacherId: user.staff.id } 
+    });
     if (staffClass) {
       const enrollments = await prisma.enrollment.findMany({
         where: { classId: staffClass.id, termId: activeTerm?.id },
@@ -313,26 +323,66 @@ const getDashboardStats = async (schoolId, user) => {
     }
   }
 
+  // ─── Subject Teacher Dashboard ───
   if (user && user.role === 'SUBJECT_TEACHER' && user.staff?.id) {
     const assignments = await prisma.staffSubject.findMany({
       where: { staffId: user.staff.id },
       include: { class: true, subject: true }
     });
     
-    const myAssignments = assignments.map((a, i) => ({
-      class: a.class.name,
-      subject: a.subject.name,
-      submitted: i % 2 === 0,
-      date: i % 2 === 0 ? '12 Jun 2025' : null,
-      students: 30
-    }));
+    // Get active term for subject teacher
+    const activeTermForTeacher = activeTerm || await prisma.term.findFirst({
+      where: { schoolId, status: "ACTIVE" },
+    });
+    
+    const myAssignments = await Promise.all(
+      assignments.map(async (a) => {
+        // Check if scores are submitted for this assignment
+        const scores = await prisma.score.findMany({
+          where: {
+            subjectId: a.subjectId,
+            termId: activeTermForTeacher?.id,
+            student: {
+              enrollments: {
+                some: {
+                  classId: a.classId,
+                  termId: activeTermForTeacher?.id
+                }
+              }
+            }
+          }
+        });
+        
+        const studentCount = await prisma.enrollment.count({
+          where: {
+            classId: a.classId,
+            termId: activeTermForTeacher?.id
+          }
+        });
+        
+        const isSubmitted = scores.length > 0 && scores.length === studentCount;
+        
+        return {
+          class: `${a.class.level} ${a.class.section}`,
+          subject: a.subject.name,
+          submitted: isSubmitted,
+          students: studentCount,
+          date: isSubmitted ? new Date().toLocaleDateString() : null
+        };
+      })
+    );
 
-    return { ...baseStats, myAssignments };
+    return { 
+      ...baseStats, 
+      myAssignments,
+      mySubjects: assignments.length.toString()
+    };
   }
 
   return baseStats;
 };
 
+// ── Super Admin Dashboard ─────────────────────────────────────
 const getSuperAdminDashboard = async () => {
   const [
     schools,
@@ -343,14 +393,17 @@ const getSuperAdminDashboard = async () => {
     pendingApplications,
     recentActivity,
   ] = await Promise.all([
-    // Exclude deactivated schools from total count
     prisma.school.count({ where: { status: { not: "DEACTIVATED" } } }),
     prisma.school.count({ where: { status: 'ACTIVE' } }),
     prisma.student.count({ where: { status: 'ACTIVE' } }),
-    prisma.staff.count(),
+    // ✅ FIX: Only count staff with active users
+    prisma.staff.count({ 
+      where: { 
+        user: { isActive: true }
+      } 
+    }),
     prisma.user.count({ where: { isVerified: true, role: { not: 'SUPER_ADMIN' } } }),
     prisma.school.count({ where: { status: 'PENDING' } }),
-    // Exclude deactivated schools from recent activity
     prisma.school.findMany({
       where: { status: { not: "DEACTIVATED" } },
       select: { id: true, name: true, status: true, createdAt: true },
@@ -435,12 +488,10 @@ const updateTerm = async (schoolId, termId, data) => {
 const getAllSchools = async (query) => {
   const { skip, take, page, limit } = getPagination(query);
   
-  // Start with base filter to exclude deactivated schools
   const where = {
     status: { not: "DEACTIVATED" }
   };
   
-  // If a specific status is requested, override the filter
   if (query.status) {
     where.status = query.status;
   }
@@ -473,13 +524,11 @@ const getAllSchools = async (query) => {
 const updateSchoolStatus = async (schoolId, status) => {
   console.log(`[updateSchoolStatus] Starting update for school ${schoolId} to status ${status}`);
   
-  // Validate status
   const validStatuses = ['PENDING', 'ACTIVE', 'SUSPENDED', 'DEACTIVATED', 'REJECTED'];
   if (!validStatuses.includes(status)) {
     throw createError(`Invalid status. Must be one of: ${validStatuses.join(', ')}`, 400);
   }
 
-  // Check if school exists
   const school = await prisma.school.findUnique({
     where: { id: schoolId },
     select: { id: true, name: true, status: true, email: true }
@@ -491,26 +540,22 @@ const updateSchoolStatus = async (schoolId, status) => {
 
   console.log(`[updateSchoolStatus] Current school status: ${school.status}`);
 
-  // ─── Update school status ───
   const updatedSchool = await prisma.school.update({
     where: { id: schoolId },
     data: { 
       status: status,
-      updatedAt: new Date() // Explicitly update the updatedAt timestamp
+      updatedAt: new Date()
     },
   });
 
   console.log(`[updateSchoolStatus] Updated school status: ${updatedSchool.status}`);
 
-  // ─── FIX: Invalidate all sessions for users of this school ───
-  // Get all users for this school
+  // ─── Invalidate all sessions for users of this school ───
   const schoolUsers = await prisma.user.findMany({
     where: { schoolId },
     select: { id: true, email: true, role: true }
   });
 
-  // Delete all refresh tokens for users of this school
-  // This forces them to re-authenticate and get fresh tokens
   if (schoolUsers.length > 0) {
     const userIds = schoolUsers.map(u => u.id);
     const deletedTokens = await prisma.refreshToken.deleteMany({
@@ -603,13 +648,11 @@ const deleteSchool = async (schoolId, userId = null) => {
 
   console.log(`[deleteSchool] Deactivating school: ${school.name}`);
 
-  // Get all users for this school
   const schoolUsers = await prisma.user.findMany({
     where: { schoolId },
     select: { id: true }
   });
 
-  // Delete all refresh tokens for users of this school
   if (schoolUsers.length > 0) {
     const userIds = schoolUsers.map(u => u.id);
     const deletedTokens = await prisma.refreshToken.deleteMany({
@@ -620,7 +663,6 @@ const deleteSchool = async (schoolId, userId = null) => {
     console.log(`[AUTH] Invalidated ${deletedTokens.count} sessions for ${schoolUsers.length} users`);
   }
 
-  // Soft delete - set status to DEACTIVATED
   const updated = await prisma.school.update({
     where: { id: schoolId },
     data: { 
@@ -629,7 +671,6 @@ const deleteSchool = async (schoolId, userId = null) => {
     },
   });
 
-  // Notify school admins
   const adminUsers = await prisma.user.findMany({
     where: { schoolId, role: "SCHOOL_ADMIN" }
   });
@@ -645,7 +686,6 @@ const deleteSchool = async (schoolId, userId = null) => {
     });
   }
 
-  // Log the action
   await prisma.auditLog.create({
     data: {
       userId,
@@ -682,7 +722,6 @@ const restoreSchool = async (schoolId, userId = null) => {
 
   console.log(`[restoreSchool] Restoring school: ${school.name}`);
 
-  // Restore - set status back to ACTIVE
   const updated = await prisma.school.update({
     where: { id: schoolId },
     data: { 
@@ -691,7 +730,6 @@ const restoreSchool = async (schoolId, userId = null) => {
     },
   });
 
-  // Notify school admins
   try {
     const adminUsers = await prisma.user.findMany({
       where: { schoolId, role: "SCHOOL_ADMIN" }
@@ -711,7 +749,6 @@ const restoreSchool = async (schoolId, userId = null) => {
     console.warn('Notification creation failed:', notifError.message);
   }
 
-  // Log the action - using "ACTIVATE" since "RESTORE" is not in the AuditAction enum
   try {
     await prisma.auditLog.create({
       data: {
@@ -743,7 +780,6 @@ const restoreSchool = async (schoolId, userId = null) => {
 const generateRegistrationPdf = async (schoolId, user) => {
   const PDFDocument = require('pdfkit');
   
-  // Fetch school with related data
   const school = await prisma.school.findUnique({
     where: { id: schoolId },
     include: {
@@ -770,20 +806,14 @@ const generateRegistrationPdf = async (schoolId, user) => {
     throw createError("School not found", 404);
   }
 
-  // Get the admin user
   const admin = school.users[0];
   const adminStaff = admin?.staff;
 
-  // Create PDF document
   const doc = new PDFDocument({ margin: 50, size: 'A4' });
   const buffers = [];
   
   doc.on('data', buffers.push.bind(buffers));
-  doc.on('end', () => {
-    // PDF generation complete
-  });
-
-  // ─── PDF CONTENT ──────────────────────────────────────────────
+  doc.on('end', () => {});
 
   // Header with branding
   doc.rect(0, 0, doc.page.width, 80)
@@ -798,18 +828,15 @@ const generateRegistrationPdf = async (schoolId, user) => {
      .font('Helvetica')
      .text('School Registration Document', 50, 52);
 
-  // Title
   doc.fillColor('#1F2937')
      .fontSize(20)
      .font('Helvetica-Bold')
      .text('REGISTRATION DETAILS', 50, 120);
 
-  // Line separator
   doc.moveTo(50, 145)
      .lineTo(550, 145)
      .stroke('#E5E7EB');
 
-  // ─── School Information ──────────────────────────────────────
   let yPos = 165;
   
   const sections = [
@@ -844,7 +871,6 @@ const generateRegistrationPdf = async (schoolId, user) => {
   ];
 
   sections.forEach((section, index) => {
-    // Section title
     doc.fillColor('#1F2937')
        .fontSize(14)
        .font('Helvetica-Bold')
@@ -852,7 +878,6 @@ const generateRegistrationPdf = async (schoolId, user) => {
     
     yPos += 22;
 
-    // Section fields
     section.fields.forEach(field => {
       doc.fillColor('#6B7280')
          .fontSize(11)
@@ -869,17 +894,14 @@ const generateRegistrationPdf = async (schoolId, user) => {
 
     yPos += 15;
 
-    // Add page break if needed
     if (yPos > 700 && index < sections.length - 1) {
       doc.addPage();
       yPos = 50;
     }
   });
 
-  // ─── Footer ──────────────────────────────────────────────────
   doc.addPage();
   
-  // Footer header
   doc.fillColor('#4F46E5')
      .fontSize(16)
      .font('Helvetica-Bold')
@@ -890,7 +912,6 @@ const generateRegistrationPdf = async (schoolId, user) => {
      .font('Helvetica')
      .text('This document is an official record of the school registration on EduPortal.', 50, 80);
 
-  // Footer details
   const footerFields = [
     { label: 'Document ID', value: `REG-${school.id.substring(0, 8).toUpperCase()}` },
     { label: 'Generated On', value: new Date().toLocaleString() },
@@ -912,12 +933,10 @@ const generateRegistrationPdf = async (schoolId, user) => {
     fyPos += 22;
   });
 
-  // Footer line
   doc.moveTo(50, fyPos + 10)
      .lineTo(550, fyPos + 10)
      .stroke('#E5E7EB');
 
-  // Footer text
   doc.fillColor('#9CA3AF')
      .fontSize(10)
      .font('Helvetica')
@@ -928,10 +947,8 @@ const generateRegistrationPdf = async (schoolId, user) => {
        { align: 'center' }
      );
 
-  // Finalize PDF
   doc.end();
 
-  // Return PDF buffer
   return new Promise((resolve, reject) => {
     doc.on('end', () => {
       const pdfBuffer = Buffer.concat(buffers);
