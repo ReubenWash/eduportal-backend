@@ -2,6 +2,8 @@ const schoolService = require("../services/school.service");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
 const { prisma } = require("../config/db");
+const cloudinary = require("../config/cloudinary");
+const { cleanupTempFile } = require("../middleware/upload");
 
 // ─── POST /api/v1/schools/register ───
 const register = async (req, res) => {
@@ -66,21 +68,99 @@ const getProfile = async (req, res) => {
   }
 };
 
-// ─── PATCH /api/v1/schools/me (Placeholder) ───
+// ─── PATCH /api/v1/schools/me ───
 const updateProfile = async (req, res) => {
+  console.log('🔍 updateProfile called');
+  console.log('User:', req.user);
+  console.log('Body:', req.body);
+  console.log('File:', req.file);
+  console.log('Files:', req.files);
+  
   try {
     if (!req.user.schoolId) {
       throw createError("School ID not found. Please contact administrator.", 400);
     }
     
-    // Get the logo URL from uploaded file (if any)
-    const logoUrl = req.file?.path || null;
+    let logoUrl = null;
     
-    // Update the school profile
-    const school = await schoolService.updateSchoolProfile(req.user.schoolId, req.body, logoUrl);
+    // ✅ Handle file upload from disk storage
+    if (req.file) {
+      try {
+        console.log('📤 Uploading logo to Cloudinary...');
+        
+        // Upload to Cloudinary
+        const result = await cloudinary.uploader.upload(req.file.path, {
+          folder: 'edutrack/logos',
+          transformation: [{ width: 300, height: 300, crop: 'limit' }],
+        });
+        
+        logoUrl = result.secure_url;
+        console.log('✅ Logo uploaded to Cloudinary:', logoUrl);
+        
+        // ✅ Clean up temp file
+        cleanupTempFile(req.file);
+      } catch (uploadError) {
+        console.error('❌ Cloudinary upload error:', uploadError);
+        // Continue without logo if upload fails
+      }
+    }
+    
+    // ✅ Build update data from req.body
+    const updateData = {};
+    
+    // Handle text fields
+    if (req.body.name !== undefined && req.body.name !== '') {
+      updateData.name = req.body.name;
+    }
+    if (req.body.email !== undefined && req.body.email !== '') {
+      updateData.email = req.body.email;
+    }
+    if (req.body.phone !== undefined && req.body.phone !== '') {
+      updateData.phone = req.body.phone;
+    }
+    if (req.body.address !== undefined && req.body.address !== '') {
+      updateData.address = req.body.address;
+    }
+    if (req.body.motto !== undefined && req.body.motto !== '') {
+      updateData.motto = req.body.motto;
+    }
+    
+    // Handle scoreLabels (might be stringified JSON)
+    if (req.body.scoreLabels) {
+      try {
+        updateData.scoreLabels = typeof req.body.scoreLabels === 'string' 
+          ? JSON.parse(req.body.scoreLabels) 
+          : req.body.scoreLabels;
+      } catch (parseError) {
+        console.error('❌ Failed to parse scoreLabels:', parseError);
+      }
+    }
+    
+    // Use uploaded logo URL if available
+    if (logoUrl) {
+      updateData.logoUrl = logoUrl;
+    }
+    
+    console.log('📤 Updating school with:', updateData);
+    
+    // ✅ Update the school
+    const school = await schoolService.updateSchoolProfile(
+      req.user.schoolId,
+      updateData
+    );
+    
+    console.log('✅ School updated:', school);
     return sendSuccess(res, 200, "School profile updated.", school);
+    
   } catch (error) {
-    console.error('Update school profile error:', error);
+    console.error('❌ Update school profile error:', error);
+    console.error('Error stack:', error.stack);
+    
+    // Clean up temp file if it exists
+    if (req.file) {
+      cleanupTempFile(req.file);
+    }
+    
     if (error.statusCode) {
       return res.status(error.statusCode).json({
         success: false,
@@ -132,7 +212,7 @@ const getSuperAdminDashboard = async (req, res) => {
 };
 
 // ─── GET /api/v1/schools/me/terms ───
-const getTerms = async (req, res) => {
+const getTerms = async (req, res) {
   try {
     if (!req.user.schoolId) {
       throw createError("School ID not found. Please contact administrator.", 400);
@@ -177,7 +257,7 @@ const createTerm = async (req, res) => {
   }
 };
 
-// ─── PATCH /api/v1/schools/me/terms/:id (Placeholder) ───
+// ─── PATCH /api/v1/schools/me/terms/:id ───
 const updateTerm = async (req, res) => {
   try {
     if (!req.user.schoolId) {
