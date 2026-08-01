@@ -2,6 +2,7 @@ const staffService = require("../services/staff.service");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
 const { parseExcelBuffer, generateExcelBuffer, sendExcelFile } = require("../utils/excel");
+const { prisma } = require("../config/db");
 
 // ─── Create Staff ───
 const create = async (req, res) => {
@@ -158,6 +159,9 @@ const assignSubject = async (req, res) => {
     }
     
     const { subjectId, classId } = req.body;
+    const staffId = req.params.id;
+    
+    console.log('📤 Assigning subject:', { staffId, subjectId, classId });
     
     if (!subjectId) {
       throw createError("Subject ID is required", 400);
@@ -166,12 +170,38 @@ const assignSubject = async (req, res) => {
       throw createError("Class ID is required", 400);
     }
     
+    // ✅ Verify the subject exists in the school
+    const subject = await prisma.subject.findFirst({
+      where: { id: subjectId, schoolId: req.user.schoolId }
+    });
+    if (!subject) {
+      throw createError("Subject not found in this school.", 404);
+    }
+    
+    // ✅ Verify the class exists in the school
+    const classExists = await prisma.class.findFirst({
+      where: { id: classId, schoolId: req.user.schoolId }
+    });
+    if (!classExists) {
+      throw createError("Class not found in this school.", 404);
+    }
+    
+    // ✅ Verify the staff exists in the school
+    const staff = await prisma.staff.findFirst({
+      where: { id: staffId, schoolId: req.user.schoolId }
+    });
+    if (!staff) {
+      throw createError("Staff not found in this school.", 404);
+    }
+    
     const result = await staffService.assignSubject(
       req.user.schoolId, 
-      req.params.id, 
+      staffId, 
       subjectId, 
       classId
     );
+    
+    console.log('✅ Subject assigned:', result);
     return sendSuccess(res, 200, "Subject assigned successfully.", result);
   } catch (error) {
     console.error('❌ Assign subject error:', error);
@@ -321,7 +351,7 @@ const getAllStaff = async (req, res) => {
   }
 };
 
-// ─── NEW: Super Admin: Get staff by school ───
+// ─── Super Admin: Get staff by school ───
 const getStaffBySchool = async (req, res) => {
   try {
     const { schoolId } = req.params;
@@ -348,7 +378,7 @@ const getStaffBySchool = async (req, res) => {
   }
 };
 
-// ─── NEW: Get staff statistics (Super Admin) ───
+// ─── Get staff statistics (Super Admin) ───
 const getStaffStats = async (req, res) => {
   try {
     console.log('📤 Fetching staff statistics...');
@@ -381,6 +411,6 @@ module.exports = {
   importExcel, 
   exportExcel,
   getAllStaff,
-  getStaffBySchool,  // ✅ NEW
-  getStaffStats      // ✅ NEW
+  getStaffBySchool,
+  getStaffStats
 };

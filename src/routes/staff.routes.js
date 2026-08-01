@@ -65,7 +65,9 @@ router.post(
   isSchoolAdmin,
   [
     body("subjectId").notEmpty().withMessage("Subject ID is required."),
-    body("classId").notEmpty().withMessage("Class ID is required.")
+    body("subjectId").isUUID().withMessage("Subject ID must be a valid UUID."),
+    body("classId").notEmpty().withMessage("Class ID is required."),
+    body("classId").isUUID().withMessage("Class ID must be a valid UUID."),
   ],
   validate,
   controller.assignSubject
@@ -77,16 +79,20 @@ router.delete(
   isSchoolAdmin,
   [
     body("subjectId").notEmpty().withMessage("Subject ID is required."),
-    body("classId").notEmpty().withMessage("Class ID is required.")
+    body("classId").notEmpty().withMessage("Class ID is required."),
   ],
   validate,
   controller.removeAssignment
 );
 
 // ─── Super Admin routes ───
+// Get all staff across all schools
 router.get("/admin/all", isSuperAdmin, controller.getAllStaff);
 
-// ✅ FIXED: Remove or comment out the non-existent route
-// router.get("/admin/school/:schoolId", isSuperAdmin, controller.getStaffBySchool);
+// Get staff by school (Super Admin only)
+router.get("/admin/school/:schoolId", isSuperAdmin, controller.getStaffBySchool);
+
+// Get staff statistics (Super Admin only)
+router.get("/admin/stats", isSuperAdmin, controller.getStaffStats);
 
 module.exports = router;
