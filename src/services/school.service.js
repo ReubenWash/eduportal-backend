@@ -118,7 +118,7 @@ const manualCreateSchool = async ({ name, email, password, region, district, hea
         gesNumber: gesNumber || null,
         address:   address   || null,
         phone:     phone     || null,
-        status:    "ACTIVE", // Auto-activate for Super Admin creation
+        status:    "ACTIVE",
         plan:      plan      || "BASIC",
       },
     });
@@ -129,7 +129,7 @@ const manualCreateSchool = async ({ name, email, password, region, district, hea
         email,
         passwordHash,
         role:         "SCHOOL_ADMIN",
-        isVerified:   true, // Auto-verified
+        isVerified:   true,
       },
     });
 
@@ -193,7 +193,6 @@ const updateSchoolById = async (schoolId, data) => {
   const school = await prisma.school.findUnique({ where: { id: schoolId } });
   if (!school) throw createError("School not found.", 404);
 
-  // Only allow known, safe fields to be updated this way.
   const {
     name, email, phone, region, district, address,
     gesNumber, status,
@@ -227,7 +226,6 @@ const updateSchoolPlan = async (schoolId, plan) => {
     data: { plan },
   });
 
-  // Keep the Subscription record in sync so billing/revenue stays accurate.
   const subscription = await prisma.subscription.findUnique({ where: { schoolId } });
   if (subscription) {
     await prisma.subscription.update({
@@ -252,8 +250,12 @@ const updateSchoolPlan = async (schoolId, plan) => {
 };
 
 // ── Dashboard stats ────────────────────────────────────────────
-// ✅ FIX: Count only active staff
+// ✅ FIX: Count only active staff and properly handle Class Teacher
 const getDashboardStats = async (schoolId, user) => {
+  console.log('🔍 getDashboardStats called for school:', schoolId);
+  console.log('🔍 User role:', user?.role);
+  console.log('🔍 User staff:', user?.staff);
+
   const [
     totalStudents,
     totalStaff,
@@ -261,7 +263,6 @@ const getDashboardStats = async (schoolId, user) => {
     activeTerm,
   ] = await Promise.all([
     prisma.student.count({ where: { schoolId, status: "ACTIVE" } }),
-    // ✅ FIX: Only count staff with active users
     prisma.staff.count({ 
       where: { 
         schoolId,
@@ -297,30 +298,126 @@ const getDashboardStats = async (schoolId, user) => {
   const baseStats = { totalStudents, totalStaff, totalClasses, activeTerm, passRate };
 
   // ─── Class Teacher Dashboard ───
-  if (user && user.role === 'CLASS_TEACHER' && user.staff?.id) {
-    const staffClass = await prisma.class.findFirst({ 
-      where: { classTeacherId: user.staff.id } 
-    });
-    if (staffClass) {
-      const enrollments = await prisma.enrollment.findMany({
-        where: { classId: staffClass.id, termId: activeTerm?.id },
-        include: { student: true }
+  if (user && user.role === 'CLASS_TEACHER') {
+    console.log('🔍 Processing Class Teacher dashboard');
+    
+    // ✅ Get the staff ID - from user.staff or fetch from database
+    let staffId = user.staff?.id;
+    
+    // If staff ID is not in the user object, fetch it from database
+    if (!staffId) {
+      console.log('⚠️ Staff ID not in user object, fetching from database...');
+      const staff = await prisma.staff.findFirst({
+        where: { 
+          userId: user.id,
+          schoolId: schoolId
+        }
       });
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const attendances = await prisma.attendance.findMany({
-        where: { classId: staffClass.id, date: { gte: today } }
-      });
-
-      const classStudents = enrollments.map(e => ({
-        id: e.student.id,
-        name: `${e.student.firstName} ${e.student.lastName}`,
-        studentNo: e.student.studentNumber,
-        presentToday: attendances.some(a => a.studentId === e.student.id && a.status === 'PRESENT')
-      }));
-
-      return { ...baseStats, myClass: { name: staffClass.name, students: classStudents } };
+      
+      if (staff) {
+        staffId = staff.id;
+        console.log('✅ Found staff ID from database:', staffId);
+      } else {
+        console.log('❌ No staff profile found for this user');
+        return { 
+          ...baseStats, 
+          myClass: null, 
+          message: 'Staff profile not found. Please contact your school administrator.' 
+        };
+      }
     }
+
+    console.log('✅ Staff ID:', staffId);
+
+    // ✅ Find the class where this staff member is the class teacher
+    const staffClass = await prisma.class.findFirst({ 
+      where: { 
+        classTeacherId: staffId,
+        schoolId: schoolId
+      },
+      include: {
+        enrollments: {
+          where: {
+            termId: activeTerm?.id
+          },
+          include: {
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                studentNumber: true,
+                photoUrl: true,
+                gender: true,
+                status: true,
+                dateOfBirth: true,
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    console.log('✅ Found class:', staffClass?.id);
+    console.log('✅ Enrollments count:', staffClass?.enrollments?.length || 0);
+    
+    if (!staffClass) {
+      console.log('⚠️ No class found for Class Teacher');
+      return { 
+        ...baseStats, 
+        myClass: null, 
+        message: 'No class assigned. Please contact your school administrator.' 
+      };
+    }
+
+    // ✅ Get today's attendance
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const studentIds = staffClass.enrollments.map(e => e.studentId);
+    
+    const attendances = await prisma.attendance.findMany({
+      where: { 
+        classId: staffClass.id, 
+        date: { gte: today },
+        studentId: {
+          in: studentIds
+        }
+      }
+    });
+
+    // Map attendance to students
+    const attendanceMap = {};
+    attendances.forEach(a => {
+      attendanceMap[a.studentId] = a.status;
+    });
+
+    // Format students data
+    const classStudents = staffClass.enrollments.map(e => {
+      const student = e.student;
+      return {
+        id: student.id,
+        name: `${student.firstName} ${student.lastName}`,
+        studentNo: student.studentNumber,
+        photo: student.photoUrl,
+        gender: student.gender,
+        status: student.status,
+        dateOfBirth: student.dateOfBirth,
+        presentToday: attendanceMap[student.id] === 'PRESENT'
+      };
+    });
+
+    console.log('✅ Returning class with', classStudents.length, 'students');
+    
+    return { 
+      ...baseStats, 
+      myClass: { 
+        id: staffClass.id,
+        name: `${staffClass.level} ${staffClass.section}`,
+        level: staffClass.level,
+        section: staffClass.section,
+        students: classStudents 
+      } 
+    };
   }
 
   // ─── Subject Teacher Dashboard ───
@@ -330,14 +427,12 @@ const getDashboardStats = async (schoolId, user) => {
       include: { class: true, subject: true }
     });
     
-    // Get active term for subject teacher
     const activeTermForTeacher = activeTerm || await prisma.term.findFirst({
       where: { schoolId, status: "ACTIVE" },
     });
     
     const myAssignments = await Promise.all(
       assignments.map(async (a) => {
-        // Check if scores are submitted for this assignment
         const scores = await prisma.score.findMany({
           where: {
             subjectId: a.subjectId,
@@ -396,7 +491,6 @@ const getSuperAdminDashboard = async () => {
     prisma.school.count({ where: { status: { not: "DEACTIVATED" } } }),
     prisma.school.count({ where: { status: 'ACTIVE' } }),
     prisma.student.count({ where: { status: 'ACTIVE' } }),
-    // ✅ FIX: Only count staff with active users
     prisma.staff.count({ 
       where: { 
         user: { isActive: true }
@@ -454,7 +548,6 @@ const getTerms = async (schoolId, academicYear) => {
 };
 
 const createTerm = async (schoolId, data) => {
-  // Ensure no duplicate term for same year + number
   const exists = await prisma.term.findFirst({
     where: {
       schoolId,
@@ -470,7 +563,6 @@ const createTerm = async (schoolId, data) => {
 };
 
 const updateTerm = async (schoolId, termId, data) => {
-  // If activating, deactivate all other terms first
   if (data.status === "ACTIVE") {
     await prisma.term.updateMany({
       where: { schoolId, status: "ACTIVE" },
@@ -566,7 +658,6 @@ const updateSchoolStatus = async (schoolId, status) => {
     console.log(`[AUTH] Invalidated ${deletedTokens.count} sessions for ${schoolUsers.length} users of school ${school.name}`);
   }
 
-  // Create audit log
   await prisma.auditLog.create({
     data: {
       action: "UPDATE",
@@ -582,10 +673,8 @@ const updateSchoolStatus = async (schoolId, status) => {
     },
   });
 
-  // Get admin users for notifications
   const adminUsers = schoolUsers.filter(u => u.role === "SCHOOL_ADMIN");
 
-  // Create notifications for admin users
   const statusMessages = {
     'ACTIVE': {
       title: '✅ School Approved!',
@@ -623,7 +712,6 @@ const updateSchoolStatus = async (schoolId, status) => {
     }
   }
 
-  // Send email notifications
   const recipientEmails = new Set([school.email, ...adminUsers.map(u => u.email)]);
   for (const recipientEmail of recipientEmails) {
     try {
