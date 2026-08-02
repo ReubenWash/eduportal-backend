@@ -250,11 +250,10 @@ const updateSchoolPlan = async (schoolId, plan) => {
 };
 
 // ── Dashboard stats ────────────────────────────────────────────
-// ✅ FIX: Count only active staff and properly handle Class Teacher
 const getDashboardStats = async (schoolId, user) => {
   console.log('🔍 getDashboardStats called for school:', schoolId);
   console.log('🔍 User role:', user?.role);
-  console.log('🔍 User staff:', user?.staff);
+  console.log('🔍 User ID:', user?.id);
 
   const [
     totalStudents,
@@ -421,9 +420,32 @@ const getDashboardStats = async (schoolId, user) => {
   }
 
   // ─── Subject Teacher Dashboard ───
-  if (user && user.role === 'SUBJECT_TEACHER' && user.staff?.id) {
+  if (user && user.role === 'SUBJECT_TEACHER') {
+    console.log('🔍 Processing Subject Teacher dashboard');
+    
+    // ✅ Fetch the staff record for this user
+    let staffId = user.staff?.id;
+    
+    if (!staffId) {
+      console.log('⚠️ Staff ID not in user object, fetching from database...');
+      const staff = await prisma.staff.findFirst({
+        where: { 
+          userId: user.id,
+          schoolId: schoolId
+        }
+      });
+      
+      if (staff) {
+        staffId = staff.id;
+        console.log('✅ Found staff ID from database:', staffId);
+      } else {
+        console.log('❌ No staff profile found for Subject Teacher');
+        return baseStats;
+      }
+    }
+
     const assignments = await prisma.staffSubject.findMany({
-      where: { staffId: user.staff.id },
+      where: { staffId: staffId },
       include: { class: true, subject: true }
     });
     
