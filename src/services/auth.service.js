@@ -20,10 +20,37 @@ const login = async (identifier, password) => {
       ]
     },
     include: {
-      staff:          { select: { firstName: true, lastName: true, photoUrl: true } },
-      studentProfile: { select: { firstName: true, lastName: true, photoUrl: true, studentNumber: true } },
-      guardianProfile: { select: { firstName: true, lastName: true } },
-      school:         { select: { id: true, status: true, name: true } }
+      staff: {
+        select: { 
+          id: true, // ✅ Include staff ID
+          firstName: true, 
+          lastName: true, 
+          photoUrl: true 
+        } 
+      },
+      studentProfile: { 
+        select: { 
+          id: true,
+          firstName: true, 
+          lastName: true, 
+          photoUrl: true, 
+          studentNumber: true 
+        } 
+      },
+      guardianProfile: { 
+        select: { 
+          id: true,
+          firstName: true, 
+          lastName: true 
+        } 
+      },
+      school: { 
+        select: { 
+          id: true, 
+          status: true, 
+          name: true 
+        } 
+      }
     },
   });
 
@@ -64,12 +91,6 @@ const login = async (identifier, password) => {
     }
   }
 
-  // ─── Check if user must change password ───
-  if (user.mustChangePassword) {
-    // Allow login but flag for password change
-    // The frontend will handle this
-  }
-
   await prisma.user.update({ 
     where: { id: user.id }, 
     data: { lastLoginAt: new Date() } 
@@ -89,27 +110,37 @@ const login = async (identifier, password) => {
   const accessToken  = signAccessToken(user);
   const refreshToken = await generateRefreshToken(user.id);
 
+  // ✅ Get the profile (staff, student, or guardian)
   const profile = user.staff || user.studentProfile || user.guardianProfile || null;
 
-  // Determine login identifier for display
+  // ✅ Determine login identifier for display
   const loginIdentifier = user.studentProfile?.studentNumber || user.email;
+
+  // ✅ Build the user object with all necessary data
+  const userData = {
+    id: user.id,
+    email: user.email,
+    loginIdentifier: loginIdentifier,
+    role: user.role,
+    schoolId: user.schoolId,
+    schoolStatus: user.school?.status || 'UNKNOWN',
+    schoolName: user.school?.name || null,
+    name: profile ? `${profile.firstName} ${profile.lastName}` : user.email,
+    photoUrl: profile?.photoUrl || null,
+    mustChangePassword: user.mustChangePassword,
+    studentNumber: user.studentProfile?.studentNumber || null,
+    // ✅ Include staff data if the user is a staff member
+    staff: user.staff || null,
+    // ✅ Include student data if the user is a student
+    student: user.studentProfile || null,
+    // ✅ Include guardian data if the user is a guardian
+    guardian: user.guardianProfile || null,
+  };
 
   return {
     accessToken,
     refreshToken,
-    user: {
-      id: user.id,
-      email: user.email,
-      loginIdentifier: loginIdentifier,
-      role: user.role,
-      schoolId: user.schoolId,
-      schoolStatus: user.school?.status || 'UNKNOWN',
-      schoolName: user.school?.name || null,
-      name: profile ? `${profile.firstName} ${profile.lastName}` : user.email,
-      photoUrl: profile?.photoUrl || null,
-      mustChangePassword: user.mustChangePassword,
-      studentNumber: user.studentProfile?.studentNumber || null,
-    },
+    user: userData,
   };
 };
 
@@ -218,9 +249,8 @@ const resetPassword = async (rawToken, newPassword) => {
   await prisma.refreshToken.deleteMany({ where: { userId: stored.userId } });
 };
 
-// ─── NEW: Reset student password by student number ────────────
+// ─── Reset student password by student number ────────────────
 const resetStudentPassword = async (studentNumber, dateOfBirth, newPassword) => {
-  // Find student by student number and date of birth
   const student = await prisma.student.findFirst({
     where: {
       studentNumber: studentNumber.toUpperCase(),
@@ -237,12 +267,10 @@ const resetStudentPassword = async (studentNumber, dateOfBirth, newPassword) => 
     throw createError("Student account not found. Please contact support.", 404);
   }
 
-  // Validate password strength
   if (newPassword.length < 6) {
     throw createError("Password must be at least 6 characters.", 400);
   }
 
-  // Update password
   const passwordHash = await bcrypt.hash(newPassword, 12);
   await prisma.user.update({
     where: { id: student.userId },
@@ -252,12 +280,10 @@ const resetStudentPassword = async (studentNumber, dateOfBirth, newPassword) => 
     }
   });
 
-  // Invalidate all existing sessions
   await prisma.refreshToken.deleteMany({
     where: { userId: student.userId }
   });
 
-  // Log the reset
   await prisma.auditLog.create({
     data: {
       userId: student.userId,
@@ -277,9 +303,8 @@ const resetStudentPassword = async (studentNumber, dateOfBirth, newPassword) => 
   };
 };
 
-// ─── NEW: Admin reset student password ────────────────────────
+// ─── Admin reset student password ────────────────────────────
 const adminResetStudentPassword = async (schoolId, studentId) => {
-  // Find student
   const student = await prisma.student.findFirst({
     where: { id: studentId, schoolId },
     include: { user: true }
@@ -289,11 +314,9 @@ const adminResetStudentPassword = async (schoolId, studentId) => {
     throw createError("Student not found.", 404);
   }
 
-  // Generate new temporary password
   const tempPassword = crypto.randomBytes(6).toString('hex').toUpperCase();
   const passwordHash = await bcrypt.hash(tempPassword, 12);
 
-  // Update password
   await prisma.user.update({
     where: { id: student.userId },
     data: {
@@ -302,12 +325,10 @@ const adminResetStudentPassword = async (schoolId, studentId) => {
     }
   });
 
-  // Invalidate all existing sessions
   await prisma.refreshToken.deleteMany({
     where: { userId: student.userId }
   });
 
-  // Log the reset
   await prisma.auditLog.create({
     data: {
       userId: student.userId,
@@ -329,7 +350,7 @@ const adminResetStudentPassword = async (schoolId, studentId) => {
   };
 };
 
-// ─── NEW: Change password without current password (for admins) ───
+// ─── Admin change password without current password ──────────
 const adminChangePassword = async (userId, newPassword) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw createError("User not found.", 404);
@@ -347,7 +368,6 @@ const adminChangePassword = async (userId, newPassword) => {
     }
   });
 
-  // Invalidate all existing sessions
   await prisma.refreshToken.deleteMany({
     where: { userId: userId }
   });
@@ -407,19 +427,49 @@ const getMe = async (userId) => {
   const user = await prisma.user.findUnique({
     where:  { id: userId },
     select: {
-      id: true, email: true, role: true, schoolId: true,
-      isVerified: true, lastLoginAt: true, createdAt: true,
+      id: true, 
+      email: true, 
+      role: true, 
+      schoolId: true,
+      isVerified: true, 
+      lastLoginAt: true, 
+      createdAt: true,
+      mustChangePassword: true,
       staff: {
         select: {
-          id: true, firstName: true, lastName: true,
-          phone: true, photoUrl: true, qualification: true, staffNumber: true,
+          id: true, 
+          firstName: true, 
+          lastName: true,
+          phone: true, 
+          photoUrl: true, 
+          qualification: true, 
+          staffNumber: true,
         },
       },
       studentProfile: {
-        select: { id: true, firstName: true, lastName: true, studentNumber: true, photoUrl: true },
+        select: { 
+          id: true, 
+          firstName: true, 
+          lastName: true, 
+          studentNumber: true, 
+          photoUrl: true 
+        },
+      },
+      guardianProfile: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+        }
       },
       school: {
-        select: { id: true, name: true, logoUrl: true, plan: true, status: true },
+        select: { 
+          id: true, 
+          name: true, 
+          logoUrl: true, 
+          plan: true, 
+          status: true 
+        },
       },
     },
   });
@@ -491,9 +541,9 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
-  resetStudentPassword,      // ← NEW
-  adminResetStudentPassword, // ← NEW
-  adminChangePassword,       // ← NEW
+  resetStudentPassword,
+  adminResetStudentPassword,
+  adminChangePassword,
   verifyEmail,
   getMe,
   changePassword,
