@@ -29,9 +29,7 @@ async function main() {
     },
   });
   console.log(`✅ School created: ${school.name}`);
-  console.log(`School ID: ${school.id}`);
 
-  // ── Store school ID for later use ────────────────────────────
   const schoolId = school.id;
 
   // ── Create school admin user ─────────────────────────────────
