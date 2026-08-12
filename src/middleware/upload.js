@@ -1,25 +1,12 @@
+// backend/src/middleware/upload.js
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-// Configure multer for disk storage (for Cloudinary upload)
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const tempDir = path.join(os.tmpdir(), 'uploads');
-    // Create temp directory if it doesn't exist
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
-    }
-    cb(null, tempDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    // Keep original extension
-    const ext = path.extname(file.originalname);
-    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
-  }
-});
+// ✅ CHANGE: Use memory storage (not disk storage)
+// This keeps the file in memory as a buffer, which your controller expects
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
@@ -30,7 +17,7 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// ✅ Create a multer instance with disk storage
+// ✅ Create a multer instance with memory storage
 const upload = multer({
   storage: storage,
   limits: {
@@ -39,18 +26,17 @@ const upload = multer({
   fileFilter: fileFilter,
 });
 
-// ✅ Helper to clean up temp files
+// ✅ Helper to clean up temp files (not needed for memory storage, but keep for compatibility)
 const cleanupTempFile = (file) => {
-  if (file && file.path) {
-    fs.unlink(file.path, (err) => {
-      if (err) console.error('Failed to delete temp file:', err);
-    });
+  // Memory storage doesn't create temp files, so this is a no-op
+  if (file && file.buffer) {
+    // Optionally clear the buffer to free memory
+    file.buffer = null;
   }
 };
 
-// ✅ FIX: Custom middleware for school logo that accepts all fields
+// ✅ Custom middleware for school logo that accepts all fields
 const uploadSchoolLogo = (req, res, next) => {
-  // Use .any() to accept all fields (both file and text fields)
   const uploadMiddleware = upload.any();
   
   uploadMiddleware(req, res, (err) => {
@@ -62,7 +48,6 @@ const uploadSchoolLogo = (req, res, next) => {
       });
     }
     
-    // ✅ Find the logo file in the uploaded files
     if (req.files && req.files.length > 0) {
       const logoFile = req.files.find(f => f.fieldname === 'logo' || f.fieldname === 'file');
       if (logoFile) {
@@ -70,9 +55,7 @@ const uploadSchoolLogo = (req, res, next) => {
       }
     }
     
-    // ✅ Parse text fields from FormData
-    // Multer automatically puts text fields in req.body
-    console.log('📤 Uploaded files:', req.files);
+    console.log('📤 Uploaded files:', req.files?.length || 0);
     console.log('📤 Body fields:', req.body);
     
     next();
@@ -104,6 +87,6 @@ module.exports = {
   uploadPhoto: uploadSingle('file'),
   uploadStudentPhoto: uploadSingle('file'),
   uploadStaffPhoto: uploadSingle('file'),
-  uploadSchoolLogo, // ✅ Updated to handle all fields
-  cleanupTempFile, // ✅ Export cleanup helper
+  uploadSchoolLogo,
+  cleanupTempFile,
 };
