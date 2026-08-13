@@ -39,7 +39,12 @@ const getSubjects = async (schoolId, query = {}) => {
   try {
     console.log(`📊 getSubjects called with schoolId: ${schoolId}`);
     
-    const where = schoolId ? { schoolId } : {};
+    if (!schoolId) {
+      console.warn('⚠️ No schoolId provided, returning empty array');
+      return [];
+    }
+
+    const where = { schoolId };
     
     if (query.type) {
       where.type = query.type;
@@ -107,7 +112,7 @@ const getSubjects = async (schoolId, query = {}) => {
         ...ss.staff,
         email: ss.staff.user?.email || null,
         role: ss.staff.user?.role || null,
-        class: ss.class,
+        assignedClass: ss.class,
       })),
       teacherCount: subject.staffSubjects.length,
       classes: subject.classSubjects.map(cs => cs.class),
