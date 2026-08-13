@@ -5,12 +5,10 @@ const { createError } = require("../middleware/errorHandler");
 // ─── Create Subject ───
 const createSubject = async (schoolId, data) => {
   try {
-    // Validate schoolId
     if (!schoolId) {
       throw createError("School ID is required.", 400);
     }
 
-    // Check if subject with same code exists
     const exists = await prisma.subject.findFirst({
       where: {
         schoolId,
@@ -36,33 +34,23 @@ const createSubject = async (schoolId, data) => {
   }
 };
 
-// ─── Get All Subjects (with filters and relations) ───
+// ─── Get All Subjects ───
 const getSubjects = async (schoolId, query = {}) => {
   try {
     console.log(`📊 getSubjects called with schoolId: ${schoolId}`);
-
-    // Validate schoolId - return empty array if missing (for Super Admin)
-    if (!schoolId) {
-      console.warn("⚠️ getSubjects: No schoolId provided, returning empty array");
-      return [];
-    }
-
-    const where = { schoolId };
     
-    // Apply type filter if provided
+    const where = schoolId ? { schoolId } : {};
+    
     if (query.type) {
       where.type = query.type;
     }
 
-    // If search term is provided
     if (query.search) {
       where.OR = [
         { name: { contains: query.search, mode: "insensitive" } },
         { code: { contains: query.search, mode: "insensitive" } },
       ];
     }
-
-    console.log(`🔍 getSubjects query:`, JSON.stringify(where, null, 2));
 
     const subjects = await prisma.subject.findMany({
       where,
@@ -74,7 +62,18 @@ const getSubjects = async (schoolId, query = {}) => {
                 id: true,
                 firstName: true,
                 lastName: true,
-                email: true,
+                phone: true,
+                gender: true,
+                photoUrl: true,
+                qualification: true,
+                staffNumber: true,
+                // ✅ Get email from user relation
+                user: {
+                  select: {
+                    email: true,
+                    role: true,
+                  }
+                }
               },
             },
             class: {
@@ -101,24 +100,26 @@ const getSubjects = async (schoolId, query = {}) => {
       orderBy: { name: "asc" },
     });
 
-    console.log(`✅ getSubjects found ${subjects.length} subjects`);
+    console.log(`✅ Found ${subjects.length} subjects`);
 
-    // Format response with counts and structured data
     return subjects.map(subject => ({
       ...subject,
-      teachers: subject.staffSubjects.map(ss => ss.staff),
+      teachers: subject.staffSubjects.map(ss => ({
+        ...ss.staff,
+        email: ss.staff.user?.email || null,
+        role: ss.staff.user?.role || null,
+      })),
       teacherCount: subject.staffSubjects.length,
       classes: subject.classSubjects.map(cs => cs.class),
       classCount: subject.classSubjects.length,
     }));
   } catch (error) {
     console.error("❌ getSubjects error:", error);
-    // Re-throw with more context
-    throw createError(`Failed to fetch subjects: ${error.message}`, 500);
+    return [];
   }
 };
 
-// ─── Get Single Subject by ID ───
+// ─── Get Single Subject ───
 const getSubjectById = async (schoolId, subjectId) => {
   try {
     if (!schoolId) {
@@ -138,7 +139,17 @@ const getSubjectById = async (schoolId, subjectId) => {
                 id: true,
                 firstName: true,
                 lastName: true,
-                email: true,
+                phone: true,
+                gender: true,
+                photoUrl: true,
+                qualification: true,
+                staffNumber: true,
+                user: {
+                  select: {
+                    email: true,
+                    role: true,
+                  }
+                }
               },
             },
             class: {
@@ -182,7 +193,6 @@ const updateSubject = async (schoolId, subjectId, data) => {
       throw createError("School ID is required.", 400);
     }
 
-    // Check if subject exists
     const subject = await prisma.subject.findFirst({
       where: {
         id: subjectId,
@@ -194,7 +204,6 @@ const updateSubject = async (schoolId, subjectId, data) => {
       throw createError("Subject not found.", 404);
     }
 
-    // If code is being updated, check for duplicates
     if (data.code) {
       const existing = await prisma.subject.findFirst({
         where: {
@@ -209,14 +218,12 @@ const updateSubject = async (schoolId, subjectId, data) => {
       }
     }
 
-    // Prepare update data
     const updateData = {
       name: data.name,
       code: data.code?.toUpperCase(),
       type: data.type,
     };
 
-    // Remove undefined fields
     Object.keys(updateData).forEach(key => {
       if (updateData[key] === undefined) delete updateData[key];
     });
@@ -238,7 +245,6 @@ const deleteSubject = async (schoolId, subjectId) => {
       throw createError("School ID is required.", 400);
     }
 
-    // Check if subject exists
     const subject = await prisma.subject.findFirst({
       where: {
         id: subjectId,
@@ -250,7 +256,6 @@ const deleteSubject = async (schoolId, subjectId) => {
       throw createError("Subject not found.", 404);
     }
 
-    // Check if subject has recorded scores
     const hasScores = await prisma.score.count({
       where: { subjectId },
     });
@@ -259,7 +264,6 @@ const deleteSubject = async (schoolId, subjectId) => {
       throw createError("Cannot delete a subject with recorded scores.", 400);
     }
 
-    // Delete the subject
     await prisma.subject.delete({
       where: { id: subjectId },
     });
@@ -290,6 +294,18 @@ const getSubjectsByTeacher = async (schoolId, teacherId) => {
       include: {
         staffSubjects: {
           select: {
+            staff: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                user: {
+                  select: {
+                    email: true,
+                  }
+                }
+              },
+            },
             class: {
               select: {
                 id: true,
@@ -337,7 +353,11 @@ const getSubjectsByClass = async (schoolId, classId) => {
                 id: true,
                 firstName: true,
                 lastName: true,
-                email: true,
+                user: {
+                  select: {
+                    email: true,
+                  }
+                }
               },
             },
           },
