@@ -284,6 +284,40 @@ const updateTerm = async (req, res) => {
   }
 };
 
+// ─── NEW: PATCH /api/v1/schools/me/terms/:id/status ───
+const updateTermStatus = async (req, res) => {
+  try {
+    if (!req.user.schoolId) {
+      throw createError("School ID not found. Please contact administrator.", 400);
+    }
+    
+    const { status } = req.body;
+    if (!status) {
+      throw createError("Status is required", 400);
+    }
+    
+    const term = await schoolService.updateTermStatus(
+      req.user.schoolId,
+      req.params.id,
+      status
+    );
+    
+    return sendSuccess(res, 200, "Term status updated successfully.", term);
+  } catch (error) {
+    console.error('Update term status error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update term status'
+    });
+  }
+};
+
 // ─── GET /api/v1/schools (SUPER_ADMIN) ───
 const getAllSchools = async (req, res) => {
   try {
@@ -570,6 +604,7 @@ module.exports = {
   getTerms,
   createTerm,
   updateTerm,
+  updateTermStatus, // ✅ NEW
   getAllSchools,
   updateStatus,
   updateSchool,

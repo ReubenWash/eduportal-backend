@@ -32,10 +32,10 @@ router.get("/me", isSchoolStaff, controller.getProfile);
 router.get("/me/dashboard", isSchoolStaff, controller.getDashboard);
 router.get("/me/terms", isSchoolStaff, controller.getTerms);
 
-// ✅ UNCOMMENTED - School Admin can update profile
+// ✅ School Admin can update profile
 router.patch(
   "/me",
-  isSchoolAdmin,  // Now allows both SCHOOL_ADMIN and SUPER_ADMIN
+  isSchoolAdmin,
   uploadSchoolLogo,
   updateSchoolValidator,
   validate,
@@ -43,6 +43,7 @@ router.patch(
 );
 
 // ─── Term Management ───
+// ✅ Create term
 router.post(
   "/me/terms",
   isSchoolAdmin,
@@ -51,13 +52,28 @@ router.post(
   controller.createTerm
 );
 
-// ✅ UNCOMMENTED - School Admin can update terms
+// ✅ Update term
 router.patch(
   "/me/terms/:id",
   isSchoolAdmin,
   updateTermValidator,
   validate,
   controller.updateTerm
+);
+
+// ✅ NEW: Update term status
+router.patch(
+  "/me/terms/:id/status",
+  isSchoolAdmin,
+  [
+    body("status")
+      .notEmpty()
+      .withMessage("Status is required")
+      .isIn(["UPCOMING", "ACTIVE", "COMPLETED"])
+      .withMessage("Status must be UPCOMING, ACTIVE, or COMPLETED"),
+  ],
+  validate,
+  controller.updateTermStatus
 );
 
 // ── Super Admin only ───────────────────────────────────────────
