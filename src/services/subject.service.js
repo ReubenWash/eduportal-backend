@@ -57,21 +57,23 @@ const getSubjects = async (schoolId, query = {}) => {
       ];
     }
 
+    // ✅ Get subjects without relations first
     const subjects = await prisma.subject.findMany({
       where,
-      include: {
-        staffSubjects: {
+      orderBy: { name: "asc" },
+    });
+
+    console.log(`✅ Found ${subjects.length} subjects`);
+
+    // ✅ Enrich each subject with related data
+    const enrichedSubjects = await Promise.all(
+      subjects.map(async (subject) => {
+        // Get staff assignments
+        const staffSubjects = await prisma.staffSubject.findMany({
+          where: { subjectId: subject.id },
           include: {
             staff: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                phone: true,
-                gender: true,
-                photoUrl: true,
-                qualification: true,
-                staffNumber: true,
+              include: {
                 user: {
                   select: {
                     email: true,
@@ -79,17 +81,13 @@ const getSubjects = async (schoolId, query = {}) => {
                   }
                 }
               }
-            },
-            class: {
-              select: {
-                id: true,
-                level: true,
-                section: true,
-              }
             }
           }
-        },
-        classSubjects: {
+        });
+
+        // Get class assignments
+        const classSubjects = await prisma.classSubject.findMany({
+          where: { subjectId: subject.id },
           include: {
             class: {
               select: {
@@ -99,25 +97,30 @@ const getSubjects = async (schoolId, query = {}) => {
               }
             }
           }
-        }
-      },
-      orderBy: { name: "asc" },
-    });
+        });
 
-    console.log(`✅ Found ${subjects.length} subjects`);
+        return {
+          ...subject,
+          teachers: staffSubjects.map(ss => ({
+            id: ss.staff.id,
+            firstName: ss.staff.firstName,
+            lastName: ss.staff.lastName,
+            phone: ss.staff.phone,
+            gender: ss.staff.gender,
+            photoUrl: ss.staff.photoUrl,
+            qualification: ss.staff.qualification,
+            staffNumber: ss.staff.staffNumber,
+            email: ss.staff.user?.email || null,
+            role: ss.staff.user?.role || null,
+          })),
+          teacherCount: staffSubjects.length,
+          classes: classSubjects.map(cs => cs.class),
+          classCount: classSubjects.length,
+        };
+      })
+    );
 
-    return subjects.map(subject => ({
-      ...subject,
-      teachers: subject.staffSubjects.map(ss => ({
-        ...ss.staff,
-        email: ss.staff.user?.email || null,
-        role: ss.staff.user?.role || null,
-        assignedClass: ss.class,
-      })),
-      teacherCount: subject.staffSubjects.length,
-      classes: subject.classSubjects.map(cs => cs.class),
-      classCount: subject.classSubjects.length,
-    }));
+    return enrichedSubjects;
   } catch (error) {
     console.error("❌ getSubjects error:", error);
     return [];
@@ -131,52 +134,11 @@ const getSubjectById = async (schoolId, subjectId) => {
       throw createError("School ID is required.", 400);
     }
 
+    // Get subject
     const subject = await prisma.subject.findFirst({
       where: {
         id: subjectId,
         schoolId,
-      },
-      include: {
-        staffSubjects: {
-          include: {
-            staff: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                phone: true,
-                gender: true,
-                photoUrl: true,
-                qualification: true,
-                staffNumber: true,
-                user: {
-                  select: {
-                    email: true,
-                    role: true,
-                  }
-                }
-              }
-            },
-            class: {
-              select: {
-                id: true,
-                level: true,
-                section: true,
-              }
-            }
-          }
-        },
-        classSubjects: {
-          include: {
-            class: {
-              select: {
-                id: true,
-                level: true,
-                section: true,
-              }
-            }
-          }
-        }
       },
     });
 
@@ -184,7 +146,52 @@ const getSubjectById = async (schoolId, subjectId) => {
       throw createError("Subject not found", 404);
     }
 
-    return subject;
+    // Get staff assignments
+    const staffSubjects = await prisma.staffSubject.findMany({
+      where: { subjectId: subject.id },
+      include: {
+        staff: {
+          include: {
+            user: {
+              select: {
+                email: true,
+                role: true,
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Get class assignments
+    const classSubjects = await prisma.classSubject.findMany({
+      where: { subjectId: subject.id },
+      include: {
+        class: {
+          select: {
+            id: true,
+            level: true,
+            section: true,
+          }
+        }
+      }
+    });
+
+    return {
+      ...subject,
+      staffSubjects: staffSubjects.map(ss => ({
+        ...ss,
+        staff: {
+          ...ss.staff,
+          email: ss.staff.user?.email || null,
+          role: ss.staff.user?.role || null,
+        }
+      })),
+      classSubjects: classSubjects.map(cs => ({
+        ...cs,
+        class: cs.class,
+      })),
+    };
   } catch (error) {
     console.error("❌ getSubjectById error:", error);
     throw error;
@@ -287,46 +294,25 @@ const getSubjectsByTeacher = async (schoolId, teacherId) => {
       return [];
     }
 
-    const subjects = await prisma.subject.findMany({
+    const staffSubjects = await prisma.staffSubject.findMany({
       where: {
-        schoolId,
-        staffSubjects: {
-          some: {
-            staffId: teacherId,
-          },
-        },
+        staffId: teacherId,
       },
       include: {
-        staffSubjects: {
-          include: {
-            staff: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                user: {
-                  select: {
-                    email: true,
-                  }
-                }
-              }
-            },
-            class: {
-              select: {
-                id: true,
-                level: true,
-                section: true,
-              }
-            }
+        subject: true,
+        class: {
+          select: {
+            id: true,
+            level: true,
+            section: true,
           }
-        },
-      },
-      orderBy: { name: "asc" },
+        }
+      }
     });
 
-    return subjects.map(subject => ({
-      ...subject,
-      classes: subject.staffSubjects.map(ss => ss.class),
+    return staffSubjects.map(ss => ({
+      ...ss.subject,
+      class: ss.class,
     }));
   } catch (error) {
     console.error("❌ getSubjectsByTeacher error:", error);
@@ -341,40 +327,16 @@ const getSubjectsByClass = async (schoolId, classId) => {
       return [];
     }
 
-    const subjects = await prisma.subject.findMany({
+    const classSubjects = await prisma.classSubject.findMany({
       where: {
-        schoolId,
-        classSubjects: {
-          some: {
-            classId,
-          },
-        },
+        classId,
       },
       include: {
-        staffSubjects: {
-          include: {
-            staff: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                user: {
-                  select: {
-                    email: true,
-                  }
-                }
-              }
-            }
-          }
-        },
-      },
-      orderBy: { name: "asc" },
+        subject: true,
+      }
     });
 
-    return subjects.map(subject => ({
-      ...subject,
-      teachers: subject.staffSubjects.map(ss => ss.staff),
-    }));
+    return classSubjects.map(cs => cs.subject);
   } catch (error) {
     console.error("❌ getSubjectsByClass error:", error);
     return [];
