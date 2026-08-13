@@ -300,10 +300,8 @@ const getDashboardStats = async (schoolId, user) => {
   if (user && user.role === 'CLASS_TEACHER') {
     console.log('🔍 Processing Class Teacher dashboard');
     
-    // ✅ Get the staff ID - from user.staff or fetch from database
     let staffId = user.staff?.id;
     
-    // If staff ID is not in the user object, fetch it from database
     if (!staffId) {
       console.log('⚠️ Staff ID not in user object, fetching from database...');
       const staff = await prisma.staff.findFirst({
@@ -328,7 +326,6 @@ const getDashboardStats = async (schoolId, user) => {
 
     console.log('✅ Staff ID:', staffId);
 
-    // ✅ Find the class where this staff member is the class teacher
     const staffClass = await prisma.class.findFirst({ 
       where: { 
         classTeacherId: staffId,
@@ -369,7 +366,6 @@ const getDashboardStats = async (schoolId, user) => {
       };
     }
 
-    // ✅ Get today's attendance
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const studentIds = staffClass.enrollments.map(e => e.studentId);
@@ -384,13 +380,11 @@ const getDashboardStats = async (schoolId, user) => {
       }
     });
 
-    // Map attendance to students
     const attendanceMap = {};
     attendances.forEach(a => {
       attendanceMap[a.studentId] = a.status;
     });
 
-    // Format students data
     const classStudents = staffClass.enrollments.map(e => {
       const student = e.student;
       return {
@@ -423,7 +417,6 @@ const getDashboardStats = async (schoolId, user) => {
   if (user && user.role === 'SUBJECT_TEACHER') {
     console.log('🔍 Processing Subject Teacher dashboard');
     
-    // ✅ Fetch the staff record for this user
     let staffId = user.staff?.id;
     
     if (!staffId) {
@@ -559,16 +552,40 @@ const getSuperAdminDashboard = async () => {
 };
 
 // ── Terms ──────────────────────────────────────────────────────
+// ✅ UPDATED: Auto-update term status based on current date
 const getTerms = async (schoolId, academicYear) => {
-  return prisma.term.findMany({
+  const terms = await prisma.term.findMany({
     where: {
       schoolId,
       ...(academicYear && { academicYear }),
     },
     orderBy: [{ academicYear: "desc" }, { termNumber: "asc" }],
   });
+
+  // ✅ Auto-update term status based on current date
+  const now = new Date();
+  const updatedTerms = terms.map(term => {
+    let status = term.status;
+    const startDate = new Date(term.startDate);
+    const endDate = new Date(term.endDate);
+    
+    // If term is UPCOMING but startDate has passed, set to ACTIVE
+    if (status === "UPCOMING" && startDate <= now) {
+      status = "ACTIVE";
+    }
+    
+    // If term is ACTIVE but endDate has passed, set to COMPLETED
+    if (status === "ACTIVE" && endDate < now) {
+      status = "COMPLETED";
+    }
+    
+    return { ...term, status };
+  });
+
+  return updatedTerms;
 };
 
+// ✅ UPDATED: Auto-set term status based on dates
 const createTerm = async (schoolId, data) => {
   const exists = await prisma.term.findFirst({
     where: {
@@ -579,22 +596,92 @@ const createTerm = async (schoolId, data) => {
   });
   if (exists) throw createError(`${data.termNumber} for ${data.academicYear} already exists.`, 409);
 
+  // ✅ Auto-set status based on dates
+  const now = new Date();
+  const startDate = new Date(data.startDate);
+  const endDate = new Date(data.endDate);
+  
+  let status = data.status || "UPCOMING";
+  
+  // If start date is in the past, set to ACTIVE
+  if (startDate <= now) {
+    status = "ACTIVE";
+  }
+  
+  // If end date is in the past, set to COMPLETED
+  if (endDate < now) {
+    status = "COMPLETED";
+  }
+
   return prisma.term.create({
-    data: { schoolId, ...data },
+    data: { 
+      schoolId, 
+      ...data,
+      status,
+    },
   });
 };
 
+// ✅ UPDATED: Handle status changes and auto-update dates
 const updateTerm = async (schoolId, termId, data) => {
+  const term = await prisma.term.findFirst({
+    where: { id: termId, schoolId },
+  });
+
+  if (!term) {
+    throw createError("Term not found", 404);
+  }
+
+  // ✅ If activating, deactivate all other terms first
   if (data.status === "ACTIVE") {
     await prisma.term.updateMany({
       where: { schoolId, status: "ACTIVE" },
-      data:  { status: "COMPLETED" },
+      data: { status: "COMPLETED" },
     });
+  }
+
+  // ✅ If start date is being updated, auto-set status
+  if (data.startDate) {
+    const now = new Date();
+    const startDate = new Date(data.startDate);
+    
+    if (startDate <= now && data.status !== "COMPLETED") {
+      data.status = "ACTIVE";
+    }
   }
 
   return prisma.term.update({
     where: { id: termId },
     data,
+  });
+};
+
+// ✅ NEW: Manually update term status
+const updateTermStatus = async (schoolId, termId, status) => {
+  const term = await prisma.term.findFirst({
+    where: { id: termId, schoolId },
+  });
+  
+  if (!term) {
+    throw createError("Term not found", 404);
+  }
+
+  const validStatuses = ["UPCOMING", "ACTIVE", "COMPLETED"];
+  if (!validStatuses.includes(status)) {
+    throw createError("Invalid status. Must be one of: UPCOMING, ACTIVE, COMPLETED", 400);
+  }
+
+  // ✅ If activating, deactivate all other active terms
+  if (status === "ACTIVE") {
+    await prisma.term.updateMany({
+      where: { schoolId, status: "ACTIVE" },
+      data: { status: "COMPLETED" },
+    });
+  }
+
+  return prisma.term.update({
+    where: { id: termId },
+    data: { status },
   });
 };
 
@@ -1083,6 +1170,7 @@ module.exports = {
   getTerms,
   createTerm,
   updateTerm,
+  updateTermStatus, // ✅ NEW
   getAllSchools,
   updateSchoolStatus,
   deleteSchool,
