@@ -56,7 +56,7 @@ const getSubjects = async (schoolId, query = {}) => {
       where,
       include: {
         staffSubjects: {
-          select: {
+          include: {
             staff: {
               select: {
                 id: true,
@@ -67,35 +67,34 @@ const getSubjects = async (schoolId, query = {}) => {
                 photoUrl: true,
                 qualification: true,
                 staffNumber: true,
-                // ✅ Get email from user relation
                 user: {
                   select: {
                     email: true,
                     role: true,
                   }
                 }
-              },
+              }
             },
             class: {
               select: {
                 id: true,
                 level: true,
                 section: true,
-              },
-            },
-          },
+              }
+            }
+          }
         },
         classSubjects: {
-          select: {
+          include: {
             class: {
               select: {
                 id: true,
                 level: true,
                 section: true,
-              },
-            },
-          },
-        },
+              }
+            }
+          }
+        }
       },
       orderBy: { name: "asc" },
     });
@@ -108,6 +107,7 @@ const getSubjects = async (schoolId, query = {}) => {
         ...ss.staff,
         email: ss.staff.user?.email || null,
         role: ss.staff.user?.role || null,
+        class: ss.class,
       })),
       teacherCount: subject.staffSubjects.length,
       classes: subject.classSubjects.map(cs => cs.class),
@@ -150,16 +150,16 @@ const getSubjectById = async (schoolId, subjectId) => {
                     role: true,
                   }
                 }
-              },
+              }
             },
             class: {
               select: {
                 id: true,
                 level: true,
                 section: true,
-              },
-            },
-          },
+              }
+            }
+          }
         },
         classSubjects: {
           include: {
@@ -168,10 +168,10 @@ const getSubjectById = async (schoolId, subjectId) => {
                 id: true,
                 level: true,
                 section: true,
-              },
-            },
-          },
-        },
+              }
+            }
+          }
+        }
       },
     });
 
@@ -293,7 +293,7 @@ const getSubjectsByTeacher = async (schoolId, teacherId) => {
       },
       include: {
         staffSubjects: {
-          select: {
+          include: {
             staff: {
               select: {
                 id: true,
@@ -304,16 +304,16 @@ const getSubjectsByTeacher = async (schoolId, teacherId) => {
                     email: true,
                   }
                 }
-              },
+              }
             },
             class: {
               select: {
                 id: true,
                 level: true,
                 section: true,
-              },
-            },
-          },
+              }
+            }
+          }
         },
       },
       orderBy: { name: "asc" },
@@ -347,7 +347,7 @@ const getSubjectsByClass = async (schoolId, classId) => {
       },
       include: {
         staffSubjects: {
-          select: {
+          include: {
             staff: {
               select: {
                 id: true,
@@ -358,9 +358,9 @@ const getSubjectsByClass = async (schoolId, classId) => {
                     email: true,
                   }
                 }
-              },
-            },
-          },
+              }
+            }
+          }
         },
       },
       orderBy: { name: "asc" },
