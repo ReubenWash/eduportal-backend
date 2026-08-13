@@ -60,6 +60,7 @@ const sendMailSafe = async ({ to, subject, html }) => {
 
 // ── Email templates ────────────────────────────────────────────
 
+// ─── 1. Verification Email ─────────────────────────────────────
 const sendVerificationEmail = async (email, name, code) => {
   return sendMailSafe({
     to: email,
@@ -92,6 +93,7 @@ const sendVerificationEmail = async (email, name, code) => {
   });
 };
 
+// ─── 2. Password Reset Email ──────────────────────────────────
 const sendPasswordResetEmail = async (email, name, token) => {
   const url = `${process.env.CLIENT_URL}/reset-password/${token}`;
   return sendMailSafe({
@@ -121,6 +123,7 @@ const sendPasswordResetEmail = async (email, name, token) => {
   });
 };
 
+// ─── 3. Welcome Staff Email ───────────────────────────────────
 const sendWelcomeStaffEmail = async (email, name, tempPassword, schoolName) => {
   const loginUrl = `${process.env.CLIENT_URL}/login`;
   return sendMailSafe({
@@ -157,6 +160,65 @@ const sendWelcomeStaffEmail = async (email, name, tempPassword, schoolName) => {
   });
 };
 
+// ─── 4. Welcome Guardian Email (NEW - for Parent Portal) ─────
+const sendWelcomeGuardianEmail = async (email, name, tempPassword, schoolName) => {
+  const loginUrl = `${process.env.CLIENT_URL || "http://localhost:5173"}/login`;
+  return sendMailSafe({
+    to: email,
+    subject: `Welcome to ${schoolName || "Your School"} Parent Portal`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
+        <div style="background:#1A3C5E;padding:24px;text-align:center;">
+          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "EduTrack JHS"}</h1>
+          <p style="color:#A8C8E8;margin:4px 0 0;">Parent Portal Access</p>
+        </div>
+        <div style="padding:32px;background:#f9f9f9;">
+          <h2 style="color:#1A3C5E;">Welcome, ${name}!</h2>
+          <p style="color:#444;line-height:1.6;">
+            Your parent portal account has been created for <strong>${schoolName || "your school"}</strong>.
+            You can now log in to track your child's academic progress.
+          </p>
+          <div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:20px;margin:24px 0;">
+            <p style="margin:0 0 8px;color:#444;">
+              <strong>Login Email:</strong> ${email}
+            </p>
+            <p style="margin:0;color:#444;">
+              <strong>Temporary Password:</strong>
+              <code style="background:#f0f0f0;padding:2px 8px;border-radius:4px;font-size:16px;font-weight:bold;">
+                ${tempPassword}
+              </code>
+            </p>
+          </div>
+          <p style="color:#888;font-size:13px;">
+            Please log in and change your password immediately.
+          </p>
+          <div style="text-align:center;margin:24px 0;">
+            <a href="${loginUrl}"
+               style="background:#2E75B6;color:#fff;padding:14px 32px;
+                      border-radius:6px;text-decoration:none;font-weight:bold;font-size:15px;">
+              Login to Parent Portal
+            </a>
+          </div>
+          <p style="color:#999;font-size:12px;margin-top:20px;border-top:1px solid #eee;padding-top:16px;">
+            If you have any questions, please contact your school administrator.
+          </p>
+          <div style="background:#f8f9fa;border-radius:6px;padding:12px;margin-top:16px;border:1px solid #e9ecef;">
+            <p style="color:#666;font-size:12px;margin:0;">
+              <strong>💡 Tip:</strong> As a parent, you can view your child's:
+            </p>
+            <ul style="color:#666;font-size:12px;margin:8px 0 0 20px;padding:0;">
+              <li>📊 Academic scores and grades</li>
+              <li>📅 Daily attendance records</li>
+              <li>📄 Report cards (when released)</li>
+              <li>📢 School notifications</li>
+            </ul>
+          </div>
+        </div>
+      </div>`,
+  });
+};
+
+// ─── 5. Report Card Email ─────────────────────────────────────
 const sendReportCardEmail = async (email, parentName, studentName, term, pdfUrl, schoolName) => {
   return sendMailSafe({
     to: email,
@@ -188,6 +250,7 @@ const sendReportCardEmail = async (email, parentName, studentName, term, pdfUrl,
   });
 };
 
+// ─── 6. Registration Under Review Email ──────────────────────
 const sendRegistrationUnderReviewEmail = async (email, name, schoolName) => {
   return sendMailSafe({
     to: email,
@@ -214,6 +277,7 @@ const sendRegistrationUnderReviewEmail = async (email, name, schoolName) => {
   });
 };
 
+// ─── 7. School Status Update Email ────────────────────────────
 const sendSchoolStatusEmail = async (email, schoolName, status) => {
   let subject = "";
   let title = "";
@@ -266,42 +330,7 @@ const sendSchoolStatusEmail = async (email, schoolName, status) => {
   });
 };
 
-const sendWelcomeGuardianEmail = async (email, name, tempPassword, schoolName) => {
-  const loginUrl = `${process.env.CLIENT_URL}/login`;
-  return sendMailSafe({
-    to: email,
-    subject: `Welcome to ${schoolName} Parent Portal`,
-    html: `
-      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
-        <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">EduTrack JHS</h1>
-        </div>
-        <div style="padding:32px;background:#f9f9f9;">
-          <h2 style="color:#1A3C5E;">Welcome, ${name}!</h2>
-          <p style="color:#444;line-height:1.6;">
-            Your parent portal account has been created on <strong>${schoolName}</strong>.
-          </p>
-          <div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:20px;margin:24px 0;">
-            <p style="margin:0 0 8px;color:#444;"><strong>Login Email:</strong> ${email}</p>
-            <p style="margin:0;color:#444;"><strong>Temporary Password:</strong>
-              <code style="background:#f0f0f0;padding:2px 8px;border-radius:4px;">${tempPassword}</code>
-            </p>
-          </div>
-          <p style="color:#888;font-size:13px;">
-            Please log in and change your password immediately.
-          </p>
-          <div style="text-align:center;margin:24px 0;">
-            <a href="${loginUrl}"
-               style="background:#2E75B6;color:#fff;padding:14px 32px;
-                      border-radius:6px;text-decoration:none;font-weight:bold;font-size:15px;">
-              Login to EduTrack
-            </a>
-          </div>
-        </div>
-      </div>`,
-  });
-};
-
+// ─── 8. School Welcome Email ──────────────────────────────────
 const sendSchoolWelcomeEmail = async (email, schoolName) => {
   return sendMailSafe({
     to: email,
@@ -324,16 +353,114 @@ const sendSchoolWelcomeEmail = async (email, schoolName) => {
   });
 };
 
+// ─── 9. Guardian Credentials Resent Email ─────────────────────
+const sendGuardianCredentialsResentEmail = async (email, name, tempPassword, schoolName) => {
+  const loginUrl = `${process.env.CLIENT_URL || "http://localhost:5173"}/login`;
+  return sendMailSafe({
+    to: email,
+    subject: `Your Parent Portal Credentials - ${schoolName || "EduTrack JHS"}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
+        <div style="background:#1A3C5E;padding:24px;text-align:center;">
+          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "EduTrack JHS"}</h1>
+          <p style="color:#A8C8E8;margin:4px 0 0;">Parent Portal Access</p>
+        </div>
+        <div style="padding:32px;background:#f9f9f9;">
+          <h2 style="color:#1A3C5E;">Hello ${name},</h2>
+          <p style="color:#444;line-height:1.6;">
+            You requested to resend your parent portal login credentials for <strong>${schoolName || "your school"}</strong>.
+          </p>
+          <div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:20px;margin:24px 0;">
+            <p style="margin:0 0 8px;color:#444;">
+              <strong>Login Email:</strong> ${email}
+            </p>
+            <p style="margin:0;color:#444;">
+              <strong>Temporary Password:</strong>
+              <code style="background:#f0f0f0;padding:2px 8px;border-radius:4px;font-size:16px;font-weight:bold;">
+                ${tempPassword}
+              </code>
+            </p>
+          </div>
+          <p style="color:#888;font-size:13px;">
+            Please log in and change your password immediately.
+          </p>
+          <div style="text-align:center;margin:24px 0;">
+            <a href="${loginUrl}"
+               style="background:#2E75B6;color:#fff;padding:14px 32px;
+                      border-radius:6px;text-decoration:none;font-weight:bold;font-size:15px;">
+              Login to Parent Portal
+            </a>
+          </div>
+          <p style="color:#999;font-size:12px;margin-top:20px;border-top:1px solid #eee;padding-top:16px;">
+            If you did not request this, please contact your school administrator immediately.
+          </p>
+        </div>
+      </div>`,
+  });
+};
+
+// ─── 10. Welcome Student Email ─────────────────────────────────
+const sendWelcomeStudentEmail = async (email, name, tempPassword, schoolName) => {
+  const loginUrl = `${process.env.CLIENT_URL || "http://localhost:5173"}/login`;
+  return sendMailSafe({
+    to: email,
+    subject: `Welcome to ${schoolName || "EduTrack JHS"} Student Portal`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
+        <div style="background:#1A3C5E;padding:24px;text-align:center;">
+          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "EduTrack JHS"}</h1>
+          <p style="color:#A8C8E8;margin:4px 0 0;">Student Portal Access</p>
+        </div>
+        <div style="padding:32px;background:#f9f9f9;">
+          <h2 style="color:#1A3C5E;">Welcome, ${name}!</h2>
+          <p style="color:#444;line-height:1.6;">
+            Your student portal account has been created for <strong>${schoolName || "your school"}</strong>.
+          </p>
+          <div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:20px;margin:24px 0;">
+            <p style="margin:0 0 8px;color:#444;">
+              <strong>Login Email:</strong> ${email}
+            </p>
+            <p style="margin:0;color:#444;">
+              <strong>Temporary Password:</strong>
+              <code style="background:#f0f0f0;padding:2px 8px;border-radius:4px;font-size:16px;font-weight:bold;">
+                ${tempPassword}
+              </code>
+            </p>
+          </div>
+          <p style="color:#888;font-size:13px;">
+            Please log in and change your password immediately.
+          </p>
+          <div style="text-align:center;margin:24px 0;">
+            <a href="${loginUrl}"
+               style="background:#2E75B6;color:#fff;padding:14px 32px;
+                      border-radius:6px;text-decoration:none;font-weight:bold;font-size:15px;">
+              Login to Student Portal
+            </a>
+          </div>
+        </div>
+      </div>`,
+  });
+};
+
 // ─── EXPORT ALL FUNCTIONS ──────────────────────────────────────
 module.exports = {
+  // Core
   sendMail,
   sendMailSafe,
+  
+  // Auth Emails
   sendVerificationEmail,
   sendPasswordResetEmail,
+  
+  // Welcome Emails
   sendWelcomeStaffEmail,
   sendWelcomeGuardianEmail,
+  sendWelcomeStudentEmail,
+  sendSchoolWelcomeEmail,
+  
+  // Status & Notification Emails
   sendReportCardEmail,
   sendRegistrationUnderReviewEmail,
   sendSchoolStatusEmail,
-  sendSchoolWelcomeEmail,
+  sendGuardianCredentialsResentEmail,
 };
