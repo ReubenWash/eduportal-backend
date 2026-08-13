@@ -1,58 +1,47 @@
-const { prisma } = require("../config/db"); // ✅ Add this import
+// src/controllers/subject.controller.js
+const subjectService = require("../services/subject.service");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
 
-// ─── List Subjects ───
+const create = async (req, res) => {
+  try {
+    const subject = await subjectService.createSubject(req.user.schoolId, req.body);
+    return sendSuccess(res, 201, "Subject created successfully.", subject);
+  } catch (error) {
+    console.error("❌ Create subject error:", error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to create subject",
+    });
+  }
+};
+
 const list = async (req, res) => {
   try {
-    const subjects = await prisma.subject.findMany({
-      where: { schoolId: req.user.schoolId },
-      include: {
-        staffSubjects: {
-          select: {
-            staff: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-              }
-            },
-            class: {
-              select: {
-                id: true,
-                level: true,
-                section: true,
-              }
-            }
-          }
-        },
-        classSubjects: {
-          select: {
-            class: {
-              select: {
-                id: true,
-                level: true,
-                section: true,
-              }
-            }
-          }
-        }
-      },
-      orderBy: { name: "asc" },
-    });
-
-    // Format response with counts
-    const formattedSubjects = subjects.map(subject => ({
-      ...subject,
-      teachers: subject.staffSubjects.map(ss => ss.staff),
-      teacherCount: subject.staffSubjects.length,
-      classes: subject.classSubjects.map(cs => cs.class),
-      classCount: subject.classSubjects.length,
-    }));
-
-    return sendSuccess(res, 200, "Subjects fetched successfully", formattedSubjects);
+    console.log(`📋 list subjects called, user:`, req.user?.id, req.user?.schoolId);
+    const subjects = await subjectService.getSubjects(req.user?.schoolId, req.query);
+    return sendSuccess(res, 200, "Subjects fetched successfully.", subjects);
   } catch (error) {
     console.error("❌ List subjects error:", error);
+    // Check for specific error types
+    if (error.code === "P2024" || error.code === "P1001") {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection error. Please try again later.",
+      });
+    }
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message,
+      });
+    }
     return res.status(500).json({
       success: false,
       message: error.message || "Failed to fetch subjects",
@@ -60,53 +49,10 @@ const list = async (req, res) => {
   }
 };
 
-// ─── Get Single Subject ───
 const getOne = async (req, res) => {
   try {
-    const subject = await prisma.subject.findFirst({
-      where: {
-        id: req.params.id,
-        schoolId: req.user.schoolId,
-      },
-      include: {
-        staffSubjects: {
-          include: {
-            staff: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                email: true,
-              }
-            },
-            class: {
-              select: {
-                id: true,
-                level: true,
-                section: true,
-              }
-            }
-          }
-        },
-        classSubjects: {
-          include: {
-            class: {
-              select: {
-                id: true,
-                level: true,
-                section: true,
-              }
-            }
-          }
-        }
-      },
-    });
-
-    if (!subject) {
-      throw createError("Subject not found", 404);
-    }
-
-    return sendSuccess(res, 200, "Subject fetched successfully", subject);
+    const subject = await subjectService.getSubjectById(req.user.schoolId, req.params.id);
+    return sendSuccess(res, 200, "Subject fetched successfully.", subject);
   } catch (error) {
     console.error("❌ Get subject error:", error);
     if (error.statusCode) {
@@ -122,63 +68,16 @@ const getOne = async (req, res) => {
   }
 };
 
-// ─── Create Subject ───
-const create = async (req, res) => {
-  try {
-    const subject = await prisma.subject.create({
-      data: {
-        schoolId: req.user.schoolId,
-        name: req.body.name,
-        code: req.body.code.toUpperCase(),
-        type: req.body.type || "CORE",
-      },
-    });
-    return sendSuccess(res, 201, "Subject created successfully", subject);
-  } catch (error) {
-    console.error("❌ Create subject error:", error);
-    if (error.code === "P2002") {
-      return res.status(409).json({
-        success: false,
-        message: "A subject with this code already exists",
-      });
-    }
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to create subject",
-    });
-  }
-};
-
-// ─── Update Subject ───
 const update = async (req, res) => {
   try {
-    const subject = await prisma.subject.findFirst({
-      where: {
-        id: req.params.id,
-        schoolId: req.user.schoolId,
-      },
-    });
-
-    if (!subject) {
-      throw createError("Subject not found", 404);
-    }
-
-    const updated = await prisma.subject.update({
-      where: { id: req.params.id },
-      data: {
-        name: req.body.name,
-        code: req.body.code?.toUpperCase(),
-        type: req.body.type,
-      },
-    });
-
-    return sendSuccess(res, 200, "Subject updated successfully", updated);
+    const subject = await subjectService.updateSubject(req.user.schoolId, req.params.id, req.body);
+    return sendSuccess(res, 200, "Subject updated successfully.", subject);
   } catch (error) {
     console.error("❌ Update subject error:", error);
     if (error.code === "P2002") {
       return res.status(409).json({
         success: false,
-        message: "A subject with this code already exists",
+        message: "A subject with this code already exists.",
       });
     }
     if (error.statusCode) {
@@ -194,34 +93,10 @@ const update = async (req, res) => {
   }
 };
 
-// ─── Delete Subject ───
 const remove = async (req, res) => {
   try {
-    const subject = await prisma.subject.findFirst({
-      where: {
-        id: req.params.id,
-        schoolId: req.user.schoolId,
-      },
-    });
-
-    if (!subject) {
-      throw createError("Subject not found", 404);
-    }
-
-    // Check if subject has scores
-    const scoreCount = await prisma.score.count({
-      where: { subjectId: req.params.id },
-    });
-
-    if (scoreCount > 0) {
-      throw createError("Cannot delete a subject with existing scores", 400);
-    }
-
-    await prisma.subject.delete({
-      where: { id: req.params.id },
-    });
-
-    return sendSuccess(res, 200, "Subject deleted successfully");
+    await subjectService.deleteSubject(req.user.schoolId, req.params.id);
+    return sendSuccess(res, 200, "Subject deleted successfully.");
   } catch (error) {
     console.error("❌ Delete subject error:", error);
     if (error.statusCode) {
