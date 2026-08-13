@@ -7,6 +7,7 @@ const { isSchoolAdmin, isSuperAdmin, isSchoolStaff } = require("../middleware/ro
 const validate     = require("../middleware/validate");
 const { publicLimiter } = require("../middleware/rateLimiter");
 const { uploadSchoolLogo } = require("../middleware/upload");
+const { body } = require("express-validator"); // ✅ ADD THIS LINE
 const {
   registerSchoolValidator,
   updateSchoolValidator,
