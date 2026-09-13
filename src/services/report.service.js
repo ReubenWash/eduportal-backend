@@ -796,6 +796,7 @@ module.exports = {
   generateReports,
   getReports,
   getReport,
+  getReportForPdf,
   previewReport,
   regeneratePDF,
   updateRemarks,
