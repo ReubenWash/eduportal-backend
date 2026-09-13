@@ -524,12 +524,13 @@ const getSectionContent = (section) => {
   switch (section.type) {
     case 'HERO':
       return {
-        heading: section.content.heading || '',
+        heading: section.content.heading || section.content.headline || '',
+        highlight: section.content.highlight || section.content.headlineHighlight || '',
         subtitle: section.content.subtitle || '',
-        ctaText: section.content.ctaText || '',
+        ctaText: section.content.ctaText || section.content.primaryBtn || '',
         ctaLink: section.content.ctaLink || '',
         image: section.content.image || null,
-        trustBadge: section.content.trustBadge || null
+        trustBadge: section.content.trustBadge || section.content.trustText || null
       };
     case 'STATS':
       return {
@@ -579,11 +580,48 @@ const getSectionContent = (section) => {
 // LANDING PAGE - GET ALL CONTENT ────────────────────
 // ─────────────────────────────────────────────────────
 
+const buildLandingPageContent = (sections = [], fallback = getDefaultLandingContent()) => {
+  const content = { ...fallback };
+
+  for (const section of sections || []) {
+    const sectionData = getSectionContent(section);
+
+    switch (section.type) {
+      case 'HERO': {
+        content.heroHeadline = sectionData.heading || sectionData.headline || fallback.heroHeadline;
+        content.heroHeadlineHighlight = sectionData.highlight || sectionData.headlineHighlight || fallback.heroHeadlineHighlight;
+        content.heroSubtitle = sectionData.subtitle || fallback.heroSubtitle;
+        content.heroTrustText = sectionData.trustBadge || sectionData.trustText || fallback.heroTrustText;
+        content.heroPrimaryBtn = sectionData.ctaText || sectionData.primaryBtn || fallback.heroPrimaryBtn || 'Register your school';
+        break;
+      }
+      case 'STATS':
+        content.stats = Array.isArray(sectionData.stats) && sectionData.stats.length ? sectionData.stats : fallback.stats;
+        break;
+      case 'TESTIMONIALS':
+        content.testimonials = Array.isArray(sectionData.testimonials) && sectionData.testimonials.length ? sectionData.testimonials : fallback.testimonials;
+        break;
+      case 'PRICING':
+        content.plans = Array.isArray(sectionData.plans) && sectionData.plans.length ? sectionData.plans : fallback.plans;
+        break;
+      case 'FAQ':
+        content.faqs = Array.isArray(sectionData.faqs) ? sectionData.faqs : fallback.faqs || [];
+        break;
+      case 'FOOTER':
+        content.footerTagline = sectionData.tagline || sectionData.footerTagline || fallback.footerTagline;
+        break;
+      default:
+        break;
+    }
+  }
+
+  return content;
+};
+
 const getLandingContent = async () => {
   try {
-    // Try to find the homepage
     const homepage = await prisma.cmsPage.findFirst({
-      where: { 
+      where: {
         isHomepage: true,
         status: 'PUBLISHED'
       },
@@ -595,9 +633,7 @@ const getLandingContent = async () => {
       }
     });
 
-    // If no homepage exists, create default one with all sections
     if (!homepage) {
-      // Create default homepage
       const newHomepage = await prisma.cmsPage.create({
         data: {
           title: 'Homepage',
@@ -609,7 +645,6 @@ const getLandingContent = async () => {
         }
       });
 
-      // Create default sections
       const defaultSections = [
         {
           pageId: newHomepage.id,
@@ -721,57 +756,153 @@ const getLandingContent = async () => {
         }
       ];
 
-      // Create all sections
       for (const section of defaultSections) {
         await prisma.cmsSection.create({ data: section });
       }
 
-      // Return default content
       return getDefaultLandingContent();
     }
 
-    // Parse sections into structured content
-    const content = {};
-    
-    for (const section of homepage.sections) {
-      const sectionData = getSectionContent(section);
-      
-      switch (section.type) {
-        case 'HERO':
-          content.heroHeadline = sectionData.heading;
-          content.heroHeadlineHighlight = sectionData.highlight || 'Not paperwork.';
-          content.heroSubtitle = sectionData.subtitle;
-          content.heroTrustText = sectionData.trustBadge || 'Trusted by 200+ schools across Africa';
-          break;
-        case 'STATS':
-          content.stats = sectionData.stats;
-          break;
-        case 'TESTIMONIALS':
-          content.testimonials = sectionData.testimonials;
-          break;
-        case 'PRICING':
-          content.plans = sectionData.plans;
-          break;
-        case 'FAQ':
-          content.faqs = sectionData.faqs;
-          break;
-        case 'FOOTER':
-          content.footerTagline = sectionData.tagline;
-          break;
-        default:
-          break;
-      }
-    }
-
-    // Merge with defaults for any missing fields
-    const defaultContent = getDefaultLandingContent();
-    return { ...defaultContent, ...content };
-
+    return buildLandingPageContent(homepage.sections, getDefaultLandingContent());
   } catch (error) {
     console.error('Error fetching landing content:', error);
-    // Return default content if anything fails
     return getDefaultLandingContent();
   }
+};
+
+const saveLandingContent = async (content, userId = null) => {
+  let homepage = await prisma.cmsPage.findFirst({
+    where: { isHomepage: true },
+    include: { sections: true }
+  });
+
+  if (!homepage) {
+    homepage = await prisma.cmsPage.create({
+      data: {
+        title: 'Homepage',
+        slug: 'home',
+        content: 'Landing page content',
+        isHomepage: true,
+        status: 'PUBLISHED',
+        publishedAt: new Date()
+      }
+    });
+  }
+
+  const sectionTypes = ['HERO', 'STATS', 'TESTIMONIALS', 'PRICING', 'FAQ', 'FOOTER'];
+
+  for (const type of sectionTypes) {
+    let section = homepage.sections.find((item) => item.type === type);
+    const payload = content[type === 'HERO' ? 'hero' : type.toLowerCase()];
+
+    if (!section) {
+      section = await prisma.cmsSection.create({
+        data: {
+          pageId: homepage.id,
+          type,
+          title: type,
+          order: 1,
+          isActive: true,
+          content: payload || {}
+        }
+      });
+    } else {
+      await prisma.cmsSection.update({
+        where: { id: section.id },
+        data: { content: { ...(section.content || {}), ...(payload || {}) } }
+      });
+    }
+  }
+
+  const updatedHomepage = await prisma.cmsPage.findUnique({
+    where: { id: homepage.id },
+    include: { sections: { orderBy: { order: 'asc' }, where: { isActive: true } } }
+  });
+
+  return buildLandingPageContent(updatedHomepage.sections, getDefaultLandingContent());
+};
+
+const updateLandingSection = async (type, contentData, userId = null) => {
+  const homepage = await prisma.cmsPage.findFirst({
+    where: { isHomepage: true, status: 'PUBLISHED' },
+    include: { sections: true }
+  });
+
+  if (!homepage) {
+    throw createError('Homepage not found', 404);
+  }
+
+  const sectionType = type.toUpperCase();
+  let section = homepage.sections.find((item) => item.type === sectionType);
+  const normalized = { ...(section?.content || {}) };
+
+  if (sectionType === 'HERO') {
+    normalized.heading = contentData.heading ?? contentData.headline ?? normalized.heading ?? '';
+    normalized.highlight = contentData.highlight ?? contentData.headlineHighlight ?? normalized.highlight ?? '';
+    normalized.subtitle = contentData.subtitle ?? normalized.subtitle ?? '';
+    normalized.trustBadge = contentData.trustBadge ?? contentData.trustText ?? normalized.trustBadge ?? '';
+    normalized.ctaText = contentData.ctaText ?? contentData.primaryBtn ?? normalized.ctaText ?? '';
+  } else {
+    Object.assign(normalized, contentData);
+  }
+
+  if (!section) {
+    section = await prisma.cmsSection.create({
+      data: {
+        pageId: homepage.id,
+        type: sectionType,
+        title: sectionType,
+        order: homepage.sections.length + 1,
+        isActive: true,
+        content: normalized
+      }
+    });
+  } else {
+    section = await prisma.cmsSection.update({
+      where: { id: section.id },
+      data: { content: normalized }
+    });
+  }
+
+  return section;
+};
+
+const getFooter = async () => {
+  const homepage = await prisma.cmsPage.findFirst({
+    where: { isHomepage: true, status: 'PUBLISHED' },
+    include: { sections: { where: { type: 'FOOTER', isActive: true }, orderBy: { order: 'asc' } } }
+  });
+
+  const footerSection = homepage?.sections?.[0];
+  const footerContent = footerSection?.content || {};
+
+  return {
+    tagline: footerContent.tagline || footerContent.footerTagline || 'A school management platform built specifically for schools in Ghana and across West Africa.',
+    links: footerContent.links || [
+      { label: 'Features', url: '#features' },
+      { label: 'Pricing', url: '#plans' }
+    ],
+    socialLinks: footerContent.socialLinks || [],
+    copyright: footerContent.copyright || `© ${new Date().getFullYear()} EduPortal. All rights reserved.`
+  };
+};
+
+const getTheme = async () => {
+  const theme = await prisma.systemSetting.findUnique({
+    where: { key: 'theme_config' }
+  });
+
+  return theme?.value || {
+    primaryColor: '#4F46E5',
+    secondaryColor: '#1A3C5E',
+    accentColor: '#F59E0B',
+    fontFamily: 'Inter',
+    borderRadius: '8px',
+    buttonStyle: 'rounded',
+    logoUrl: null,
+    faviconUrl: null,
+    customCss: ''
+  };
 };
 
 // ─── Default Landing Content ────────────────────────────────────
@@ -779,6 +910,7 @@ const getDefaultLandingContent = () => ({
   heroHeadline: "Run your school.",
   heroHeadlineHighlight: "Not paperwork.",
   heroSubtitle: "EduPortal gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.",
+  heroPrimaryBtn: "Register your school",
   heroTrustText: "Trusted by 200+ schools across Ghana, Nigeria & Kenya",
   stats: [
     { number: "200+", label: "Schools registered" },
@@ -848,14 +980,19 @@ module.exports = {
   getSectionById,
   createSection,
   updateSection,
-  updateSectionContent, // ← NEW
+  updateSectionContent,
   deleteSection,
   reorderSections,
   
   // Landing Page
-  getLandingContent, // ← NEW
+  getLandingContent,
+  saveLandingContent,
+  updateLandingSection,
+  getFooter,
+  getTheme,
+  buildLandingPageContent,
   
   // Helpers
   getSectionContent,
-  getDefaultLandingContent // ← NEW
+  getDefaultLandingContent
 };
