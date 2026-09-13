@@ -80,50 +80,63 @@ const updateProfile = async (req, res) => {
     if (!req.user.schoolId) {
       throw createError("School ID not found. Please contact administrator.", 400);
     }
-    
+
+    const uploadFileToCloudinary = async (file, folderName, transformation = []) => {
+      if (!file || !file.buffer) return null;
+
+      const result = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: folderName,
+            transformation,
+          },
+          (error, uploaded) => {
+            if (error) return reject(error);
+            resolve(uploaded);
+          }
+        );
+
+        Readable.from(file.buffer).pipe(uploadStream);
+      });
+
+      return result?.secure_url || null;
+    };
+
     let logoUrl = null;
-    
-    // ✅ Handle file upload from either disk storage or memory storage
+    const uploadedFileUrls = {};
+
     if (req.file) {
       try {
-        console.log('📤 Uploading logo to Cloudinary...');
-
-        let result;
-
-        if (req.file.path) {
-          result = await cloudinary.uploader.upload(req.file.path, {
-            folder: 'edutrack/logos',
-            transformation: [{ width: 300, height: 300, crop: 'limit' }],
-          });
-        } else if (req.file.buffer) {
-          result = await new Promise((resolve, reject) => {
-            const uploadStream = cloudinary.uploader.upload_stream(
-              {
-                folder: 'edutrack/logos',
-                transformation: [{ width: 300, height: 300, crop: 'limit' }],
-              },
-              (error, uploaded) => {
-                if (error) return reject(error);
-                resolve(uploaded);
-              }
-            );
-
-            Readable.from(req.file.buffer).pipe(uploadStream);
-          });
-        }
-
-        if (result && result.secure_url) {
-          logoUrl = result.secure_url;
+        console.log('📤 Uploading file to Cloudinary...');
+        const uploadedUrl = await uploadFileToCloudinary(req.file, 'edutrack/logos', [{ width: 300, height: 300, crop: 'limit' }]);
+        if (uploadedUrl) {
+          uploadedFileUrls.logo = uploadedUrl;
+          logoUrl = uploadedUrl;
           console.log('✅ Logo uploaded to Cloudinary:', logoUrl);
         }
-
         cleanupTempFile(req.file);
       } catch (uploadError) {
         console.error('❌ Cloudinary upload error:', uploadError);
-        // Continue without logo if upload fails
       }
     }
-    
+
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        try {
+          const folderName = file.fieldname === 'logo' ? 'edutrack/logos' : 'edutrack/report-signatures';
+          const uploadedUrl = await uploadFileToCloudinary(file, folderName, file.fieldname === 'logo' ? [{ width: 300, height: 300, crop: 'limit' }] : [{ width: 600, height: 200, crop: 'limit' }]);
+          if (uploadedUrl) {
+            uploadedFileUrls[file.fieldname] = uploadedUrl;
+            if (file.fieldname === 'logo') {
+              logoUrl = uploadedUrl;
+            }
+          }
+        } catch (uploadError) {
+          console.error(`❌ Cloudinary upload error for ${file.fieldname}:`, uploadError);
+        }
+      }
+    }
+
     // ✅ Build update data from req.body
     const updateData = {};
     
@@ -162,16 +175,28 @@ const updateProfile = async (req, res) => {
 
     if (req.body.reportConfig) {
       try {
-        if (typeof req.body.reportConfig === 'string') {
-          updateData.reportConfig = JSON.parse(req.body.reportConfig);
-        } else {
-          updateData.reportConfig = req.body.reportConfig;
-        }
+        const parsedReportConfig = typeof req.body.reportConfig === 'string'
+          ? JSON.parse(req.body.reportConfig)
+          : req.body.reportConfig;
+
+        const mergedReportConfig = {
+          ...(parsedReportConfig || {}),
+          ...(uploadedFileUrls.principalSignature ? { principalSignatureUrl: uploadedFileUrls.principalSignature } : {}),
+          ...(uploadedFileUrls.classTeacherSignature ? { classTeacherSignatureUrl: uploadedFileUrls.classTeacherSignature } : {}),
+        };
+
+        updateData.reportConfig = mergedReportConfig;
       } catch (parseError) {
         console.error('❌ Failed to parse reportConfig:', parseError);
       }
+    } else if (uploadedFileUrls.principalSignature || uploadedFileUrls.classTeacherSignature) {
+      updateData.reportConfig = {
+        ...(req.user?.school ? req.user.school.reportConfig || {} : {}),
+        ...(uploadedFileUrls.principalSignature ? { principalSignatureUrl: uploadedFileUrls.principalSignature } : {}),
+        ...(uploadedFileUrls.classTeacherSignature ? { classTeacherSignatureUrl: uploadedFileUrls.classTeacherSignature } : {}),
+      };
     }
-    
+
     // Use uploaded logo URL if available
     if (logoUrl) {
       updateData.logoUrl = logoUrl;

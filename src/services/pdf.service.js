@@ -32,6 +32,8 @@ const generateReportPDF = async (reportId) => {
     motto: 'Excellence in Learning',
     principalName: 'Head Teacher',
     classTeacherName: 'Class Teacher',
+    principalSignatureUrl: null,
+    classTeacherSignatureUrl: null,
     showLogo: true,
     showSchoolName: true,
     showStudentPhoto: true,
@@ -197,13 +199,33 @@ const generateReportPDF = async (reportId) => {
   if (theme.showClassTeacherSignature !== false) {
     doc.roundedRect(50, remarkBoxY, 220, 60, 10).fill('#F8FAFC');
     doc.fillColor('#374151').fontSize(9).font('Helvetica-Bold').text(theme.classTeacherName || 'Class Teacher', 64, remarkBoxY + 10);
-    doc.fillColor('#111827').fontSize(9).font('Helvetica').text(report.teacherRemark || 'Excellent performance and strong commitment to learning.', 64, remarkBoxY + 26, { width: 190, height: 24 });
+
+    const classTeacherSignature = theme.classTeacherSignatureUrl ? await loadRemoteImage(theme.classTeacherSignatureUrl) : null;
+    if (classTeacherSignature && classTeacherSignature.length > 0) {
+      try {
+        doc.image(classTeacherSignature, 64, remarkBoxY + 24, { fit: [90, 28] });
+      } catch (error) {
+        logger.warn(`Could not embed class teacher signature in PDF: ${error.message}`);
+      }
+    } else {
+      doc.fillColor('#111827').fontSize(9).font('Helvetica').text(report.teacherRemark || 'Excellent performance and strong commitment to learning.', 64, remarkBoxY + 26, { width: 190, height: 24 });
+    }
   }
 
   if (theme.showPrincipalSignature !== false) {
     doc.roundedRect(280, remarkBoxY, 265, 60, 10).fill('#F8FAFC');
     doc.fillColor('#374151').fontSize(9).font('Helvetica-Bold').text(theme.principalName || 'Head Teacher', 294, remarkBoxY + 10);
-    doc.fillColor('#111827').fontSize(9).font('Helvetica').text(report.headRemark || 'Progress is satisfactory and commendable.', 294, remarkBoxY + 26, { width: 235, height: 24 });
+
+    const principalSignature = theme.principalSignatureUrl ? await loadRemoteImage(theme.principalSignatureUrl) : null;
+    if (principalSignature && principalSignature.length > 0) {
+      try {
+        doc.image(principalSignature, 294, remarkBoxY + 22, { fit: [110, 28] });
+      } catch (error) {
+        logger.warn(`Could not embed principal signature in PDF: ${error.message}`);
+      }
+    } else {
+      doc.fillColor('#111827').fontSize(9).font('Helvetica').text(report.headRemark || 'Progress is satisfactory and commendable.', 294, remarkBoxY + 26, { width: 235, height: 24 });
+    }
   }
 
   yPos += 82;

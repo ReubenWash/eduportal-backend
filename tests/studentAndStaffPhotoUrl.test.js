@@ -32,3 +32,11 @@ test('school profile accepts report branding config and stores it as JSON', () =
   const schoolControllerText = fs.readFileSync(schoolControllerPath, 'utf8');
   assert.match(schoolControllerText, /reportConfig|JSON\.parse\(req\.body\.reportConfig\)/);
 });
+
+test('school report config stores signature URLs and PDF embeds signature images', () => {
+  const schoolControllerText = fs.readFileSync(schoolControllerPath, 'utf8');
+  const pdfServiceText = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'pdf.service.js'), 'utf8');
+
+  assert.match(schoolControllerText, /principalSignature|classTeacherSignature/);
+  assert.match(pdfServiceText, /principalSignatureUrl|classTeacherSignatureUrl|doc\.image\(/);
+});
