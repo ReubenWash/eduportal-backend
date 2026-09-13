@@ -73,28 +73,28 @@ const admitStudent = async (schoolId, data, photoUrl) => {
       // when the email already exists (in another school, as an orphan, etc.)
       const existingUser = await tx.user.findUnique({
         where: { email: normalizedEmail },
-        include: { guardian: true },
+        include: { guardianProfile: true },
       });
 
-      if (existingUser && existingUser.guardian) {
+      if (existingUser && existingUser.guardianProfile) {
         // ✅ Existing guardian - link student without creating new account
         await tx.studentGuardian.create({
           data: {
             studentId: newStudent.id,
-            guardianId: existingUser.guardian.id,
+            guardianId: existingUser.guardianProfile.id,
             isPrimary: true,
           },
         });
 
         guardianResult = {
-          id: existingUser.guardian.id,
-          name: `${existingUser.guardian.firstName} ${existingUser.guardian.lastName}`,
-          email: existingUser.guardian.email,
+          id: existingUser.guardianProfile.id,
+          name: `${existingUser.guardianProfile.firstName} ${existingUser.guardianProfile.lastName}`,
+          email: existingUser.guardianProfile.email,
           isNew: false,
           message: "Linked to existing guardian account.",
         };
 
-        console.log(`✅ Linked student to existing guardian: ${existingUser.guardian.email}`);
+        console.log(`✅ Linked student to existing guardian: ${existingUser.guardianProfile.email}`);
       } else if (existingUser) {
         // ⚠️ User exists but has no Guardian profile — refuse cleanly (409, not 500)
         throw createError(
