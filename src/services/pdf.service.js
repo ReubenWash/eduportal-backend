@@ -4,6 +4,7 @@
  */
 
 const PDFDocument = require('pdfkit');
+const axios = require('axios');
 const { prisma } = require("../config/db");
 const cloudinary = require("../config/cloudinary");
 const { createError } = require("../middleware/errorHandler");
@@ -22,6 +23,17 @@ const generateReportPDF = async (reportId) => {
   // 1. Fetch data
   const data = await fetchReportData(reportId);
   const { school, student, term, scores, report } = data;
+  const theme = {
+    primaryColor: '#4F46E5',
+    secondaryColor: '#0F172A',
+    accentColor: '#E2E8F0',
+    headerTextColor: '#FFFFFF',
+    title: 'End of Term Report Card',
+    footerText: 'This is a computer-generated report card. No signature is required.',
+    showLogo: true,
+    showSchoolName: true,
+    ...(school?.reportConfig || {})
+  };
 
   // 2. Create PDF document
   const doc = new PDFDocument({ margin: 50, size: 'A4' });
@@ -35,19 +47,39 @@ const generateReportPDF = async (reportId) => {
   });
 
   // ─── HEADER ───
-  doc.rect(0, 0, doc.page.width, 80).fill('#4F46E5');
-  doc.fillColor('#FFFFFF')
-     .fontSize(24)
+  const headerHeight = 90;
+  doc.rect(0, 0, doc.page.width, headerHeight).fill(theme.primaryColor || '#4F46E5');
+
+  let headerLogoBuffer = null;
+  if (theme.showLogo !== false && school?.logoUrl) {
+    try {
+      const logoResponse = await axios.get(school.logoUrl, { responseType: 'arraybuffer' });
+      headerLogoBuffer = Buffer.from(logoResponse.data);
+    } catch (error) {
+      logger.warn(`Could not load report logo for school ${school?.id}: ${error.message}`);
+    }
+  }
+
+  if (headerLogoBuffer && headerLogoBuffer.length > 0) {
+    try {
+      doc.image(headerLogoBuffer, 50, 18, { fit: [42, 42], align: 'left' });
+    } catch (error) {
+      logger.warn(`Could not embed school logo in PDF: ${error.message}`);
+    }
+  }
+
+  doc.fillColor(theme.headerTextColor || '#FFFFFF')
+     .fontSize(theme.showSchoolName === false ? 16 : 24)
      .font('Helvetica-Bold')
-     .text(school.name || 'EduPortal', 50, 25);
+     .text(theme.showSchoolName === false ? (theme.title || 'Report Card') : (school.name || 'EduPortal'), 110, 22);
   
   doc.fontSize(12)
      .font('Helvetica')
-     .text('End of Term Report Card', 50, 52);
+     .text(theme.title || 'End of Term Report Card', 110, 56);
 
   // ─── TERM BADGE ───
   const termLabel = `${term.academicYear} — ${term.termNumber.replace("TERM", "Term ")}`;
-  doc.rect(430, 20, 120, 30).fill('#10B981');
+  doc.rect(430, 20, 120, 30).fill(theme.secondaryColor || '#0F172A');
   doc.fillColor('#FFFFFF')
      .fontSize(10)
      .font('Helvetica-Bold')
@@ -256,12 +288,12 @@ const generateReportPDF = async (reportId) => {
   const footerY = doc.page.height - 60;
   doc.moveTo(50, footerY)
      .lineTo(doc.page.width - 50, footerY)
-     .stroke('#E5E7EB');
+     .stroke(theme.accentColor || '#E5E7EB');
 
-  doc.fillColor('#9CA3AF')
+  doc.fillColor(theme.secondaryColor || '#9CA3AF')
      .fontSize(8)
      .font('Helvetica')
-     .text('This is a computer-generated report card. No signature is required.', 
+     .text(theme.footerText || 'This is a computer-generated report card. No signature is required.', 
        50, 
        footerY + 15, 
        { align: 'center' }
@@ -316,7 +348,7 @@ const fetchReportData = async (reportId) => {
       term: {
         include: {
           school: {
-            select: { id: true, name: true, logoUrl: true, motto: true, address: true },
+            select: { id: true, name: true, logoUrl: true, motto: true, address: true, reportConfig: true },
           },
         },
       },

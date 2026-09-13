@@ -27,3 +27,8 @@ test('school logo update uploads the in-memory file buffer to Cloudinary', () =>
   const schoolControllerText = fs.readFileSync(schoolControllerPath, 'utf8');
   assert.match(schoolControllerText, /upload_stream|req\.file\.buffer|Readable\.from\(req\.file\.buffer\)/);
 });
+
+test('school profile accepts report branding config and stores it as JSON', () => {
+  const schoolControllerText = fs.readFileSync(schoolControllerPath, 'utf8');
+  assert.match(schoolControllerText, /reportConfig|JSON\.parse\(req\.body\.reportConfig\)/);
+});

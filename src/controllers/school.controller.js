@@ -159,6 +159,18 @@ const updateProfile = async (req, res) => {
         // Don't include scoreLabels if parsing fails
       }
     }
+
+    if (req.body.reportConfig) {
+      try {
+        if (typeof req.body.reportConfig === 'string') {
+          updateData.reportConfig = JSON.parse(req.body.reportConfig);
+        } else {
+          updateData.reportConfig = req.body.reportConfig;
+        }
+      } catch (parseError) {
+        console.error('❌ Failed to parse reportConfig:', parseError);
+      }
+    }
     
     // Use uploaded logo URL if available
     if (logoUrl) {
