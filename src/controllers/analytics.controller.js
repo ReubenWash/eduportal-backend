@@ -18,7 +18,12 @@ const topStudents = async (req, res) => {
 };
 
 const trends = async (req, res) => {
-  const data = await analyticsService.getPerformanceTrends(req.user.schoolId, req.query.academicYear, req.query.classId);
+  const { academicYear, termId, classId } = req.query;
+  const data = await analyticsService.getPerformanceTrends(
+    req.user.schoolId,
+    academicYear || termId,
+    classId
+  );
   return sendSuccess(res, 200, "Trends fetched.", data);
 };
 

@@ -108,7 +108,20 @@ const getTopStudents = async (schoolId, termId, limit, classId) => {
   }));
 };
 
-const getPerformanceTrends = async (schoolId, academicYear, classId) => {
+const getPerformanceTrends = async (schoolId, academicYearOrTermId, classId) => {
+  let academicYear = academicYearOrTermId;
+
+  if (academicYearOrTermId && academicYearOrTermId.includes('-')) {
+    const term = await prisma.term.findUnique({
+      where: { id: academicYearOrTermId },
+      select: { academicYear: true },
+    });
+
+    if (term) {
+      academicYear = term.academicYear;
+    }
+  }
+
   const where = { schoolId };
   if (academicYear) where.academicYear = academicYear;
 

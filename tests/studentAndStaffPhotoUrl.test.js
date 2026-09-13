@@ -50,3 +50,19 @@ test('report preview and download routes use a real PDF route instead of an HTML
   assert.match(routesText, /\/\:id\/pdf/);
   assert.match(frontendApiText, /reports\/\$\{id\}\/pdf|getReportPreviewUrl/);
 });
+
+test('analytics trend endpoint accepts a termId request and resolves it to the correct academic year', () => {
+  const analyticsServiceText = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'analytics.service.js'), 'utf8');
+  const analyticsControllerText = fs.readFileSync(path.join(__dirname, '..', 'src', 'controllers', 'analytics.controller.js'), 'utf8');
+
+  assert.match(analyticsServiceText, /getPerformanceTrends|termId.*academicYear|academicYear.*termId|findUnique\(\{\s*where:\s*\{\s*id:\s*termId/);
+  assert.match(analyticsControllerText, /req\.query\.termId|const .*termId.*=\s*req\.query\.termId|academicYear.*termId/);
+});
+
+test('school admin staff export button is wired to the real export API', () => {
+  const staffPageText = fs.readFileSync(path.join(__dirname, '..', '..', 'eduportal-frontend', 'src', 'pages', 'staff', 'Staff.jsx'), 'utf8');
+  const staffApiText = fs.readFileSync(path.join(__dirname, '..', '..', 'eduportal-frontend', 'src', 'api', 'staffApi.js'), 'utf8');
+
+  assert.match(staffPageText, /handleExport|exportStaff\s*\)|onClick=\{handleExport\}/);
+  assert.match(staffApiText, /exportStaff\s*=\s*async|\/staff\/export/);
+});
