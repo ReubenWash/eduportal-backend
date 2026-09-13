@@ -27,15 +27,30 @@ const bulkMarkAttendance = async (schoolId, { classId, termId, date, records }) 
   return { marked };
 };
 
-const getAttendance = async (schoolId, query) => {
+const getAttendance = async (schoolId, query = {}) => {
   const where = { student: { schoolId } };
+
   if (query.classId)   where.classId   = query.classId;
   if (query.studentId) where.studentId = query.studentId;
-  if (query.from || query.to) {
-    where.date = {};
-    if (query.from) where.date.gte = new Date(query.from);
-    if (query.to)   where.date.lte = new Date(query.to);
+  if (query.termId)    where.termId    = query.termId;
+
+  const dateFilter = {};
+  if (query.date) {
+    const selectedDate = new Date(query.date);
+    const start = new Date(selectedDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(selectedDate);
+    end.setHours(23, 59, 59, 999);
+    dateFilter.gte = start;
+    dateFilter.lte = end;
   }
+
+  if (query.from || query.to) {
+    if (query.from) dateFilter.gte = new Date(query.from);
+    if (query.to)   dateFilter.lte = new Date(query.to);
+  }
+
+  if (Object.keys(dateFilter).length > 0) where.date = dateFilter;
 
   return prisma.attendance.findMany({
     where,
