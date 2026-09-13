@@ -35,6 +35,7 @@ router.get("/", isSchoolStaff, controller.list);
 // ─── Single report operations ───
 router.get("/:id", isSchoolStaff, controller.getOne);
 router.get("/:id/preview", isSchoolStaff, controller.preview);
+router.get("/:id/pdf", isSchoolStaff, controller.downloadPDF);
 
 router.patch("/:id/remarks",
   isSchoolStaff,

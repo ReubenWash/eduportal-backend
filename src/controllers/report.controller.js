@@ -76,6 +76,11 @@ const getOne = async (req, res) => {
 // ─── GET /api/v1/reports/:id/preview ───
 const preview = async (req, res) => {
   try {
+    const report = await reportService.getReportForPdf(req.user.schoolId, req.params.id);
+    if (report.pdfUrl) {
+      return res.redirect(report.pdfUrl);
+    }
+
     const html = await reportService.previewReport(req.user.schoolId, req.params.id);
     res.setHeader("Content-Type", "text/html");
     return res.send(html);
@@ -90,6 +95,32 @@ const preview = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to preview report'
+    });
+  }
+};
+
+// ─── GET /api/v1/reports/:id/pdf ───
+const downloadPDF = async (req, res) => {
+  try {
+    const report = await reportService.getReportForPdf(req.user.schoolId, req.params.id);
+    if (!report.pdfUrl) {
+      throw createError("Report PDF has not been generated yet.", 404);
+    }
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="report-${req.params.id}.pdf"`);
+    return res.redirect(report.pdfUrl);
+  } catch (error) {
+    console.error('Download report PDF error:', error);
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to download report PDF'
     });
   }
 };
@@ -382,6 +413,7 @@ module.exports = {
   generate,
   getOne,
   preview,
+  downloadPDF,
   regeneratePDF,
   updateRemarks,
   approve,

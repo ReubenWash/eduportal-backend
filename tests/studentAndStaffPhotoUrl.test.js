@@ -40,3 +40,13 @@ test('school report config stores signature URLs and PDF embeds signature images
   assert.match(schoolControllerText, /principalSignature|classTeacherSignature/);
   assert.match(pdfServiceText, /principalSignatureUrl|classTeacherSignatureUrl|doc\.image\(/);
 });
+
+test('report preview and download routes use a real PDF route instead of an HTML preview URL', () => {
+  const controllerText = fs.readFileSync(path.join(__dirname, '..', 'src', 'controllers', 'report.controller.js'), 'utf8');
+  const routesText = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'report.routes.js'), 'utf8');
+  const frontendApiText = fs.readFileSync(path.join(__dirname, '..', '..', 'eduportal-frontend', 'src', 'api', 'reportsApi.js'), 'utf8');
+
+  assert.match(controllerText, /downloadPDF|report\.pdfUrl|res\.redirect\(report\.pdfUrl\)/);
+  assert.match(routesText, /\/\:id\/pdf/);
+  assert.match(frontendApiText, /reports\/\$\{id\}\/pdf|getReportPreviewUrl/);
+});

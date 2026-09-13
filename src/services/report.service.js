@@ -214,6 +214,24 @@ const getReport = async (schoolId, reportId) => {
   }
 };
 
+const getReportForPdf = async (schoolId, reportId) => {
+  const report = await prisma.report.findFirst({
+    where: { id: reportId, student: { schoolId } },
+    select: { id: true, pdfUrl: true, studentId: true, termId: true, status: true },
+  });
+
+  if (!report) throw createError("Report not found.", 404);
+
+  if (!report.pdfUrl && report.status !== 'RELEASED') {
+    const { generateReportPDF } = require("./pdf.service");
+    const pdfUrl = await generateReportPDF(reportId);
+    await prisma.report.update({ where: { id: reportId }, data: { pdfUrl } });
+    report.pdfUrl = pdfUrl;
+  }
+
+  return report;
+};
+
 // ── Preview report HTML (no PDF, instant) ─────────────────────
 const previewReport = async (schoolId, reportId) => {
   try {
