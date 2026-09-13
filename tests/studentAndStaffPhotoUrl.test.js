@@ -66,3 +66,11 @@ test('school admin staff export button is wired to the real export API', () => {
   assert.match(staffPageText, /handleExport|exportStaff\s*\)|onClick=\{handleExport\}/);
   assert.match(staffApiText, /exportStaff\s*=\s*async|\/staff\/export/);
 });
+
+test('school admin student export button is wired to the real export API', () => {
+  const studentPageText = fs.readFileSync(path.join(__dirname, '..', '..', 'eduportal-frontend', 'src', 'pages', 'students', 'Students.jsx'), 'utf8');
+  const studentApiText = fs.readFileSync(path.join(__dirname, '..', '..', 'eduportal-frontend', 'src', 'api', 'studentsApi.js'), 'utf8');
+
+  assert.match(studentPageText, /handleExport|exportStudents\s*\)|onClick=\{handleExport\}/);
+  assert.match(studentApiText, /exportStudents\s*=\s*async|\/students\/export/);
+});
