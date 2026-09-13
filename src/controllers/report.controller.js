@@ -1,6 +1,7 @@
 const reportService   = require("../services/report.service");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
+const axios = require("axios");
 const path = require("path");
 const fs   = require("fs");
 
@@ -73,12 +74,28 @@ const getOne = async (req, res) => {
   }
 };
 
+const streamPdfResponse = async (res, pdfUrl, filename, attachment = false) => {
+  const response = await axios.get(pdfUrl, {
+    responseType: 'stream',
+    timeout: 30000,
+  });
+
+  res.setHeader('Content-Type', response.headers['content-type'] || 'application/pdf');
+  res.setHeader(
+    'Content-Disposition',
+    `${attachment ? 'attachment' : 'inline'}; filename="${filename}"`
+  );
+  res.setHeader('Content-Length', response.headers['content-length'] || response.data?.length || 0);
+
+  response.data.pipe(res);
+};
+
 // ─── GET /api/v1/reports/:id/preview ───
 const preview = async (req, res) => {
   try {
     const report = await reportService.getReportForPdf(req.user.schoolId, req.params.id);
     if (report.pdfUrl) {
-      return res.redirect(report.pdfUrl);
+      return await streamPdfResponse(res, report.pdfUrl, `preview-${req.params.id}.pdf`, false);
     }
 
     const html = await reportService.previewReport(req.user.schoolId, req.params.id);
@@ -107,9 +124,7 @@ const downloadPDF = async (req, res) => {
       throw createError("Report PDF has not been generated yet.", 404);
     }
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="report-${req.params.id}.pdf"`);
-    return res.redirect(report.pdfUrl);
+    return await streamPdfResponse(res, report.pdfUrl, `report-${req.params.id}.pdf`, true);
   } catch (error) {
     console.error('Download report PDF error:', error);
     if (error.statusCode) {
@@ -214,8 +229,13 @@ const release = async (req, res) => {
 // ─── POST /api/v1/reports/release-bulk ───
 const bulkRelease = async (req, res) => {
   try {
-    const { classId, termId } = req.body;
-    
+    const { classId, termId, ids } = req.body;
+
+    if (Array.isArray(ids) && ids.length > 0) {
+      const result = await reportService.bulkReleaseReportsByIds(req.user.schoolId, ids);
+      return sendSuccess(res, 200, `${result.released} reports released successfully.`, result);
+    }
+
     if (!classId || !termId) {
       throw createError("Class ID and Term ID are required.", 400);
     }

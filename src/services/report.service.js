@@ -421,7 +421,6 @@ const bulkReleaseReports = async (schoolId, classId, termId) => {
       throw createError("No students found in this class for this term.", 404);
     }
 
-    // Get all reports for these students
     const reports = await prisma.report.findMany({
       where: {
         studentId: { in: studentIds },
@@ -435,53 +434,97 @@ const bulkReleaseReports = async (schoolId, classId, termId) => {
       }
     });
 
-    // Separate reports that need PDF generation
-    const reportsWithoutPdf = reports.filter(r => !r.pdfUrl);
-    const approvedReports = reports.filter(r => r.status === 'APPROVED' && r.pdfUrl);
-    const reportIdsToRelease = approvedReports.map(r => r.id);
-
-    // Generate PDFs for reports that don't have them
-    if (reportsWithoutPdf.length > 0) {
-      logger.info(`Generating PDFs for ${reportsWithoutPdf.length} reports...`);
-      const { generateBulkPDFs } = require("./pdf.service");
-      const pdfResults = await generateBulkPDFs(reportsWithoutPdf.map(r => r.id));
-      
-      // Update reports with PDF URLs and approve them
-      for (const result of pdfResults.results || []) {
-        if (result.success) {
-          await prisma.report.update({
-            where: { id: result.reportId },
-            data: { 
-              pdfUrl: result.pdfUrl,
-              status: 'APPROVED'
-            }
-          });
-          reportIdsToRelease.push(result.reportId);
-        }
-      }
-    }
-
-    // Release all approved reports
-    const result = await prisma.report.updateMany({
-      where: {
-        id: { in: reportIdsToRelease },
-        status: "APPROVED",
-        pdfUrl: { not: null },
-      },
-      data: { 
-        status: "RELEASED", 
-        releasedAt: new Date() 
-      },
-    });
-
-    // Update class positions for all students
-    await updateClassPositions(schoolId, classId, termId);
-
-    return { released: result.count };
+    return await releaseReportGroup(schoolId, reports, { classId, termId });
   } catch (error) {
     logger.error("Bulk release reports error:", error);
     throw error;
   }
+};
+
+const bulkReleaseReportsByIds = async (schoolId, reportIds) => {
+  try {
+    if (!Array.isArray(reportIds) || reportIds.length === 0) {
+      throw createError("At least one report ID is required.", 400);
+    }
+
+    const reports = await prisma.report.findMany({
+      where: {
+        id: { in: reportIds },
+        student: { schoolId }
+      },
+      select: {
+        id: true,
+        studentId: true,
+        termId: true,
+        pdfUrl: true,
+        status: true,
+        classPosition: true,
+        totalStudents: true,
+      }
+    });
+
+    if (reports.length === 0) {
+      throw createError("No matching reports found for release.", 404);
+    }
+
+    return await releaseReportGroup(schoolId, reports, { classId: null, termId: null });
+  } catch (error) {
+    logger.error("Bulk release by IDs error:", error);
+    throw error;
+  }
+};
+
+const releaseReportGroup = async (schoolId, reports, context) => {
+  const reportsWithoutPdf = reports.filter(r => !r.pdfUrl);
+  const approvedReports = reports.filter(r => r.status === 'APPROVED' && r.pdfUrl);
+  const reportIdsToRelease = approvedReports.map(r => r.id);
+
+  if (reportsWithoutPdf.length > 0) {
+    logger.info(`Generating PDFs for ${reportsWithoutPdf.length} reports...`);
+    const { generateBulkPDFs } = require("./pdf.service");
+    const pdfResults = await generateBulkPDFs(reportsWithoutPdf.map(r => r.id));
+
+    for (const result of pdfResults.results || []) {
+      if (result.success) {
+        await prisma.report.update({
+          where: { id: result.reportId },
+          data: {
+            pdfUrl: result.pdfUrl,
+            status: 'APPROVED'
+          }
+        });
+        reportIdsToRelease.push(result.reportId);
+      }
+    }
+  }
+
+  const updateMany = await prisma.report.updateMany({
+    where: {
+      id: { in: reportIdsToRelease },
+      status: "APPROVED",
+      pdfUrl: { not: null },
+    },
+    data: {
+      status: "RELEASED",
+      releasedAt: new Date()
+    },
+  });
+
+  const uniqueTermIds = [...new Set(reports.map(r => r.termId).filter(Boolean))];
+  const uniqueClassIds = context.classId ? [context.classId] : [...new Set((await prisma.enrollment.findMany({
+    where: { studentId: { in: reports.map(r => r.studentId) }, termId: { in: uniqueTermIds } },
+    select: { classId: true }
+  })).map(e => e.classId))];
+
+  for (const termId of uniqueTermIds) {
+    for (const classId of uniqueClassIds) {
+      if (classId && termId) {
+        await updateClassPositions(schoolId, classId, termId);
+      }
+    }
+  }
+
+  return { released: updateMany.count };
 };
 
 // ── Helper: Update class positions ────────────────────────────
@@ -759,6 +802,7 @@ module.exports = {
   approveReport,
   releaseReport,
   bulkReleaseReports,
+  bulkReleaseReportsByIds,
   emailReports,
   getClassZIPPath,
   getReportStats,
