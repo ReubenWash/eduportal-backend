@@ -20,7 +20,6 @@ const os = require("os");
 const generateReportPDF = async (reportId) => {
   logger.info(`Generating PDF for report ${reportId} using pdfkit`);
 
-  // 1. Fetch data
   const data = await fetchReportData(reportId);
   const { school, student, term, scores, report } = data;
   const theme = {
@@ -30,31 +29,33 @@ const generateReportPDF = async (reportId) => {
     headerTextColor: '#FFFFFF',
     title: 'End of Term Report Card',
     footerText: 'This is a computer-generated report card. No signature is required.',
+    motto: 'Excellence in Learning',
+    principalName: 'Head Teacher',
+    classTeacherName: 'Class Teacher',
     showLogo: true,
     showSchoolName: true,
+    showStudentPhoto: true,
+    showPrincipalSignature: true,
+    showClassTeacherSignature: true,
     ...(school?.reportConfig || {})
   };
 
-  // 2. Create PDF document
   const doc = new PDFDocument({ margin: 50, size: 'A4' });
   const buffers = [];
-  
+
   doc.on('data', buffers.push.bind(buffers));
   doc.on('end', () => {
     const pdfBuffer = Buffer.concat(buffers);
-    // Store for later upload
     doc._pdfBuffer = pdfBuffer;
   });
 
-  // ─── HEADER ───
-  const headerHeight = 90;
+  const headerHeight = 100;
   doc.rect(0, 0, doc.page.width, headerHeight).fill(theme.primaryColor || '#4F46E5');
 
   let headerLogoBuffer = null;
   if (theme.showLogo !== false && school?.logoUrl) {
     try {
-      const logoResponse = await axios.get(school.logoUrl, { responseType: 'arraybuffer' });
-      headerLogoBuffer = Buffer.from(logoResponse.data);
+      headerLogoBuffer = await loadRemoteImage(school.logoUrl);
     } catch (error) {
       logger.warn(`Could not load report logo for school ${school?.id}: ${error.message}`);
     }
@@ -62,250 +63,159 @@ const generateReportPDF = async (reportId) => {
 
   if (headerLogoBuffer && headerLogoBuffer.length > 0) {
     try {
-      doc.image(headerLogoBuffer, 50, 18, { fit: [42, 42], align: 'left' });
+      doc.image(headerLogoBuffer, 50, 24, { fit: [52, 52] });
     } catch (error) {
       logger.warn(`Could not embed school logo in PDF: ${error.message}`);
     }
   }
 
+  const displayName = theme.showSchoolName === false ? (theme.title || 'Report Card') : (school.name || 'EduPortal');
   doc.fillColor(theme.headerTextColor || '#FFFFFF')
-     .fontSize(theme.showSchoolName === false ? 16 : 24)
+     .fontSize(24)
      .font('Helvetica-Bold')
-     .text(theme.showSchoolName === false ? (theme.title || 'Report Card') : (school.name || 'EduPortal'), 110, 22);
-  
-  doc.fontSize(12)
+     .text(displayName, 118, 25);
+
+  doc.fontSize(11)
      .font('Helvetica')
-     .text(theme.title || 'End of Term Report Card', 110, 56);
+     .text(school.motto || 'Excellence in Learning', 118, 58, { width: 260 });
 
-  // ─── TERM BADGE ───
-  const termLabel = `${term.academicYear} — ${term.termNumber.replace("TERM", "Term ")}`;
-  doc.rect(430, 20, 120, 30).fill(theme.secondaryColor || '#0F172A');
+  const termLabel = `${term.academicYear} — ${term.termNumber.replace('TERM', 'Term ')}`;
+  doc.roundedRect(430, 25, 115, 30, 8).fill(theme.secondaryColor || '#0F172A');
   doc.fillColor('#FFFFFF')
-     .fontSize(10)
-     .font('Helvetica-Bold')
-     .text(termLabel, 440, 28, { align: 'center' });
-
-  // ─── STUDENT INFO SECTION ───
-  let yPos = 110;
-  
-  // Section title
-  doc.fillColor('#1F2937')
-     .fontSize(14)
-     .font('Helvetica-Bold')
-     .text('Student Information', 50, yPos);
-  
-  yPos += 25;
-
-  // Student info grid
-  const studentInfo = [
-    { label: 'Student Name', value: `${student.firstName} ${student.lastName}` },
-    { label: 'Student ID', value: student.studentNumber },
-    { label: 'Gender', value: student.gender },
-    { label: 'Date of Birth', value: new Date(student.dateOfBirth).toLocaleDateString('en-GB') },
-    { label: 'Class', value: report.enrollment?.class ? `${report.enrollment.class.level} ${report.enrollment.class.section}` : 'N/A' },
-    { label: 'Academic Year', value: term.academicYear },
-  ];
-
-  // Draw info boxes
-  const colWidth = (doc.page.width - 100) / 3;
-  studentInfo.forEach((info, i) => {
-    const col = i % 3;
-    const row = Math.floor(i / 3);
-    const x = 50 + (col * colWidth);
-    const y = yPos + (row * 30);
-    
-    doc.fillColor('#F3F4F6')
-       .rect(x, y, colWidth - 10, 25)
-       .fill();
-    
-    doc.fillColor('#6B7280')
-       .fontSize(9)
-       .font('Helvetica')
-       .text(info.label + ':', x + 5, y + 4);
-    
-    doc.fillColor('#1F2937')
-       .fontSize(10)
-       .font('Helvetica-Bold')
-       .text(info.value, x + 80, y + 4);
-  });
-
-  yPos += 85;
-
-  // ─── SCORES TABLE ───
-  doc.fillColor('#1F2937')
-     .fontSize(14)
-     .font('Helvetica-Bold')
-     .text('Subject Scores', 50, yPos);
-  
-  yPos += 20;
-
-  // Table headers
-  const headers = ['Subject', 'CA1', 'CA2', 'CA3', 'Exam', 'Total', 'Grade', 'Position'];
-  const colWidths = [90, 40, 40, 40, 50, 50, 50, 50];
-  let xPos = 50;
-
-  // Header background
-  doc.rect(50, yPos - 2, doc.page.width - 100, 20).fill('#E5E7EB');
-  
-  doc.fillColor('#1F2937')
      .fontSize(9)
-     .font('Helvetica-Bold');
-  
-  headers.forEach((header, i) => {
-    doc.text(header, xPos, yPos + 2, { width: colWidths[i], align: 'center' });
-    xPos += colWidths[i];
-  });
-
-  yPos += 22;
-  
-  // Table rows
-  scores.forEach((score, index) => {
-    const total = (score.ca1 || 0) + (score.ca2 || 0) + (score.ca3 || 0) + (score.examScore || 0);
-    const grade = calculateGrade(total);
-    const position = index + 1;
-    
-    const rowData = [
-      score.subject.name,
-      score.ca1 || '-',
-      score.ca2 || '-',
-      score.ca3 || '-',
-      score.examScore || '-',
-      total || '-',
-      grade || '-',
-      position || '-'
-    ];
-
-    // Alternate row colors
-    if (index % 2 === 0) {
-      doc.rect(50, yPos - 2, doc.page.width - 100, 18).fill('#F9FAFB');
-    }
-
-    xPos = 50;
-    rowData.forEach((value, i) => {
-      doc.fillColor('#1F2937')
-         .fontSize(8)
-         .font('Helvetica');
-      
-      if (i === 0) {
-        doc.text(String(value), xPos + 3, yPos + 2);
-      } else {
-        doc.text(String(value), xPos, yPos + 2, { width: colWidths[i], align: 'center' });
-      }
-      xPos += colWidths[i];
-    });
-
-    yPos += 22;
-
-    // Page break if needed
-    if (yPos > 700) {
-      doc.addPage();
-      yPos = 50;
-    }
-  });
-
-  yPos += 20;
-
-  // ─── SUMMARY ───
-  const totalScore = scores.reduce((sum, s) => sum + (s.total || 0), 0);
-  const avgScore = scores.length > 0 ? Math.round(totalScore / scores.length) : 0;
-  const passedCount = scores.filter(s => (s.total || 0) >= 50).length;
-  const passRate = scores.length > 0 ? Math.round((passedCount / scores.length) * 100) : 0;
-
-  doc.fillColor('#1F2937')
-     .fontSize(12)
      .font('Helvetica-Bold')
-     .text('Summary', 50, yPos);
-  
-  yPos += 20;
+     .text(termLabel, 438, 34, { width: 100, align: 'center' });
 
-  const summaryItems = [
-    { label: 'Average Score', value: `${avgScore}%` },
-    { label: 'Pass Rate', value: `${passRate}%` },
-    { label: 'Subjects Passed', value: `${passedCount} / ${scores.length}` },
-    { label: 'Days Present', value: report.daysPresent || 0 },
-    { label: 'Days Absent', value: report.daysAbsent || 0 },
-    { label: 'Days Late', value: report.daysLate || 0 },
-  ];
+  let yPos = 120;
 
-  summaryItems.forEach((item, i) => {
-    const col = i % 3;
-    const row = Math.floor(i / 3);
-    const x = 50 + (col * 150);
-    const y = yPos + (row * 25);
-    
-    doc.fillColor('#6B7280')
-       .fontSize(9)
-       .font('Helvetica')
-       .text(item.label + ':', x, y);
-    
-    doc.fillColor('#1F2937')
-       .fontSize(10)
-       .font('Helvetica-Bold')
-       .text(String(item.value), x + 100, y);
-  });
+  const studentPhotoBuffer = theme.showStudentPhoto !== false && student?.photoUrl ? await loadRemoteImage(student.photoUrl) : null;
+  doc.roundedRect(50, yPos, 495, 130, 18).fillAndStroke('#FFFFFF', '#E5E7EB');
 
-  yPos += 70;
-
-  // ─── REMARKS ───
-  if (report.teacherRemark || report.headRemark) {
-    doc.fillColor('#1F2937')
-       .fontSize(12)
-       .font('Helvetica-Bold')
-       .text('Remarks', 50, yPos);
-    
-    yPos += 20;
-
-    if (report.teacherRemark) {
-      doc.fillColor('#6B7280')
-         .fontSize(9)
-         .font('Helvetica')
-         .text('Class Teacher:', 50, yPos);
-      
-      doc.fillColor('#1F2937')
-         .fontSize(10)
-         .font('Helvetica')
-         .text(report.teacherRemark, 150, yPos, { width: 400 });
-      
-      yPos += 20;
-    }
-
-    if (report.headRemark) {
-      doc.fillColor('#6B7280')
-         .fontSize(9)
-         .font('Helvetica')
-         .text('Head Teacher:', 50, yPos);
-      
-      doc.fillColor('#1F2937')
-         .fontSize(10)
-         .font('Helvetica')
-         .text(report.headRemark, 150, yPos, { width: 400 });
-      
-      yPos += 20;
+  if (studentPhotoBuffer && studentPhotoBuffer.length > 0) {
+    try {
+      doc.image(studentPhotoBuffer, 68, yPos + 18, { fit: [74, 74], align: 'left' });
+    } catch (error) {
+      logger.warn(`Could not embed student photo in PDF: ${error.message}`);
     }
   }
 
-  // ─── FOOTER ───
-  const footerY = doc.page.height - 60;
-  doc.moveTo(50, footerY)
-     .lineTo(doc.page.width - 50, footerY)
-     .stroke(theme.accentColor || '#E5E7EB');
+  doc.fillColor('#111827')
+     .fontSize(18)
+     .font('Helvetica-Bold')
+     .text(`${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Student', 158, yPos + 18);
 
-  doc.fillColor(theme.secondaryColor || '#9CA3AF')
-     .fontSize(8)
+  doc.fillColor('#4B5563')
+     .fontSize(10)
      .font('Helvetica')
-     .text(theme.footerText || 'This is a computer-generated report card. No signature is required.', 
-       50, 
-       footerY + 15, 
-       { align: 'center' }
-     );
+     .text('Student ID', 158, yPos + 50)
+     .text('Class', 158, yPos + 66)
+     .text('Age', 158, yPos + 82)
+     .text('Gender', 158, yPos + 98);
 
-  doc.text(`Generated on ${new Date().toLocaleDateString('en-GB')}`, 
-    50, 
-    footerY + 30, 
-    { align: 'center' }
-  );
+  doc.fillColor('#111827')
+     .fontSize(10)
+     .font('Helvetica-Bold')
+     .text(student.studentNumber || 'N/A', 230, yPos + 50)
+     .text(report.enrollment?.class ? `${report.enrollment.class.level} ${report.enrollment.class.section}` : 'N/A', 230, yPos + 66)
+     .text(student.dateOfBirth ? `${Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / 31557600000)} yrs` : 'N/A', 230, yPos + 82)
+     .text(student.gender || 'N/A', 230, yPos + 98);
 
-  // ─── FINALIZE ───
+  const summaryCards = [
+    { label: 'Average', value: `${report.aggregate || 0}%` },
+    { label: 'Pass Rate', value: `${scores.length ? Math.round((scores.filter(s => (s.total || 0) >= 50).length / scores.length) * 100) : 0}%` },
+    { label: 'Present', value: String(report.daysPresent || 0) },
+    { label: 'Absent', value: String(report.daysAbsent || 0) },
+  ];
+
+  summaryCards.forEach((item, index) => {
+    const cardX = 370 + (index % 2) * 80;
+    const cardY = yPos + 18 + Math.floor(index / 2) * 36;
+    doc.roundedRect(cardX, cardY, 72, 26, 8).fill('#F3F4F6');
+    doc.fillColor('#6B7280').fontSize(8).font('Helvetica').text(item.label, cardX + 8, cardY + 6);
+    doc.fillColor(theme.primaryColor || '#4F46E5').fontSize(11).font('Helvetica-Bold').text(item.value, cardX + 8, cardY + 14);
+  });
+
+  yPos += 150;
+
+  doc.fillColor('#111827').fontSize(15).font('Helvetica-Bold').text('Academic Performance', 50, yPos);
+  yPos += 18;
+
+  const headers = ['Subject', 'CA1', 'CA2', 'CA3', 'Exam', 'Total', 'Grade'];
+  const colWidths = [92, 44, 44, 44, 46, 46, 46];
+  let xPos = 50;
+
+  doc.roundedRect(50, yPos, 495, 22, 8).fill(theme.primaryColor || '#4F46E5');
+  doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold');
+  headers.forEach((header, i) => {
+    const width = colWidths[i];
+    doc.text(header, xPos + 4, yPos + 6, { width, align: 'center' });
+    xPos += width;
+  });
+
+  yPos += 26;
+
+  scores.forEach((score, index) => {
+    const total = (score.ca1 || 0) + (score.ca2 || 0) + (score.ca3 || 0) + (score.examScore || 0);
+    const grade = calculateGrade(total);
+
+    if (index % 2 === 0) {
+      doc.roundedRect(50, yPos, 495, 22, 6).fill('#F9FAFB');
+    }
+
+    doc.fillColor('#111827').fontSize(8).font('Helvetica');
+    xPos = 50;
+    const values = [
+      score.subject?.name || 'Subject',
+      score.ca1 ?? '-',
+      score.ca2 ?? '-',
+      score.ca3 ?? '-',
+      score.examScore ?? '-',
+      total || '-',
+      grade || '-'
+    ];
+
+    values.forEach((value, i) => {
+      const width = colWidths[i];
+      const textX = xPos + 4;
+      if (i === 0) {
+        doc.text(String(value), textX, yPos + 7, { width: width - 8 });
+      } else {
+        doc.text(String(value), textX, yPos + 7, { width, align: 'center' });
+      }
+      xPos += width;
+    });
+
+    yPos += 22;
+  });
+
+  yPos += 12;
+
+  doc.fillColor('#111827').fontSize(14).font('Helvetica-Bold').text('Teacher Remarks', 50, yPos);
+  yPos += 18;
+
+  const remarkBoxY = yPos;
+  if (theme.showClassTeacherSignature !== false) {
+    doc.roundedRect(50, remarkBoxY, 220, 60, 10).fill('#F8FAFC');
+    doc.fillColor('#374151').fontSize(9).font('Helvetica-Bold').text(theme.classTeacherName || 'Class Teacher', 64, remarkBoxY + 10);
+    doc.fillColor('#111827').fontSize(9).font('Helvetica').text(report.teacherRemark || 'Excellent performance and strong commitment to learning.', 64, remarkBoxY + 26, { width: 190, height: 24 });
+  }
+
+  if (theme.showPrincipalSignature !== false) {
+    doc.roundedRect(280, remarkBoxY, 265, 60, 10).fill('#F8FAFC');
+    doc.fillColor('#374151').fontSize(9).font('Helvetica-Bold').text(theme.principalName || 'Head Teacher', 294, remarkBoxY + 10);
+    doc.fillColor('#111827').fontSize(9).font('Helvetica').text(report.headRemark || 'Progress is satisfactory and commendable.', 294, remarkBoxY + 26, { width: 235, height: 24 });
+  }
+
+  yPos += 82;
+
+  doc.fillColor('#374151').fontSize(9).font('Helvetica-Bold').text('Attendance Summary', 50, yPos);
+  doc.fillColor('#111827').fontSize(9).font('Helvetica').text(`Present: ${report.daysPresent || 0}   Absent: ${report.daysAbsent || 0}   Late: ${report.daysLate || 0}`, 180, yPos);
+
+  const footerY = doc.page.height - 60;
+  doc.moveTo(50, footerY).lineTo(doc.page.width - 50, footerY).stroke(theme.accentColor || '#E5E7EB');
+  doc.fillColor(theme.secondaryColor || '#0F172A').fontSize(8).font('Helvetica').text(theme.footerText || 'This is a computer-generated report card. No signature is required.', 50, footerY + 15, { align: 'center' });
+  doc.text(`Generated on ${new Date().toLocaleDateString('en-GB')}`, 50, footerY + 30, { align: 'center' });
+
   doc.end();
 
   // 4. Wait for PDF to be generated
@@ -375,6 +285,23 @@ const fetchReportData = async (reportId) => {
     scores,
     report: { ...report, enrollment },
   };
+};
+
+const loadRemoteImage = async (url) => {
+  if (!url) return null;
+
+  try {
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 15000,
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
+
+    return Buffer.from(response.data);
+  } catch (error) {
+    logger.warn(`Failed to fetch remote image ${url}: ${error.message}`);
+    return null;
+  }
 };
 
 const uploadPDFToCloudinary = (buffer, publicId) => {
