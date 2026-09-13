@@ -4,6 +4,7 @@ const { createError } = require("../middleware/errorHandler");
 const { prisma } = require("../config/db");
 const cloudinary = require("../config/cloudinary");
 const { cleanupTempFile } = require("../middleware/upload");
+const { Readable } = require('stream');
 
 // ─── POST /api/v1/schools/register ───
 const register = async (req, res) => {
@@ -82,21 +83,40 @@ const updateProfile = async (req, res) => {
     
     let logoUrl = null;
     
-    // ✅ Handle file upload from disk storage
+    // ✅ Handle file upload from either disk storage or memory storage
     if (req.file) {
       try {
         console.log('📤 Uploading logo to Cloudinary...');
-        
-        // Upload to Cloudinary
-        const result = await cloudinary.uploader.upload(req.file.path, {
-          folder: 'edutrack/logos',
-          transformation: [{ width: 300, height: 300, crop: 'limit' }],
-        });
-        
-        logoUrl = result.secure_url;
-        console.log('✅ Logo uploaded to Cloudinary:', logoUrl);
-        
-        // ✅ Clean up temp file
+
+        let result;
+
+        if (req.file.path) {
+          result = await cloudinary.uploader.upload(req.file.path, {
+            folder: 'edutrack/logos',
+            transformation: [{ width: 300, height: 300, crop: 'limit' }],
+          });
+        } else if (req.file.buffer) {
+          result = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+              {
+                folder: 'edutrack/logos',
+                transformation: [{ width: 300, height: 300, crop: 'limit' }],
+              },
+              (error, uploaded) => {
+                if (error) return reject(error);
+                resolve(uploaded);
+              }
+            );
+
+            Readable.from(req.file.buffer).pipe(uploadStream);
+          });
+        }
+
+        if (result && result.secure_url) {
+          logoUrl = result.secure_url;
+          console.log('✅ Logo uploaded to Cloudinary:', logoUrl);
+        }
+
         cleanupTempFile(req.file);
       } catch (uploadError) {
         console.error('❌ Cloudinary upload error:', uploadError);
