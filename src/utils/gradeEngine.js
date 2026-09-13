@@ -1,16 +1,20 @@
 /**
  * EduTrack Grade Engine
- * Implements Ghana Education Service (GES) grading standards for JHS
+ * Matches the school admin grade configuration used across the app.
+ * Produces A1–F9 style grades for totals out of 100.
  */
 
-// Default GES grading scale — can be overridden per school via DB config
+// Default school grading scale — can be overridden per school via DB config
 const DEFAULT_GRADE_SCALE = [
-  { min: 80, max: 100, grade: "1", remark: "Excellent"      },
-  { min: 70, max: 79,  grade: "2", remark: "Very Good"      },
-  { min: 60, max: 69,  grade: "3", remark: "Good"           },
-  { min: 50, max: 59,  grade: "4", remark: "Average"        },
-  { min: 40, max: 49,  grade: "5", remark: "Below Average"  },
-  { min: 0,  max: 39,  grade: "6", remark: "Fail"           },
+  { min: 90, max: 100, grade: "A1", remark: "Excellent" },
+  { min: 80, max: 89,  grade: "B2", remark: "Very Good" },
+  { min: 75, max: 79,  grade: "B3", remark: "Good" },
+  { min: 70, max: 74,  grade: "C4", remark: "Fair" },
+  { min: 65, max: 69,  grade: "C5", remark: "Satisfactory" },
+  { min: 60, max: 64,  grade: "C6", remark: "Credit" },
+  { min: 55, max: 59,  grade: "D7", remark: "Pass" },
+  { min: 50, max: 54,  grade: "E8", remark: "Weak" },
+  { min: 0,  max: 49,  grade: "F9", remark: "Fail" },
 ];
 
 /**
@@ -109,10 +113,40 @@ const computePositions = (scores) => {
  * @param {number} best - Number of best subjects to sum (default 6)
  * @returns {number} Aggregate score
  */
+const gradeToRank = (grade) => {
+  if (grade === null || grade === undefined || grade === '') return null;
+
+  if (typeof grade === 'number') return grade;
+
+  const normalized = String(grade).trim().toUpperCase();
+  const mapping = {
+    A1: 1,
+    B2: 2,
+    B3: 3,
+    C4: 4,
+    C5: 5,
+    C6: 6,
+    D7: 7,
+    E8: 8,
+    F9: 9,
+    1: 1,
+    2: 2,
+    3: 3,
+    4: 4,
+    5: 5,
+    6: 6,
+    7: 7,
+    8: 8,
+    9: 9,
+  };
+
+  return mapping[normalized] ?? null;
+};
+
 const computeAggregate = (grades, best = 6) => {
   const numeric = grades
-    .map((g) => parseInt(g))
-    .filter((n) => !isNaN(n))
+    .map((g) => gradeToRank(g))
+    .filter((n) => n !== null && n !== undefined)
     .sort((a, b) => a - b); // sort ascending (lower grade = better)
 
   return numeric.slice(0, best).reduce((sum, g) => sum + g, 0);
