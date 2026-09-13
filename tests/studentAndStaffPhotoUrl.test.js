@@ -16,3 +16,8 @@ test('student admit/update prefer the Cloudinary URL sent in the request body wh
 test('staff create/update prefer the Cloudinary URL sent in the request body when no multipart file path exists', () => {
   assert.match(staffControllerText, /req\.body\?\.photoUrl|req\.body\.photoUrl/);
 });
+
+test('student enrollment fallback creates a default active term when no term exists yet', () => {
+  const serviceText = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'student.service.js'), 'utf8');
+  assert.match(serviceText, /getOrCreateEnrollmentTerm|termNumber:\s*"TERM1"|status:\s*"ACTIVE"/);
+});

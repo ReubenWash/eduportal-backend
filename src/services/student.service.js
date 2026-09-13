@@ -7,6 +7,46 @@ const { createError } = require("../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 const { sendWelcomeGuardianEmail } = require("./email.service");
 
+const getOrCreateEnrollmentTerm = async (tx, schoolId, classId) => {
+  let activeTerm = await tx.term.findFirst({
+    where: { schoolId, status: "ACTIVE" },
+    orderBy: { startDate: "desc" },
+  });
+
+  if (activeTerm) return activeTerm;
+
+  const classRecord = classId
+    ? await tx.class.findUnique({
+        where: { id: classId },
+        select: { academicYear: true, level: true, section: true },
+      })
+    : null;
+
+  if (classRecord?.academicYear) {
+    activeTerm = await tx.term.findFirst({
+      where: { schoolId, academicYear: classRecord.academicYear },
+      orderBy: [{ termNumber: "asc" }, { startDate: "asc" }],
+    });
+  }
+
+  if (activeTerm) return activeTerm;
+
+  const academicYear = classRecord?.academicYear || `${new Date().getFullYear()}/${new Date().getFullYear() + 1}`;
+  const startDate = new Date(new Date().getFullYear(), 0, 1);
+  const endDate = new Date(new Date().getFullYear(), 11, 31);
+
+  return tx.term.create({
+    data: {
+      schoolId,
+      academicYear,
+      termNumber: "TERM1",
+      startDate,
+      endDate,
+      status: "ACTIVE",
+    },
+  });
+};
+
 // ─── Admit Student with Guardian Auto-Creation ───
 const admitStudent = async (schoolId, data, photoUrl) => {
   const studentNumber = await generateStudentNumber(schoolId);
@@ -207,11 +247,10 @@ const admitStudent = async (schoolId, data, photoUrl) => {
       };
     }
 
-    // 4. Enroll in class for active term
+    // 4. Enroll in class for the current/active term.
+    // If no term exists yet, create a default active term so the class assignment is never silently lost.
     if (classId) {
-      const activeTerm = await tx.term.findFirst({
-        where: { schoolId, status: "ACTIVE" },
-      });
+      const activeTerm = await getOrCreateEnrollmentTerm(tx, schoolId, classId);
 
       if (activeTerm) {
         await tx.enrollment.create({
@@ -568,9 +607,7 @@ const updateStudent = async (schoolId, studentId, data, photoUrl) => {
 
   // ─── Update Class Enrollment if classId provided ───
   if (classId) {
-    const activeTerm = await prisma.term.findFirst({
-      where: { schoolId, status: "ACTIVE" },
-    });
+    const activeTerm = await getOrCreateEnrollmentTerm(prisma, schoolId, classId);
 
     if (activeTerm) {
       const existingEnrollment = await prisma.enrollment.findFirst({
