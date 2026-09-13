@@ -9,7 +9,7 @@ const { parseExcelBuffer, generateExcelBuffer, sendExcelFile } = require("../uti
 // ─── Admit Student (with Guardian Portal Auto-Creation) ───
 const admit = async (req, res) => {
   try {
-    const photoUrl = req.file?.path || null;
+    const photoUrl = req.body?.photoUrl || req.file?.path || null;
     const result = await studentService.admitStudent(req.user.schoolId, req.body, photoUrl);
     
     return sendSuccess(res, 201, "Student admitted successfully.", {
@@ -87,7 +87,7 @@ const getOne = async (req, res) => {
 // ─── Update Student ───
 const update = async (req, res) => {
   try {
-    const photoUrl = req.file?.path || null;
+    const photoUrl = req.body?.photoUrl || req.file?.path || null;
     const student = await studentService.updateStudent(req.user.schoolId, req.params.id, req.body, photoUrl);
     return sendSuccess(res, 200, "Student updated.", student);
   } catch (error) {

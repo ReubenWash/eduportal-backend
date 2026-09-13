@@ -15,7 +15,7 @@ const create = async (req, res) => {
       throw createError("School ID not found. Please contact administrator.", 400);
     }
     
-    const photoUrl = req.file?.path || null;
+    const photoUrl = req.body?.photoUrl || req.file?.path || null;
     const staff = await staffService.createStaff(req.user.schoolId, req.body, photoUrl);
     
     console.log('✅ Staff created:', staff.id);
@@ -100,7 +100,7 @@ const update = async (req, res) => {
       throw createError("School ID not found. Please contact administrator.", 400);
     }
     
-    const photoUrl = req.file?.path || null;
+    const photoUrl = req.body?.photoUrl || req.file?.path || null;
     const staff = await staffService.updateStaff(req.user.schoolId, req.params.id, req.body, photoUrl);
     
     console.log('✅ Staff updated:', staff.id);
