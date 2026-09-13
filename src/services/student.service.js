@@ -66,36 +66,41 @@ const admitStudent = async (schoolId, data, photoUrl) => {
     const rel = guardianRelationship || relationship || studentData.guardianRelationship || "Parent";
 
     if (email && name) {
-      // Check if guardian already exists by email
-      const existingGuardian = await tx.guardian.findFirst({
-        where: {
-          schoolId,
-          email: email.toLowerCase().trim(),
-        },
-        include: {
-          user: true,
-        },
+      const normalizedEmail = email.toLowerCase().trim();
+
+      // ✅ FIX: User.email is GLOBALLY unique, so look up the User first,
+      // not the Guardian scoped by schoolId. This prevents P2002 crashes
+      // when the email already exists (in another school, as an orphan, etc.)
+      const existingUser = await tx.user.findUnique({
+        where: { email: normalizedEmail },
+        include: { guardian: true },
       });
 
-      if (existingGuardian) {
+      if (existingUser && existingUser.guardian) {
         // ✅ Existing guardian - link student without creating new account
         await tx.studentGuardian.create({
           data: {
             studentId: newStudent.id,
-            guardianId: existingGuardian.id,
+            guardianId: existingUser.guardian.id,
             isPrimary: true,
           },
         });
 
         guardianResult = {
-          id: existingGuardian.id,
-          name: `${existingGuardian.firstName} ${existingGuardian.lastName}`,
-          email: existingGuardian.email,
+          id: existingUser.guardian.id,
+          name: `${existingUser.guardian.firstName} ${existingUser.guardian.lastName}`,
+          email: existingUser.guardian.email,
           isNew: false,
           message: "Linked to existing guardian account.",
         };
 
-        console.log(`✅ Linked student to existing guardian: ${existingGuardian.email}`);
+        console.log(`✅ Linked student to existing guardian: ${existingUser.guardian.email}`);
+      } else if (existingUser) {
+        // ⚠️ User exists but has no Guardian profile — refuse cleanly (409, not 500)
+        throw createError(
+          `A user account with email ${normalizedEmail} already exists but is not a guardian.`,
+          409
+        );
       } else {
         // ✅ New guardian - create user account + send credentials
         const tempGuardianPassword = crypto.randomBytes(8).toString("hex");
@@ -110,7 +115,7 @@ const admitStudent = async (schoolId, data, photoUrl) => {
         const guardianUser = await tx.user.create({
           data: {
             schoolId,
-            email: email.toLowerCase().trim(),
+            email: normalizedEmail,
             passwordHash: guardianPasswordHash,
             role: "PARENT",
             isVerified: true,
@@ -126,7 +131,7 @@ const admitStudent = async (schoolId, data, photoUrl) => {
             firstName: firstName,
             lastName: lastName,
             phone: phone || "",
-            email: email.toLowerCase().trim(),
+            email: normalizedEmail,
             relationship: rel,
           },
         });
@@ -944,6 +949,6 @@ module.exports = {
   getAllStudents,
   getStudentByUserId,
   getStudentGrades,
-  linkGuardianToStudent, // NEW
-  resendGuardianCredentials, // NEW
+  linkGuardianToStudent,
+  resendGuardianCredentials,
 };
