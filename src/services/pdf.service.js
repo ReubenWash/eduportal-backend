@@ -52,6 +52,26 @@ const fontFile = (file, fallback) => {
   return fs.existsSync(p) ? p : fallback;
 };
 
+// Registers the two report fonts. pdfkit only parses a font file the first time it is used,
+// so each font is opened here straight away. If a file is missing, empty or damaged (for
+// example a binary file that was copy-pasted as text), the PDF still builds with Helvetica
+// instead of crashing, and a warning is logged.
+const registerReportFonts = (doc) => {
+  [
+    [REGULAR, 'LiberationSans-Regular.ttf', 'Helvetica'],
+    [BOLD, 'LiberationSans-Bold.ttf', 'Helvetica-Bold'],
+  ].forEach(([name, file, fallback]) => {
+    try {
+      doc.registerFont(name, fontFile(file, fallback));
+      doc.font(name);
+    } catch (error) {
+      logger.warn(`Report font ${file} could not be loaded (${error.message}). Using ${fallback} instead.`);
+      doc.registerFont(name, fallback);
+      doc.font(name);
+    }
+  });
+};
+
 // ─────────────────────────────────────────────────────────────
 // ─── Small helpers ─────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────
@@ -245,8 +265,7 @@ const buildReportPDF = async (reportId) => {
 
   // bottom margin 0 so pdfkit never adds an accidental blank page near the bottom edge
   const doc = new PDFDocument({ size: 'A4', margins: { top: 30, bottom: 0, left: 30, right: 30 } });
-  doc.registerFont(REGULAR, fontFile('LiberationSans-Regular.ttf', 'Helvetica'));
-  doc.registerFont(BOLD, fontFile('LiberationSans-Bold.ttf', 'Helvetica-Bold'));
+  registerReportFonts(doc);
 
   // Collect output safely: the promise exists before any drawing happens.
   const buffers = [];
