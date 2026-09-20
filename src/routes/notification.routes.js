@@ -45,7 +45,11 @@ router.post("/mass-broadcast",
   [
     body("title").trim().notEmpty().withMessage("Title is required."),
     body("message").trim().notEmpty().withMessage("Message is required."),
-    body("audience").isIn(["ALL","TEACHERS","PARENTS","STUDENTS","SCHOOLS"]).withMessage("Invalid audience."),
+    body("audience").optional().custom((value, { req }) => {
+      const allowed = ["ALL","TEACHERS","PARENTS","STUDENTS","SCHOOLS","ALL_SCHOOLS","PREMIUM_ONLY","BASIC_ONLY","ALL_TEACHERS","ALL_PARENTS","ALL_STUDENTS","SELECTED_SCHOOLS"];
+      return value === undefined || allowed.includes(value) || (Array.isArray(req.body.selectedSchools) && value === "SELECTED_SCHOOLS");
+    }).withMessage("Invalid audience."),
+    body("selectedSchools").optional().isArray().withMessage("selectedSchools must be an array of school ids."),
   ],
   validate,
   controller.massBroadcast

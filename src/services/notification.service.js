@@ -1,6 +1,97 @@
 const { prisma }      = require("../config/db");
 const { createError } = require("../middleware/errorHandler");
 const { sendPush, isConfigured } = require("./push.service");
+const { sendAnnouncementEmail } = require("./email.service");
+
+const normalizeAudience = (audience) => {
+  if (!audience) return "ALL";
+  const normalized = String(audience).trim();
+  const map = {
+    ALL_SCHOOLS: "ALL_SCHOOLS",
+    PREMIUM_ONLY: "PREMIUM_ONLY",
+    BASIC_ONLY: "BASIC_ONLY",
+    ALL_TEACHERS: "TEACHERS",
+    ALL_PARENTS: "PARENTS",
+    ALL_STUDENTS: "STUDENTS",
+    ALL_SCHOOL_ADMINS: "SCHOOLS",
+    SCHOOLS: "SCHOOLS",
+    TEACHERS: "TEACHERS",
+    PARENTS: "PARENTS",
+    STUDENTS: "STUDENTS",
+    ALL: "ALL",
+    SELECTED_SCHOOLS: "SELECTED_SCHOOLS",
+  };
+  return map[normalized] || normalized;
+};
+
+const buildSchoolAudienceFilter = async (audience, selectedSchoolIds = []) => {
+  const normalizedAudience = normalizeAudience(audience);
+
+  if (normalizedAudience === "SELECTED_SCHOOLS") {
+    const ids = Array.isArray(selectedSchoolIds) ? selectedSchoolIds.filter(Boolean) : [];
+    return { id: { in: ids.length ? ids : ["__none__"] } };
+  }
+
+  if (normalizedAudience === "ALL_SCHOOLS") {
+    return { status: "ACTIVE" };
+  }
+
+  if (normalizedAudience === "PREMIUM_ONLY") {
+    return { status: "ACTIVE", plan: "PREMIUM" };
+  }
+
+  if (normalizedAudience === "BASIC_ONLY") {
+    return { status: "ACTIVE", plan: "BASIC" };
+  }
+
+  return {};
+};
+
+const sendSchoolAnnouncementEmails = async ({ title, message, audience, selectedSchools = [], schoolIds = [] }) => {
+  const schoolIdList = Array.isArray(selectedSchools) && selectedSchools.length
+    ? selectedSchools
+    : Array.isArray(schoolIds) ? schoolIds : [];
+
+  if (!schoolIdList.length && normalizeAudience(audience) !== "ALL_SCHOOLS") return { sent: 0, failed: 0 };
+
+  const where = normalizeAudience(audience) === "ALL_SCHOOLS"
+    ? { status: "ACTIVE" }
+    : { id: { in: schoolIdList } };
+
+  const schools = await prisma.school.findMany({
+    where,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      users: {
+        where: { role: "SCHOOL_ADMIN", isActive: true },
+        select: { email: true },
+      },
+    },
+  });
+
+  const recipientSet = new Set();
+  for (const school of schools) {
+    if (school.email) recipientSet.add(school.email);
+    for (const user of school.users || []) {
+      if (user.email) recipientSet.add(user.email);
+    }
+  }
+
+  const recipients = [...recipientSet];
+  const results = await Promise.all(recipients.map(async (to) => {
+    try {
+      await sendAnnouncementEmail(to, title, message, "EduTrack JHS");
+      return { to, success: true };
+    } catch (err) {
+      return { to, success: false, error: err.message };
+    }
+  }));
+
+  const sent = results.filter(r => r.success).length;
+  return { sent, failed: results.length - sent, recipients: results };
+};
 
 const getNotifications = async (userId, unreadOnly) => {
   const where = { userId };
@@ -87,7 +178,11 @@ const broadcast = async (schoolId, { title, message, type, audience }) => {
   return { sent: users.length, notificationId: firstNotification?.id };
 };
 
-const massBroadcast = async ({ title, message, type, audience }) => {
+const massBroadcast = async ({ title, message, type, audience, channels, selectedSchools, schoolIds }) => {
+  const normalizedAudience = normalizeAudience(audience);
+  const enabledChannels = channels || {};
+  const selectedSchoolIds = Array.isArray(selectedSchools) ? selectedSchools : Array.isArray(schoolIds) ? schoolIds : [];
+
   const roleMap = {
     ALL:      undefined,
     TEACHERS: { in: ["CLASS_TEACHER", "SUBJECT_TEACHER"] },
@@ -96,55 +191,72 @@ const massBroadcast = async ({ title, message, type, audience }) => {
     SCHOOLS:  { equals: "SCHOOL_ADMIN" },
   };
 
-  const roleFilter = roleMap[audience];
+  let schoolFilter = {};
+  let where = { isActive: true };
+
+  if (normalizedAudience === "SELECTED_SCHOOLS") {
+    schoolFilter = { id: { in: selectedSchoolIds.length ? selectedSchoolIds : ["__none__"] } };
+    where = { isActive: true, schoolId: { in: selectedSchoolIds.length ? selectedSchoolIds : ["__none__"] } };
+  } else if (normalizedAudience === "ALL_SCHOOLS") {
+    schoolFilter = { status: "ACTIVE" };
+    where = { isActive: true, school: { status: "ACTIVE" } };
+  } else if (normalizedAudience === "PREMIUM_ONLY") {
+    schoolFilter = { status: "ACTIVE", plan: "PREMIUM" };
+    where = { isActive: true, school: { status: "ACTIVE", plan: "PREMIUM" } };
+  } else if (normalizedAudience === "BASIC_ONLY") {
+    schoolFilter = { status: "ACTIVE", plan: "BASIC" };
+    where = { isActive: true, school: { status: "ACTIVE", plan: "BASIC" } };
+  } else if (normalizedAudience === "SCHOOLS") {
+    where = { isActive: true, role: { equals: "SCHOOL_ADMIN" } };
+  } else {
+    const roleFilter = roleMap[normalizedAudience];
+    if (roleFilter) where.role = roleFilter;
+  }
+
   const users = await prisma.user.findMany({
-    where: {
-      isActive: true,
-      ...(roleFilter && { role: roleFilter }),
-    },
-    select: { id: true },
+    where,
+    select: { id: true, schoolId: true, email: true },
   });
 
-  if (users.length === 0) {
-    return { sent: 0, notificationId: null };
+  if (users.length === 0 && !enabledChannels.email) {
+    return { sent: 0, notificationId: null, email: { sent: 0, failed: 0 } };
   }
 
-  // Batch insert notifications
-  const batchSize = 1000;
-  for (let i = 0; i < users.length; i += batchSize) {
-    const batch = users.slice(i, i + batchSize);
-    await prisma.notification.createMany({
-      data: batch.map((u) => ({
-        userId:  u.id,
-        title,
-        message,
-        type:    type || "info",
-        isRead:  false,
-      })),
-    });
+  if (users.length > 0) {
+    const batchSize = 1000;
+    for (let i = 0; i < users.length; i += batchSize) {
+      const batch = users.slice(i, i + batchSize);
+      await prisma.notification.createMany({
+        data: batch.map((u) => ({
+          userId:  u.id,
+          title,
+          message,
+          type:    type || "info",
+          isRead:  false,
+        })),
+      });
+    }
   }
 
-  // Also create an Announcement if needed
   await prisma.announcement.create({
     data: {
-      schoolId: null,
+      schoolId: normalizedAudience === "SELECTED_SCHOOLS" && selectedSchoolIds.length === 1 ? selectedSchoolIds[0] : null,
       title,
       body: message,
-      audience,
+      audience: normalizedAudience,
     }
   });
 
-  // Get the first notification ID for reference
+  const emailResult = enabledChannels.email || enabledChannels.smtp
+    ? await sendSchoolAnnouncementEmails({ title, message, audience: normalizedAudience, selectedSchools: selectedSchoolIds, schoolIds: selectedSchoolIds })
+    : { sent: 0, failed: 0 };
+
   const firstNotification = await prisma.notification.findFirst({
-    where: { 
-      title, 
-      message, 
-      type: type || "info" 
-    },
+    where: { title, message, type: type || "info" },
     orderBy: { createdAt: 'desc' }
   });
 
-  return { sent: users.length, notificationId: firstNotification?.id };
+  return { sent: users.length, notificationId: firstNotification?.id, email: emailResult };
 };
 
 const createNotification = async (userId, { title, message, type }) => {

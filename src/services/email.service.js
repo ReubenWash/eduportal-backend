@@ -442,11 +442,30 @@ const sendWelcomeStudentEmail = async (email, name, tempPassword, schoolName) =>
   });
 };
 
+const sendAnnouncementEmail = async (to, subject, message, schoolName) => {
+  return sendMailSafe({
+    to,
+    subject: subject || `Announcement from ${schoolName || "EduTrack JHS"}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
+        <div style="background:#1A3C5E;padding:24px;text-align:center;">
+          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "EduTrack JHS"}</h1>
+        </div>
+        <div style="padding:32px;background:#f9f9f9;">
+          <h2 style="color:#1A3C5E;">${subject || "School Announcement"}</h2>
+          <div style="color:#444;line-height:1.7;white-space:pre-wrap;">${message}</div>
+        </div>
+      </div>
+    `,
+  });
+};
+
 // ─── EXPORT ALL FUNCTIONS ──────────────────────────────────────
 module.exports = {
   // Core
   sendMail,
   sendMailSafe,
+  sendAnnouncementEmail,
   
   // Auth Emails
   sendVerificationEmail,
