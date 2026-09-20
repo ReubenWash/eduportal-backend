@@ -1,6 +1,13 @@
 /**
  * EduTrack JHS — PDF Service (Using pdfkit)
  * Generates report card PDFs without Puppeteer
+ *
+ * Key design:
+ *  - buildReportPDF(reportId)  -> renders the PDF and returns the Buffer (no network, no Cloudinary)
+ *  - generateReportPDF(reportId) -> buildReportPDF + upload to Cloudinary + save pdfUrl (used for email links)
+ *  - Download / preview / ZIP use buildReportPDF directly, so they never depend on
+ *    Cloudinary delivering the PDF back to the server (which returns 401 when
+ *    "Allow delivery of PDF and ZIP files" is off).
  */
 
 const PDFDocument = require('pdfkit');
@@ -14,11 +21,11 @@ const fs = require("fs");
 const os = require("os");
 
 // ─────────────────────────────────────────────────────────────
-// ─── Generate Report PDF using pdfkit ──────────────────────
+// ─── Build Report PDF (returns a Buffer) ───────────────────
 // ─────────────────────────────────────────────────────────────
 
-const generateReportPDF = async (reportId) => {
-  logger.info(`Generating PDF for report ${reportId} using pdfkit`);
+const buildReportPDF = async (reportId) => {
+  logger.info(`Building PDF for report ${reportId} using pdfkit`);
 
   const data = await fetchReportData(reportId);
   const { school, student, term, scores, report } = data;
@@ -43,12 +50,14 @@ const generateReportPDF = async (reportId) => {
   };
 
   const doc = new PDFDocument({ margin: 50, size: 'A4' });
-  const buffers = [];
 
-  doc.on('data', buffers.push.bind(buffers));
-  doc.on('end', () => {
-    const pdfBuffer = Buffer.concat(buffers);
-    doc._pdfBuffer = pdfBuffer;
+  // Collect the output safely. The promise is created BEFORE any drawing,
+  // so the 'end' event can never be missed.
+  const buffers = [];
+  const pdfDone = new Promise((resolve, reject) => {
+    doc.on('data', (chunk) => buffers.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(buffers)));
+    doc.on('error', reject);
   });
 
   const headerHeight = 100;
@@ -239,19 +248,21 @@ const generateReportPDF = async (reportId) => {
   doc.text(`Generated on ${new Date().toLocaleDateString('en-GB')}`, 50, footerY + 30, { align: 'center' });
 
   doc.end();
+  const pdfBuffer = await pdfDone;
 
-  // 4. Wait for PDF to be generated
-  const pdfBuffer = await new Promise((resolve) => {
-    doc.on('end', () => {
-      resolve(Buffer.concat(buffers));
-    });
-  });
+  return { pdfBuffer, student, term, report };
+};
 
-  // 5. Upload to Cloudinary
+// ─────────────────────────────────────────────────────────────
+// ─── Generate + upload (used for stored link / emails) ─────
+// ─────────────────────────────────────────────────────────────
+
+const generateReportPDF = async (reportId) => {
+  const { pdfBuffer, student, term } = await buildReportPDF(reportId);
+
   const publicId = `report_${student.studentNumber}_${term.academicYear.replace("/", "-")}_${term.termNumber}`;
   const pdfUrl = await uploadPDFToCloudinary(pdfBuffer, publicId);
 
-  // 6. Update report record with PDF URL
   await prisma.report.update({
     where: { id: reportId },
     data: { pdfUrl },
@@ -309,6 +320,8 @@ const fetchReportData = async (reportId) => {
   };
 };
 
+// Images (logo, photos, signatures) are uploaded as resource_type "image",
+// which Cloudinary delivers normally, so this fetch is not affected by the PDF restriction.
 const loadRemoteImage = async (url) => {
   if (!url) return null;
 
@@ -346,6 +359,7 @@ const uploadPDFToCloudinary = (buffer, publicId) => {
 };
 
 // ─── Bulk PDF Generation ───
+// NOTE: results use `status: "success" | "failed"`
 const generateBulkPDFs = async (reportIds) => {
   let success = 0, failed = 0;
   const results = [];
@@ -353,11 +367,11 @@ const generateBulkPDFs = async (reportIds) => {
   for (const reportId of reportIds) {
     try {
       const pdfUrl = await generateReportPDF(reportId);
-      results.push({ reportId, pdfUrl, status: "success" });
+      results.push({ reportId, pdfUrl, status: "success", success: true });
       success++;
     } catch (error) {
       logger.error(`PDF generation failed for report ${reportId}:`, error.message);
-      results.push({ reportId, error: error.message, status: "failed" });
+      results.push({ reportId, error: error.message, status: "failed", success: false });
       failed++;
     }
   }
@@ -366,9 +380,9 @@ const generateBulkPDFs = async (reportIds) => {
 };
 
 // ─── Class ZIP Generation ───
+// Builds every PDF in memory and zips them. No Cloudinary download involved.
 const generateClassZIP = async (schoolId, classId, termId) => {
   const archiver = require("archiver");
-  const axios = require("axios");
 
   const enrollments = await prisma.enrollment.findMany({
     where: { classId, termId, student: { schoolId } },
@@ -385,55 +399,33 @@ const generateClassZIP = async (schoolId, classId, termId) => {
 
   if (reports.length === 0) throw createError("No released reports found for this class.", 400);
 
-  // Generate missing PDFs
-  const missingPDF = reports.filter((r) => !r.pdfUrl);
-  if (missingPDF.length > 0) {
-    await generateBulkPDFs(missingPDF.map((r) => r.id));
-  }
-
-  // Build ZIP
   const zipPath = path.join(os.tmpdir(), `edutrack_class_reports_${classId}_${termId}_${Date.now()}.zip`);
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip", { zlib: { level: 6 } });
 
-  await new Promise((resolve, reject) => {
+  const closed = new Promise((resolve, reject) => {
     output.on("close", resolve);
+    output.on("error", reject);
     archive.on("error", reject);
-    archive.pipe(output);
-
-    let addedFiles = 0;
-    const pdfReports = reports.filter(r => r.pdfUrl);
-    
-    if (pdfReports.length === 0) {
-      archive.finalize();
-      return;
-    }
-
-    for (const report of pdfReports) {
-      const filename = `${report.student.studentNumber}_${report.student.lastName}_${report.student.firstName}.pdf`;
-      
-      axios({
-        method: 'get',
-        url: report.pdfUrl,
-        responseType: 'stream',
-      })
-      .then(response => {
-        archive.append(response.data, { name: filename });
-        addedFiles++;
-        if (addedFiles === pdfReports.length) {
-          archive.finalize();
-        }
-      })
-      .catch(error => {
-        logger.error(`Failed to download PDF for ${report.student.studentNumber}:`, error.message);
-        archive.append(Buffer.from(`Error: PDF not available for ${report.student.studentNumber}`), { name: filename });
-        addedFiles++;
-        if (addedFiles === pdfReports.length) {
-          archive.finalize();
-        }
-      });
-    }
   });
+
+  archive.pipe(output);
+
+  const safe = (v) => String(v || "").replace(/[^a-zA-Z0-9-_]/g, "_");
+
+  for (const report of reports) {
+    const base = `${safe(report.student.studentNumber)}_${safe(report.student.lastName)}_${safe(report.student.firstName)}`;
+    try {
+      const { pdfBuffer } = await buildReportPDF(report.id);
+      archive.append(pdfBuffer, { name: `${base}.pdf` });
+    } catch (error) {
+      logger.error(`ZIP: failed to build PDF for ${report.student.studentNumber}:`, error.message);
+      archive.append(Buffer.from(`PDF not available: ${error.message}`), { name: `${base}_ERROR.txt` });
+    }
+  }
+
+  await archive.finalize();
+  await closed;
 
   return zipPath;
 };
@@ -442,8 +434,8 @@ const generateClassZIP = async (schoolId, classId, termId) => {
 const previewReportHTML = async (reportId) => {
   // For pdfkit, we return a simple HTML preview
   const data = await fetchReportData(reportId);
-  const { student, term, scores, report } = data;
-  
+  const { school, student, term, scores, report } = data;
+
   return `
     <!DOCTYPE html>
     <html>
@@ -462,17 +454,17 @@ const previewReportHTML = async (reportId) => {
     </head>
     <body>
       <div class="header">
-        <h1>EduPortal</h1>
+        <h1>${school?.name || "EduPortal"}</h1>
         <h2>End of Term Report Card</h2>
         <p><strong>${term.academicYear} — ${term.termNumber.replace("TERM", "Term ")}</strong></p>
       </div>
-      
+
       <div class="student-info">
         <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
         <p><strong>Student ID:</strong> ${student.studentNumber}</p>
         <p><strong>Class:</strong> ${report.enrollment?.class ? `${report.enrollment.class.level} ${report.enrollment.class.section}` : 'N/A'}</p>
       </div>
-      
+
       <table>
         <thead>
           <tr>
@@ -499,12 +491,12 @@ const previewReportHTML = async (reportId) => {
           `).join('')}
         </tbody>
       </table>
-      
+
       <div class="summary">
         <p><strong>Average:</strong> ${scores.length > 0 ? Math.round(scores.reduce((sum, s) => sum + (s.total || 0), 0) / scores.length) : 0}%</p>
         <p><strong>Attendance:</strong> Present: ${report.daysPresent || 0}, Absent: ${report.daysAbsent || 0}, Late: ${report.daysLate || 0}</p>
       </div>
-      
+
       <div class="remarks">
         ${report.teacherRemark ? `<p><strong>Class Teacher:</strong> ${report.teacherRemark}</p>` : ''}
         ${report.headRemark ? `<p><strong>Head Teacher:</strong> ${report.headRemark}</p>` : ''}
@@ -515,6 +507,7 @@ const previewReportHTML = async (reportId) => {
 };
 
 module.exports = {
+  buildReportPDF,
   generateReportPDF,
   generateBulkPDFs,
   generateClassZIP,
