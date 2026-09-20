@@ -84,21 +84,16 @@ const generateReports = async (schoolId, { termId, studentId, classId }) => {
       reportIds.push(report.id);
     }
 
-    // Trigger PDF generation asynchronously (non-blocking)
-    setImmediate(async () => {
-      try {
-        const { generateBulkPDFs } = require("./pdf.service");
-        const result = await generateBulkPDFs(reportIds);
-        logger.info(`Bulk PDF generation complete: ${result.success} success, ${result.failed} failed`);
-      } catch (err) {
-        logger.error("Async PDF generation error:", err.message);
-      }
-    });
+    const { generateBulkPDFs } = require("./pdf.service");
+    const pdfResult = await generateBulkPDFs(reportIds);
+    logger.info(`Bulk PDF generation complete: ${pdfResult.success} success, ${pdfResult.failed} failed`);
 
     return { 
       generated: reportIds.length, 
       reportIds, 
-      message: "Reports queued for PDF generation." 
+      pdfGenerated: pdfResult.success,
+      pdfFailed: pdfResult.failed,
+      message: "Reports generated and PDFs are ready for download/preview." 
     };
   } catch (error) {
     logger.error("Generate reports error:", error);
@@ -222,7 +217,7 @@ const getReportForPdf = async (schoolId, reportId) => {
 
   if (!report) throw createError("Report not found.", 404);
 
-  if (!report.pdfUrl && report.status !== 'RELEASED') {
+  if (!report.pdfUrl) {
     const { generateReportPDF } = require("./pdf.service");
     const pdfUrl = await generateReportPDF(reportId);
     await prisma.report.update({ where: { id: reportId }, data: { pdfUrl } });
