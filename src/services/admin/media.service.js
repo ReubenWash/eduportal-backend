@@ -1,25 +1,36 @@
 const { prisma } = require("../../config/db");
 const { createError } = require("../../middleware/errorHandler");
 const cloudinary = require('cloudinary').v2;
+const { Readable } = require('stream');
 
-// Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// ─── List Media ───
+const resolveDocumentPublicId = (url) => {
+  if (!url) return null;
+  try {
+    const match = url.match(/\/upload\/(?:v\d+\/)?(.+?)(?:\.[a-zA-Z0-9]+)?$/i);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+};
+
 const listMedia = async (query = {}) => {
   try {
-    const { folder, search, limit = 50, offset = 0 } = query;
-    
+    const { folder, search, category, limit = 50, offset = 0 } = query;
+
     const where = {};
-    if (folder) where.folder = folder;
+    if (folder) where.category = folder;
+    if (category && category !== 'all') where.category = category;
     if (search) {
       where.OR = [
         { originalName: { contains: search, mode: 'insensitive' } },
-        { mimeType: { contains: search, mode: 'insensitive' } }
+        { mimeType: { contains: search, mode: 'insensitive' } },
+        { category: { contains: search, mode: 'insensitive' } }
       ];
     }
 
@@ -62,24 +73,30 @@ const listMedia = async (query = {}) => {
   }
 };
 
-// ─── Register Upload ───
-const registerUpload = async (file) => {
+const registerUpload = async (file, user = {}, body = {}) => {
   try {
-    // Upload to Cloudinary
-    const result = await cloudinary.uploader.upload(file.path, {
-      folder: 'media',
-      resource_type: 'auto'
+    if (!file || !file.buffer) {
+      throw createError('Uploaded file data is unavailable.', 400);
+    }
+
+    const uploadResult = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { folder: 'media', resource_type: 'auto' },
+        (error, result) => (error ? reject(error) : resolve(result))
+      );
+      Readable.from(file.buffer).pipe(uploadStream);
     });
 
+    const chosenCategory = body.category || 'media';
     const document = await prisma.document.create({
       data: {
-        url: result.secure_url,
+        schoolId: user.schoolId || body.schoolId || null,
+        uploadedById: user.userId || null,
+        category: chosenCategory,
+        url: uploadResult.secure_url,
         originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-        category: 'media',
-        uploadedById: file.uploadedBy || null,
-        schoolId: file.schoolId || null
+        mimeType: file.mimetype || 'application/octet-stream',
+        size: file.size || Buffer.byteLength(file.buffer),
       }
     });
 
@@ -89,7 +106,8 @@ const registerUpload = async (file) => {
       originalName: document.originalName,
       mimeType: document.mimeType,
       size: document.size,
-      publicId: result.public_id
+      category: document.category,
+      publicId: uploadResult.public_id,
     };
   } catch (error) {
     console.error('Register upload error:', error);
@@ -97,26 +115,34 @@ const registerUpload = async (file) => {
   }
 };
 
-// ─── Delete Media ───
-const deleteMedia = async (publicId) => {
+const deleteMedia = async (publicId, documentId) => {
   try {
-    // Delete from Cloudinary
-    await cloudinary.uploader.destroy(publicId);
-    
-    // Delete from database
-    const document = await prisma.document.findFirst({
-      where: { 
-        url: { contains: publicId }
-      }
-    });
+    let document = null;
 
-    if (document) {
-      await prisma.document.delete({
-        where: { id: document.id }
+    if (documentId) {
+      document = await prisma.document.findUnique({ where: { id: documentId } });
+    } else if (publicId) {
+      document = await prisma.document.findFirst({
+        where: { OR: [{ url: { contains: publicId } }, { originalName: { contains: publicId } }] }
       });
     }
 
-    return { success: true, publicId };
+    if (!document && publicId) {
+      return { success: true, publicId, deleted: false };
+    }
+
+    if (document && document.url && document.url.includes('cloudinary')) {
+      const cloudinaryPublicId = publicId || resolveDocumentPublicId(document.url);
+      if (cloudinaryPublicId) {
+        await cloudinary.uploader.destroy(cloudinaryPublicId).catch(() => undefined);
+      }
+    }
+
+    if (document) {
+      await prisma.document.delete({ where: { id: document.id } });
+    }
+
+    return { success: true, publicId: publicId || document?.id, deleted: !!document };
   } catch (error) {
     console.error('Delete media error:', error);
     throw error;

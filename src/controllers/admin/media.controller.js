@@ -28,7 +28,11 @@ const upload = async (req, res) => {
     if (!req.file) {
       throw createError("No file uploaded", 400);
     }
-    const asset = await mediaService.registerUpload(req.file);
+    const asset = await mediaService.registerUpload(req.file, {
+      userId: req.user?.userId,
+      schoolId: req.user?.schoolId,
+      role: req.user?.role,
+    }, req.body);
     return sendSuccess(res, 201, "File uploaded.", asset);
   } catch (error) {
     console.error('Upload media error:', error);
@@ -45,14 +49,14 @@ const upload = async (req, res) => {
   }
 };
 
-// POST /api/v1/admin/media/delete  (body: { publicId })
+// POST /api/v1/admin/media/delete  (body: { publicId, documentId })
 const remove = async (req, res) => {
   try {
-    const { publicId } = req.body;
-    if (!publicId) {
-      throw createError("publicId is required", 400);
+    const { publicId, documentId } = req.body || {};
+    if (!publicId && !documentId) {
+      throw createError("publicId or documentId is required", 400);
     }
-    const result = await mediaService.deleteMedia(publicId);
+    const result = await mediaService.deleteMedia(publicId, documentId);
     return sendSuccess(res, 200, "File deleted.", result);
   } catch (error) {
     console.error('Delete media error:', error);
