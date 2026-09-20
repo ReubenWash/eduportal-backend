@@ -153,7 +153,7 @@ const fetchReportData = async (reportId) => {
 // One row per subject of the class. Subjects with no score yet stay as blank rows,
 // like the paper template. Values come from the stored Score record so the PDF always
 // matches the Scores page (same grade engine, same subject positions).
-const buildSubjectRows = async ({ scores, report }, theme) => {
+const buildSubjectRows = async ({ school, scores, report }, theme) => {
   const scoreBySubject = new Map(scores.map((s) => [s.subject?.id, s]));
 
   let listed = [];
@@ -169,6 +169,20 @@ const buildSubjectRows = async ({ scores, report }, theme) => {
         .sort((a, b) => String(a.type).localeCompare(String(b.type)) || a.name.localeCompare(b.name));
     } catch (error) {
       logger.warn(`Could not load class subjects for report card: ${error.message}`);
+    }
+  }
+
+  // Nothing assigned to the class and nothing scored yet: list the school's subjects as blank
+  // rows so the card still looks like the paper template instead of an empty table.
+  if (listed.length === 0 && scores.length === 0 && theme.showAllSubjects !== false && school?.id) {
+    try {
+      listed = await prisma.subject.findMany({
+        where: { schoolId: school.id },
+        select: { id: true, name: true, type: true },
+        orderBy: [{ type: 'asc' }, { name: 'asc' }],
+      });
+    } catch (error) {
+      logger.warn(`Could not load school subjects for report card: ${error.message}`);
     }
   }
 
@@ -264,7 +278,7 @@ const buildReportPDF = async (reportId) => {
   const rows = await buildSubjectRows(data, theme);
 
   // bottom margin 0 so pdfkit never adds an accidental blank page near the bottom edge
-  const doc = new PDFDocument({ size: 'A4', margins: { top: 30, bottom: 0, left: 30, right: 30 } });
+  const doc = new PDFDocument({ size: 'A4', margins: { top: 24, bottom: 0, left: 24, right: 24 } });
   registerReportFonts(doc);
 
   // Collect output safely: the promise exists before any drawing happens.
@@ -275,56 +289,62 @@ const buildReportPDF = async (reportId) => {
     doc.on('error', reject);
   });
 
-  const M = 30, W = 535, R = M + W;
+  // The whole card sits inside ONE bordered block, like the paper template: header,
+  // learner details, subject table and sign-off are packed together with no loose gaps.
+  const M = 24, W = 547, R = M + W, T = M;
+  const P = 10;                       // inner padding for text
   const NAVY = theme.primaryColor || '#1E2A78';
   const BLACK = '#000000';
   const PAGE_H = doc.page.height;
+  const BOTTOM_LIMIT = PAGE_H - M;
 
-  const hline = (x1, x2, y, color = BLACK) => {
-    doc.strokeColor(color).lineWidth(0.6).moveTo(x1, y).lineTo(x2, y).stroke();
+  const hline = (x1, x2, y, color = BLACK, width = 0.6) => {
+    doc.strokeColor(color).lineWidth(width).moveTo(x1, y).lineTo(x2, y).stroke();
   };
-  const vline = (x, y1, y2, color = BLACK) => {
-    doc.strokeColor(color).lineWidth(0.6).moveTo(x, y1).lineTo(x, y2).stroke();
+  const vline = (x, y1, y2, color = BLACK, width = 0.6) => {
+    doc.strokeColor(color).lineWidth(width).moveTo(x, y1).lineTo(x, y2).stroke();
+  };
+  const labelW = (text) => {
+    doc.font(BOLD).fontSize(9);
+    return doc.widthOfString(text) + 6;
+  };
+  const label = (text, x, ly) => {
+    doc.font(BOLD).fontSize(9).fillColor(BLACK).text(text, x, ly);
+  };
+  const image = (buf, x, y, w, h, what, valign = 'bottom') => {
+    if (!buf || buf.length === 0) return;
+    try {
+      doc.image(buf, x, y, { fit: [w, h], align: 'center', valign });
+    } catch (error) {
+      logger.warn(`Could not embed ${what} in PDF: ${error.message}`);
+    }
   };
 
-  // ── Header: student photo | school details | school logo ──
-  const PHOTO_W = 70, PHOTO_H = 82;
-
+  // ── Header: school name across the top; photo | school details + banner | logo below ──
   const studentPhoto = theme.showStudentPhoto !== false && student?.photoUrl
     ? await loadRemoteImage(student.photoUrl) : null;
   const logoUrl = theme.logoUrl || school?.logoUrl;
   const logo = theme.showLogo !== false && logoUrl
     ? await loadRemoteImage(logoUrl, { cache: true }) : null;
 
-  doc.strokeColor(BLACK).lineWidth(0.6).rect(M, M, PHOTO_W, PHOTO_H).stroke();
-  if (studentPhoto && studentPhoto.length > 0) {
-    try {
-      doc.image(studentPhoto, M + 1, M + 1, { fit: [PHOTO_W - 2, PHOTO_H - 2], align: 'center', valign: 'center' });
-    } catch (error) {
-      logger.warn(`Could not embed student photo in PDF: ${error.message}`);
-    }
-  }
-
-  if (logo && logo.length > 0) {
-    try {
-      doc.image(logo, R - PHOTO_W, M, { fit: [PHOTO_W, PHOTO_H], align: 'center', valign: 'center' });
-    } catch (error) {
-      logger.warn(`Could not embed school logo in PDF: ${error.message}`);
-    }
-  }
-
-  const centerX = M + PHOTO_W + 12;
-  const centerW = W - 2 * (PHOTO_W + 12);
-  let cy = M + 2;
-
+  let headTop = T + 6;
   if (theme.showSchoolName !== false) {
     const schoolName = String(school?.name || 'SCHOOL NAME').toUpperCase();
     let nameSize = 22;
     doc.font(BOLD);
-    while (nameSize > 11 && doc.fontSize(nameSize).widthOfString(schoolName) > centerW) nameSize -= 1;
-    doc.fillColor(NAVY).fontSize(nameSize).text(schoolName, centerX, cy, { width: centerW, align: 'center' });
-    cy += doc.heightOfString(schoolName, { width: centerW }) + 4;
+    while (nameSize > 11 && doc.fontSize(nameSize).widthOfString(schoolName) > W - 2 * P) nameSize -= 1;
+    doc.fillColor(NAVY).fontSize(nameSize).text(schoolName, M + P, T + 8, { width: W - 2 * P, align: 'center' });
+    headTop = T + 8 + doc.heightOfString(schoolName, { width: W - 2 * P }) + 6;
   }
+
+  const PHOTO_W = 70, PHOTO_H = 84, LOGO_W = 84;
+  doc.strokeColor(BLACK).lineWidth(0.6).rect(M + P, headTop, PHOTO_W, PHOTO_H).stroke();
+  image(studentPhoto, M + P + 1, headTop + 1, PHOTO_W - 2, PHOTO_H - 2, 'student photo', 'center');
+  image(logo, R - P - LOGO_W, headTop, LOGO_W, PHOTO_H, 'school logo', 'center');
+
+  const centerX = M + P + PHOTO_W + 12;
+  const centerW = (R - P - LOGO_W - 12) - centerX;
+  let cy = headTop + 2;
 
   const address = String(theme.postalAddress || school?.address || '').toUpperCase();
   const contactValue = theme.contact || school?.phone;
@@ -333,28 +353,28 @@ const buildReportPDF = async (reportId) => {
   const motto = mottoValue ? `MOTTO: ${String(mottoValue).toUpperCase()}` : '';
 
   [address, contact, motto].filter(Boolean).forEach((line, i) => {
-    doc.font(BOLD).fontSize(i === 0 ? 10 : 9).fillColor(NAVY)
+    doc.font(BOLD).fontSize(i === 0 ? 10.5 : 9.5).fillColor(NAVY)
        .text(line, centerX, cy, { width: centerW, align: 'center' });
     cy += doc.heightOfString(line, { width: centerW }) + 3;
   });
 
-  // ── Banner ──
-  const bannerY = Math.max(cy, M + PHOTO_H) + 8;
-  doc.roundedRect(centerX + 10, bannerY, centerW - 20, 24, 4).fill(NAVY);
-  doc.fillColor('#FFFFFF').font(BOLD).fontSize(11)
-     .text(String(theme.title).toUpperCase(), centerX + 10, bannerY + 7, { width: centerW - 20, align: 'center' });
+  const BANNER_H = 22;
+  const bannerY = Math.max(cy + 2, headTop + PHOTO_H - BANNER_H);
+  doc.rect(centerX, bannerY, centerW, BANNER_H).fill(NAVY);
+  doc.fillColor('#FFFFFF').font(BOLD).fontSize(11.5)
+     .text(String(theme.title).toUpperCase(), centerX, bannerY + 6, { width: centerW, align: 'center' });
 
-  // ── Learner details ──
-  let y = bannerY + 24 + 14;
-  const COL_W = 262;
-  const LEFT_X = M;
-  const RIGHT_X = R - COL_W;
+  // ── Learner details (label + value on a rule, two columns) ──
+  let y = Math.max(headTop + PHOTO_H, bannerY + BANNER_H) + 10;
+  const COL_W = Math.floor(W / 2) - P - 4;
+  const LEFT_X = M + P;
+  const RIGHT_X = M + Math.floor(W / 2) + 4;
 
-  const infoField = (label, value, x, fy) => {
-    const labelW = 112;
-    doc.font(BOLD).fontSize(9).fillColor(BLACK).text(label, x, fy, { width: labelW });
-    doc.text(String(value ?? ''), x + labelW, fy, { width: COL_W - labelW, align: 'center', height: 11, ellipsis: true });
-    hline(x + labelW, x + COL_W, fy + 12);
+  const infoField = (text, value, x, fy) => {
+    const lw = 112;
+    doc.font(BOLD).fontSize(9).fillColor(BLACK).text(text, x, fy, { width: lw });
+    doc.text(String(value ?? ''), x + lw, fy, { width: COL_W - lw, align: 'center', height: 11, ellipsis: true });
+    hline(x + lw, x + COL_W, fy + 12);
   };
 
   const fullName = `${student.lastName || ''} ${student.firstName || ''}${student.otherNames ? ' ' + student.otherNames : ''}`
@@ -364,33 +384,76 @@ const buildReportPDF = async (reportId) => {
     : '';
   const termWord = TERM_WORDS[term.termNumber] || String(term.termNumber || '').replace('TERM', '');
 
+  const INFO_STEP = 21;
   infoField('NAME:', fullName, LEFT_X, y);
   infoField('CLASS:', className, RIGHT_X, y);
-  y += 22;
+  y += INFO_STEP;
   infoField('NUMBER ON ROLL:', report.numberOnRoll ?? '', LEFT_X, y);
   infoField('POSITION IN CLASS:', report.classPosition ? ordinal(report.classPosition) : '', RIGHT_X, y);
-  y += 22;
+  y += INFO_STEP;
   infoField('ACADEMIC YEAR:', term.academicYear, LEFT_X, y);
   infoField('TERM:', termWord, RIGHT_X, y);
-  y += 22;
+  y += INFO_STEP;
   infoField('NEXT TERM BEGINS:', fmtDate(term.nextTermDate), LEFT_X, y);
   infoField('VACATION DATE:', fmtDate(term.endDate), RIGHT_X, y);
-  y += 22;
+  y += INFO_STEP;
 
-  // ── Subject table ──
-  const HEAD_H = 34;
+  // full-width rule closing the details section; the table starts right under it
+  const infoEnd = y + 1;
+  hline(M, R, infoEnd);
+
+  // ── Bottom block sizing: the class teacher's remark is written on ruled lines, so we need
+  //    to know how many lines it takes before deciding how tall the subject rows can be. ──
+  const INNER_X = M + P;
+  const INNER_W = W - 2 * P;
+  const REMARK_LABEL = "CLASS TEACHER'S REMARKS:";
+  const RULE_GAP = 17;
+  const remarkLabelW = labelW(REMARK_LABEL);
+  doc.font(REGULAR).fontSize(9);
+  const remarkLines = (() => {
+    const words = String(report.teacherRemark || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+    const lines = [];
+    let cur = '';
+    const widthFor = () => (lines.length === 0 ? INNER_W - remarkLabelW : INNER_W);
+    for (const w of words) {
+      const test = cur ? `${cur} ${w}` : w;
+      if (doc.widthOfString(test) <= widthFor()) {
+        cur = test;
+      } else {
+        if (cur) lines.push(cur);
+        cur = w;
+      }
+    }
+    if (cur) lines.push(cur);
+    const MAX_LINES = 5;
+    if (lines.length > MAX_LINES) {
+      lines.length = MAX_LINES;
+      let last = lines[MAX_LINES - 1];
+      while (last.length > 1 && doc.widthOfString(`${last}…`) > INNER_W) last = last.slice(0, -1);
+      lines[MAX_LINES - 1] = `${last.trimEnd()}…`;
+    }
+    return lines;
+  })();
+  const remarkRuleCount = Math.max(2, remarkLines.length);
+  const FIELD_STEP = 25;
+  const SIGN_STEP = 32;
+  // pad 6 + 3 field rows + gap 4 + remark rules + gap 6 + 2 sign-off rows + pad 4
+  const BOTTOM_BLOCK_H = 6 + 3 * FIELD_STEP + 4 + remarkRuleCount * RULE_GAP + 6 + 2 * SIGN_STEP + 4;
+
+  // ── Subject table (full width, touching the outer border) ──
+  const HEAD_H = 36;
   const cols = [
-    { w: 150, label: 'SUBJECT', align: 'left' },
-    { w: 55,  label: `CLASS\nSCORE\n(${theme.classScoreWeight}%)`, align: 'center' },
-    { w: 55,  label: `EXAM\nSCORE\n(${theme.examScoreWeight}%)`, align: 'center' },
-    { w: 60,  label: 'TOTAL\nSCORE\n(100%)', align: 'center' },
-    { w: 65,  label: 'POSITION', align: 'center' },
-    { w: 150, label: 'REMARKS', align: 'center' },
+    { w: 170, label: 'SUBJECT', align: 'left' },
+    { w: 62,  label: `CLASS\nSCORE\n(${theme.classScoreWeight}%)`, align: 'center' },
+    { w: 62,  label: `EXAM\nSCORE\n(${theme.examScoreWeight}%)`, align: 'center' },
+    { w: 66,  label: 'TOTAL\nSCORE\n(100%)', align: 'center' },
+    { w: 72,  label: 'POSITION', align: 'center' },
+    { w: 115, label: 'REMARKS', align: 'center' },
   ];
 
-  const tableTop = y + 6;
+  const tableTop = infoEnd;
   doc.rect(M, tableTop, W, HEAD_H).fill(NAVY);
-  doc.font(BOLD).fontSize(7.5).fillColor('#FFFFFF');
+  doc.font(BOLD).fontSize(8).fillColor('#FFFFFF');
   let cx = M;
   cols.forEach((c, i) => {
     const h = doc.heightOfString(c.label, { width: c.w - 8 });
@@ -399,38 +462,47 @@ const buildReportPDF = async (reportId) => {
     if (i < cols.length - 1) vline(cx, tableTop, tableTop + HEAD_H, '#FFFFFF');
   });
 
-  const bodyTop = tableTop + HEAD_H;
-  const BOTTOM_BLOCK_H = 178;
-  const room = PAGE_H - M - BOTTOM_BLOCK_H - bodyTop;
-  const rowH = Math.max(16, Math.min(26, Math.floor(room / Math.max(rows.length, 1))));
+  // Like the paper form, always show at least 9 ruled rows (blank ones stay writable)
+  const MIN_ROWS = 9;
+  const tableRows = [...rows];
+  while (tableRows.length < MIN_ROWS) {
+    tableRows.push({ name: '', ca: '', exam: '', total: '', position: '', remark: '' });
+  }
 
-  rows.forEach((row, i) => {
+  const bodyTop = tableTop + HEAD_H;
+  const room = BOTTOM_LIMIT - BOTTOM_BLOCK_H - bodyTop;
+  const rowH = Math.max(16, Math.min(40, Math.floor(room / tableRows.length)));
+
+  tableRows.forEach((row, i) => {
     const rowY = bodyTop + i * rowH;
     const values = [row.name ? String(row.name).toUpperCase() : '', row.ca, row.exam, row.total, row.position, row.remark];
-    doc.font(BOLD).fontSize(9).fillColor(BLACK);
     let x = M;
     cols.forEach((c, j) => {
-      doc.text(String(values[j] ?? ''), x + 4, rowY + (rowH - 10) / 2, {
-        width: c.w - 8, align: c.align, height: 11, ellipsis: true,
-      });
+      doc.font(BOLD).fontSize(j === 0 ? 10 : 10.5).fillColor(BLACK)
+         .text(String(values[j] ?? ''), x + 5, rowY + (rowH - 12) / 2, {
+           width: c.w - 10, align: c.align, height: 14, ellipsis: true,
+         });
       x += c.w;
     });
     hline(M, R, rowY + rowH);
   });
 
-  const bodyEnd = bodyTop + rows.length * rowH;
+  const bodyEnd = bodyTop + tableRows.length * rowH;
   let vx = M;
   cols.forEach((c, i) => {
     vx += c.w;
     if (i < cols.length - 1) vline(vx, bodyTop, bodyEnd);
   });
-  doc.strokeColor(BLACK).lineWidth(0.6).rect(M, tableTop, W, bodyEnd - tableTop).stroke();
 
-  // ── Bottom block (attendance, attitude, conduct, interest, remarks, signature) ──
-  let blockTop = bodyEnd + 14;
-  if (blockTop + BOTTOM_BLOCK_H > PAGE_H - M) {
+  // ── Bottom block: attendance / promotion, attitude / conduct, interest, remarks, sign-off ──
+  let borderTop = T;
+  let blockTop = bodyEnd;
+  if (bodyEnd + BOTTOM_BLOCK_H > BOTTOM_LIMIT) {
+    // very long subject lists: close this page's box and continue the sign-off on a new page
+    doc.strokeColor(BLACK).lineWidth(1.6).rect(M, T, W, BOTTOM_LIMIT - T).stroke();
     doc.addPage();
-    blockTop = M + 10;
+    borderTop = T;
+    blockTop = T;
   }
 
   const headSignature = theme.showPrincipalSignature !== false && theme.principalSignatureUrl
@@ -438,77 +510,95 @@ const buildReportPDF = async (reportId) => {
   const teacherSignature = theme.showClassTeacherSignature !== false && theme.classTeacherSignatureUrl
     ? await loadRemoteImage(theme.classTeacherSignatureUrl, { cache: true }) : null;
 
-  const lineValue = (value, x, ly, w) => {
+  const GAP = 15;
+  const HALF_W = Math.floor((INNER_W - GAP) / 2);
+  const LEFT = INNER_X;
+  const RIGHT = INNER_X + HALF_W + GAP;
+
+  // value sits on a rule; the rule starts right after the label and ends at x + totalW
+  const field = (text, value, x, ly, totalW) => {
+    const lw = labelW(text);
+    label(text, x, ly);
     doc.font(BOLD).fontSize(9).fillColor(BLACK)
-       .text(String(value ?? ''), x, ly, { width: w, align: 'center', height: 11, ellipsis: true });
-    hline(x, x + w, ly + 12);
-  };
-  const label = (text, x, ly) => {
-    doc.font(BOLD).fontSize(9).fillColor(BLACK).text(text, x, ly);
+       .text(String(value ?? ''), x + lw, ly, { width: totalW - lw, align: 'center', height: 11, ellipsis: true });
+    hline(x + lw, x + totalW, ly + 12);
   };
 
-  let by = blockTop + 10;
+  let by = blockTop + 6 + 4;
 
-  label('ATTENDANCE:', M + 10, by);
-  lineValue(hasVal(report.daysPresent) ? report.daysPresent : '', M + 84, by, 50);
-  label('OUT OF', M + 142, by);
-  lineValue(report.totalSchoolDays || '', M + 182, by, 50);
-  label('PROMOTED TO:', M + 250, by);
-  lineValue(String(report.promotedTo || '').toUpperCase(), M + 330, by, R - 10 - (M + 330));
-  by += 26;
+  // Row 1: attendance | promoted to
+  label('ATTENDANCE:', LEFT, by);
+  const attLw = labelW('ATTENDANCE:');
+  const attBox = 44;
+  // If attendance was never recorded (0 school days), leave both boxes blank instead of "0 out of"
+  const att = (v, x) => {
+    doc.font(BOLD).fontSize(9).fillColor(BLACK).text(String(v ?? ''), x, by, { width: attBox, align: 'center' });
+    hline(x, x + attBox, by + 12);
+  };
+  att(report.totalSchoolDays ? report.daysPresent : '', LEFT + attLw);
+  label('OUT OF', LEFT + attLw + attBox + 8, by);
+  att(report.totalSchoolDays || '', LEFT + attLw + attBox + 8 + labelW('OUT OF'));
+  field('PROMOTED TO:', String(report.promotedTo || '').toUpperCase(), RIGHT, by, HALF_W);
+  by += FIELD_STEP;
 
-  const shortX = M + 84;
-  [['ATTITUDE:', report.attitude], ['CONDUCT:', report.conduct], ['INTEREST:', report.interest]].forEach(([l, v]) => {
-    label(l, M + 10, by);
-    lineValue(v || '', shortX, by, R - 10 - shortX);
-    by += 26;
-  });
+  // Row 2: attitude | conduct
+  field('ATTITUDE:', report.attitude || '', LEFT, by, HALF_W);
+  field('CONDUCT:', report.conduct || '', RIGHT, by, HALF_W);
+  by += FIELD_STEP;
 
-  doc.font(BOLD).fontSize(9);
-  const longX = M + 10 + Math.max(
-    doc.widthOfString("CLASS TEACHER'S REMARKS:"),
-    doc.widthOfString("HEADTEACHER'S SIGNATURE:")
-  ) + 8;
+  // Row 3: interest (full width, it is the one that can be long)
+  field('INTEREST:', report.interest || '', LEFT, by, INNER_W);
+  by += FIELD_STEP;
 
-  // Class teacher's remarks (up to two lines), teacher name + optional signature on the right
+  // Class teacher's remarks: written ON the ruled lines (first line starts after the label)
+  by += 4;
+  label(REMARK_LABEL, LEFT, by);
+  for (let i = 0; i < remarkRuleCount; i += 1) {
+    const ruleY = by + 12 + i * RULE_GAP;
+    const x1 = i === 0 ? LEFT + remarkLabelW : LEFT;
+    hline(x1, LEFT + INNER_W, ruleY);
+    if (remarkLines[i]) {
+      doc.font(REGULAR).fontSize(9).fillColor(BLACK).text(remarkLines[i], x1 + 2, ruleY - 11.5, { lineBreak: false });
+    }
+  }
+  by += remarkRuleCount * RULE_GAP + 6;
+
+  // Sign-off. Both rows share the same columns so the lines line up.
+  const signLabelW = Math.max(labelW('CLASS TEACHER:'), labelW("HEADTEACHER'S SIGNATURE:"));
+  const SIGN_LINE_W = 190;
+  const rightX = LEFT + signLabelW + SIGN_LINE_W + 14;
+  const rightW = INNER_X + INNER_W - rightX;
   const teacher = report.enrollment?.class?.classTeacher;
   const teacherName = teacher ? `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() : '';
-  const sigW = teacherSignature ? 80 : 0;
 
-  label("CLASS TEACHER'S REMARKS:", M + 10, by);
-  doc.font(REGULAR).fontSize(9).fillColor(BLACK)
-     .text(String(report.teacherRemark || ''), longX, by, { width: R - 10 - longX - sigW, height: 22, ellipsis: true });
-  if (teacherSignature && teacherSignature.length > 0) {
-    try {
-      doc.image(teacherSignature, R - 10 - 74, by - 6, { fit: [74, 26] });
-    } catch (error) {
-      logger.warn(`Could not embed class teacher signature in PDF: ${error.message}`);
-    }
-  }
-  hline(longX, R - 10, by + 24);
-  if (teacherName) {
-    doc.font(REGULAR).fontSize(7.5).fillColor('#374151')
-       .text(`Class Teacher: ${teacherName}`, longX, by + 27, { width: R - 10 - longX, align: 'right' });
-  }
-  by += 38;
+  // row S1: class teacher's name | signature
+  let lineY = by + 24;
+  label('CLASS TEACHER:', LEFT, lineY - 12);
+  doc.font(BOLD).fontSize(9).fillColor(BLACK)
+     .text(teacherName.toUpperCase(), LEFT + signLabelW, lineY - 12, { width: SIGN_LINE_W, align: 'center', height: 11, ellipsis: true });
+  hline(LEFT + signLabelW, LEFT + signLabelW + SIGN_LINE_W, lineY);
+  label('SIGNATURE:', rightX, lineY - 12);
+  const sigLw = labelW('SIGNATURE:');
+  image(teacherSignature, rightX + sigLw, lineY - 28, rightW - sigLw, 26, 'class teacher signature');
+  hline(rightX + sigLw, rightX + rightW, lineY);
+  by += SIGN_STEP;
 
-  // Headteacher's signature
-  label("HEADTEACHER'S SIGNATURE:", M + 10, by + 8);
-  if (headSignature && headSignature.length > 0) {
-    try {
-      doc.image(headSignature, longX + 10, by - 4, { fit: [110, 28] });
-    } catch (error) {
-      logger.warn(`Could not embed headteacher signature in PDF: ${error.message}`);
-    }
-  }
-  hline(longX, R - 10, by + 24);
-  by += 34;
+  // row S2: headteacher's signature | date
+  lineY = by + 24;
+  label("HEADTEACHER'S SIGNATURE:", LEFT, lineY - 12);
+  image(headSignature, LEFT + signLabelW + 20, lineY - 28, SIGN_LINE_W - 40, 26, 'headteacher signature');
+  hline(LEFT + signLabelW, LEFT + signLabelW + SIGN_LINE_W, lineY);
+  label('DATE:', rightX, lineY - 12);
+  hline(rightX + labelW('DATE:'), rightX + rightW, lineY);
+  by += SIGN_STEP;
 
-  doc.strokeColor(BLACK).lineWidth(0.6).rect(M, blockTop, W, by - blockTop).stroke();
+  // the single outer border that holds the whole card
+  const endY = by + 4;
+  doc.strokeColor(BLACK).lineWidth(1.6).rect(M, borderTop, W, endY - borderTop).stroke();
 
   if (theme.footerText) {
     doc.font(REGULAR).fontSize(7.5).fillColor('#374151')
-       .text(String(theme.footerText), M, Math.min(by + 10, PAGE_H - 28), { width: W, align: 'center' });
+       .text(String(theme.footerText), M, Math.min(endY + 6, PAGE_H - 18), { width: W, align: 'center' });
   }
 
   doc.end();
