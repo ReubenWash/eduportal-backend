@@ -609,6 +609,14 @@ const buildLandingPageContent = (sections = [], fallback = getDefaultLandingCont
         break;
       case 'FOOTER':
         content.footerTagline = sectionData.tagline || sectionData.footerTagline || fallback.footerTagline;
+        content.footerLinks = Array.isArray(sectionData.links) && sectionData.links.length ? sectionData.links : fallback.footerLinks || [
+          { label: 'Features', url: '#features' },
+          { label: 'Pricing', url: '#plans' },
+          { label: 'Roadmap', url: '/roadmap' },
+          { label: 'Team', url: '/team' }
+        ];
+        content.socialLinks = Array.isArray(sectionData.socialLinks) ? sectionData.socialLinks : fallback.socialLinks || [];
+        content.footerCopyright = sectionData.copyright || fallback.footerCopyright || '© 2025 EduPortal. All rights reserved.';
         break;
       default:
         break;
@@ -956,7 +964,27 @@ const getDefaultLandingContent = () => ({
       disabled: []
     }
   ],
-  footerTagline: "A school management platform built specifically for schools in Ghana and across West Africa."
+  footerTagline: "A school management platform built specifically for schools in Ghana and across West Africa.",
+  footerLinks: [
+    { label: 'Features', url: '#features' },
+    { label: 'Pricing', url: '#plans' },
+    { label: 'Changelog', url: '/changelog' },
+    { label: 'Roadmap', url: '/roadmap' },
+    { label: 'Team', url: '/team' }
+  ],
+  socialLinks: [],
+  footerCopyright: '© 2025 EduPortal. All rights reserved.',
+  theme: {
+    primaryColor: '#4F46E5',
+    secondaryColor: '#1A3C5E',
+    accentColor: '#F59E0B',
+    fontFamily: 'Inter',
+    borderRadius: '8px',
+    buttonStyle: 'rounded',
+    logoUrl: null,
+    faviconUrl: null,
+    customCss: ''
+  }
 });
 
 // ─────────────────────────────────────────────────────

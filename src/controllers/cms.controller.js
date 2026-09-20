@@ -4,7 +4,6 @@ const prisma = new PrismaClient();
 // Get landing page content
 exports.getLandingPage = async (req, res) => {
   try {
-    // Find the landing page (isHomepage = true)
     let landingPage = await prisma.cmsPage.findFirst({
       where: {
         isHomepage: true,
@@ -18,14 +17,16 @@ exports.getLandingPage = async (req, res) => {
       }
     });
 
-    // If no landing page exists, create one with default content
     if (!landingPage) {
       landingPage = await createDefaultLandingPage();
     }
 
-    // Transform CMS data into the format expected by the landing page
-    const content = transformCmsData(landingPage);
-    
+    const themeConfig = await prisma.systemSetting.findUnique({
+      where: { key: 'theme_config' }
+    });
+
+    const content = transformCmsData(landingPage, themeConfig?.value || null);
+
     res.json({ 
       success: true, 
       content,
@@ -200,20 +201,30 @@ async function createDefaultLandingPage() {
 }
 
 // Helper: Transform CMS data to landing page format
-function transformCmsData(page) {
+function transformCmsData(page, themeConfig = null) {
   const content = {};
-  
-  // Add schools (hardcoded for now, can be moved to CMS later)
+
   content.schools = ["Accra Academy", "Presec Legon", "Wesley Girls", "Achimota School", "Aburi Girls", "Holy Child"];
-  
+  content.theme = themeConfig || {
+    primaryColor: '#4F46E5',
+    secondaryColor: '#1A3C5E',
+    accentColor: '#F59E0B',
+    fontFamily: 'Inter',
+    borderRadius: '8px',
+    buttonStyle: 'rounded',
+    logoUrl: null,
+    faviconUrl: null,
+    customCss: ''
+  };
+
   page.sections.forEach(section => {
     switch (section.type) {
       case 'HERO':
-        content.heroHeadline = section.content?.headline || 'Run your school.';
-        content.heroHeadlineHighlight = section.content?.headlineHighlight || 'Not paperwork.';
+        content.heroHeadline = section.content?.heading || section.content?.headline || 'Run your school.';
+        content.heroHeadlineHighlight = section.content?.highlight || section.content?.headlineHighlight || 'Not paperwork.';
         content.heroSubtitle = section.content?.subtitle || 'EduPortal gives school administrators...';
-        content.heroPrimaryBtn = section.content?.primaryBtn || 'Register your school';
-        content.heroTrustText = section.content?.trustText || 'Trusted by 200+ schools...';
+        content.heroPrimaryBtn = section.content?.ctaText || section.content?.primaryBtn || 'Register your school';
+        content.heroTrustText = section.content?.trustBadge || section.content?.trustText || 'Trusted by 200+ schools...';
         break;
       case 'STATS':
         content.stats = section.content?.stats || [];
@@ -225,10 +236,30 @@ function transformCmsData(page) {
         content.testimonials = section.content?.testimonials || [];
         break;
       case 'FOOTER':
-        content.footerTagline = section.content?.tagline || 'A school management platform...';
+        content.footerTagline = section.content?.tagline || section.content?.footerTagline || 'A school management platform...';
+        content.footerLinks = section.content?.links || [
+          { label: 'Features', url: '#features' },
+          { label: 'Pricing', url: '#plans' },
+          { label: 'Changelog', url: '/changelog' },
+          { label: 'Roadmap', url: '/roadmap' },
+          { label: 'Team', url: '/team' }
+        ];
+        content.socialLinks = section.content?.socialLinks || [];
+        content.footerCopyright = section.content?.copyright || '© 2025 EduPortal. All rights reserved.';
         break;
     }
   });
-  
+
+  if (!content.footerTagline) content.footerTagline = 'A school management platform built specifically for schools in Ghana and across West Africa.';
+  if (!content.footerLinks || content.footerLinks.length === 0) {
+    content.footerLinks = [
+      { label: 'Features', url: '#features' },
+      { label: 'Pricing', url: '#plans' },
+      { label: 'Changelog', url: '/changelog' },
+      { label: 'Roadmap', url: '/roadmap' },
+      { label: 'Team', url: '/team' }
+    ];
+  }
+
   return content;
 }
