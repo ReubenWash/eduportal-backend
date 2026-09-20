@@ -310,6 +310,10 @@ model Report {
   aggregate       Float?
   teacherRemark   String?
   headRemark      String?
+  attitude        String?
+  conduct         String?
+  interest        String?
+  promotedTo      String?
   conductScore    Json?
   daysPresent     Int?
   daysAbsent      Int?

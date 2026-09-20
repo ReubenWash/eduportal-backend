@@ -2,6 +2,7 @@ const { prisma }      = require("../config/db");
 const { createError } = require("../middleware/errorHandler");
 const { sendReportCardEmail } = require("./email.service");
 const logger = require("../config/logger");
+const { computePositions } = require("../utils/gradeEngine");
 
 // ── Generate report(s) ─────────────────────────────────────────
 const generateReports = async (schoolId, { termId, studentId, classId }) => {
@@ -84,6 +85,18 @@ const generateReports = async (schoolId, { termId, studentId, classId }) => {
       reportIds.push(report.id);
     }
 
+    // One ranking rule everywhere: class position = rank by average total score.
+    // (score.service also writes classPosition using a different rule; ranking here,
+    // after the reports exist, keeps drafts, approved and released cards consistent.)
+    const enrolled = await prisma.enrollment.findMany({
+      where: { studentId: { in: studentIds }, termId },
+      select: { classId: true },
+      distinct: ["classId"],
+    });
+    for (const e of enrolled) {
+      await updateClassPositions(schoolId, e.classId, termId);
+    }
+
     const { generateBulkPDFs } = require("./pdf.service");
     const pdfResult = await generateBulkPDFs(reportIds);
     logger.info(`Bulk PDF generation complete: ${pdfResult.success} success, ${pdfResult.failed} failed`);
@@ -101,13 +114,112 @@ const generateReports = async (schoolId, { termId, studentId, classId }) => {
   }
 };
 
+// ── Who is this user? Helpers for role-based report access ─────
+const ADMIN_ROLES = ["SCHOOL_ADMIN", "SUPER_ADMIN"];
+
+// Ids of the classes where this user is the class teacher
+const getTeacherClassIds = async (user, schoolId) => {
+  const staff = await prisma.staff.findFirst({
+    where: { userId: user.userId, schoolId },
+    select: { id: true },
+  });
+  if (!staff) return [];
+  const classes = await prisma.class.findMany({
+    where: { classTeacherId: staff.id, schoolId },
+    select: { id: true },
+  });
+  return classes.map((c) => c.id);
+};
+
+// Classes the user can write report remarks for: admins see every class, class teachers their own
+const getMyReportClasses = async (user) => {
+  const schoolId = user.schoolId;
+  const where = { schoolId };
+  if (!ADMIN_ROLES.includes(user.role)) {
+    const ids = await getTeacherClassIds(user, schoolId);
+    if (ids.length === 0) return [];
+    where.id = { in: ids };
+  }
+  return prisma.class.findMany({
+    where,
+    orderBy: [{ level: "asc" }, { section: "asc" }],
+    select: {
+      id: true, level: true, section: true, academicYear: true,
+      classTeacher: { select: { id: true, firstName: true, lastName: true } },
+    },
+  });
+};
+
+// Loads a report and checks that this user is allowed to see it:
+//  - school admin / super admin: any report of their school
+//  - class teacher: only students of their own class in that term
+//  - student / parent: only their own (or their child's) report, and only once RELEASED
+const assertReportAccess = async (user, reportId) => {
+  const report = await prisma.report.findFirst({
+    where: { id: reportId, ...(user.role === "SUPER_ADMIN" ? {} : { student: { schoolId: user.schoolId } }) },
+    include: { student: { select: { id: true, userId: true } } },
+  });
+  if (!report) throw createError("Report not found.", 404);
+
+  if (ADMIN_ROLES.includes(user.role)) return report;
+
+  if (user.role === "CLASS_TEACHER") {
+    const classIds = await getTeacherClassIds(user, user.schoolId);
+    const enrollment = await prisma.enrollment.findFirst({
+      where: { studentId: report.studentId, termId: report.termId, classId: { in: classIds } },
+      select: { id: true },
+    });
+    if (enrollment) return report;
+    throw createError("You can only access reports for students in your own class.", 403);
+  }
+
+  if (user.role === "STUDENT" && report.student.userId === user.userId) {
+    if (report.status === "RELEASED") return report;
+    throw createError("This report card has not been released yet.", 403);
+  }
+
+  if (user.role === "PARENT") {
+    const link = await prisma.studentGuardian.findFirst({
+      where: { studentId: report.studentId, guardian: { userId: user.userId } },
+      select: { studentId: true },
+    });
+    if (link) {
+      if (report.status === "RELEASED") return report;
+      throw createError("This report card has not been released yet.", 403);
+    }
+  }
+
+  throw createError("You do not have access to this report.", 403);
+};
+
 // ── List / filter reports ──────────────────────────────────────
-const getReports = async (schoolId, { classId, termId, studentId, status } = {}) => {
+const getReports = async (schoolId, { classId, termId, studentId, status } = {}, user = null) => {
   try {
+    let classIds = null;
+
+    if (user) {
+      if (user.role === "CLASS_TEACHER") {
+        const own = await getTeacherClassIds(user, schoolId);
+        if (own.length === 0) return [];
+        if (classId && !own.includes(classId)) {
+          throw createError("You can only view reports for your own class.", 403);
+        }
+        classIds = classId ? [classId] : own;
+      } else if (!ADMIN_ROLES.includes(user.role)) {
+        throw createError("You do not have access to report cards.", 403);
+      }
+    }
+
+    const enrollmentFilter = classIds
+      ? { some: { classId: { in: classIds }, ...(termId && { termId }) } }
+      : classId
+        ? { some: { classId, ...(termId && { termId }) } }
+        : undefined;
+
     const where = {
-      student: { 
-        schoolId, 
-        ...(classId && { enrollments: { some: { classId } } }) 
+      student: {
+        schoolId,
+        ...(enrollmentFilter && { enrollments: enrollmentFilter }),
       },
       ...(termId && { termId }),
       ...(studentId && { studentId }),
@@ -118,12 +230,12 @@ const getReports = async (schoolId, { classId, termId, studentId, status } = {})
       where,
       include: {
         student: {
-          select: { 
-            id: true, 
-            firstName: true, 
-            lastName: true, 
-            otherNames: true, 
-            studentNumber: true, 
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            otherNames: true,
+            studentNumber: true,
             photoUrl: true,
             enrollments: {
               where: { termId: termId || undefined },
@@ -131,15 +243,15 @@ const getReports = async (schoolId, { classId, termId, studentId, status } = {})
             }
           },
         },
-        term: { 
-          select: { 
-            id: true, 
-            academicYear: true, 
-            termNumber: true 
-          } 
+        term: {
+          select: {
+            id: true,
+            academicYear: true,
+            termNumber: true
+          }
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ student: { lastName: "asc" } }, { student: { firstName: "asc" } }],
     });
   } catch (error) {
     logger.error("Get reports error:", error);
@@ -268,25 +380,36 @@ const regeneratePDF = async (schoolId, reportId) => {
 };
 
 // ── Update remarks ─────────────────────────────────────────────
-const updateRemarks = async (schoolId, reportId, { teacherRemark, headRemark }) => {
-  try {
-    const report = await prisma.report.findFirst({
-      where: { id: reportId, student: { schoolId } },
-    });
-    if (!report) throw createError("Report not found.", 404);
+// Class teachers (own class, DRAFT reports only) can set: teacherRemark, attitude,
+// conduct, interest, promotedTo. Only admins can also set headRemark, and admins can
+// edit APPROVED reports. Nothing can be changed once a report is RELEASED.
+const REMARK_FIELDS = ["teacherRemark", "attitude", "conduct", "interest", "promotedTo"];
 
-    // Check if report is already released
+const cleanText = (v) => {
+  if (v === null || v === undefined) return null;
+  const t = String(v).trim();
+  return t === "" ? null : t;
+};
+
+const updateRemarks = async (user, reportId, body = {}) => {
+  try {
+    const report = await assertReportAccess(user, reportId);
+    const isAdmin = ADMIN_ROLES.includes(user.role);
+
     if (report.status === "RELEASED") {
       throw createError("Cannot update remarks on a released report.", 400);
     }
+    if (!isAdmin && report.status !== "DRAFT") {
+      throw createError("This report has already been approved. Ask the school admin to make changes.", 400);
+    }
 
-    return prisma.report.update({
-      where: { id: reportId },
-      data: {
-        ...(teacherRemark !== undefined && { teacherRemark }),
-        ...(headRemark !== undefined && { headRemark }),
-      },
-    });
+    const data = {};
+    for (const field of REMARK_FIELDS) {
+      if (body[field] !== undefined) data[field] = cleanText(body[field]);
+    }
+    if (isAdmin && body.headRemark !== undefined) data.headRemark = cleanText(body.headRemark);
+
+    return prisma.report.update({ where: { id: reportId }, data });
   } catch (error) {
     logger.error("Update remarks error:", error);
     throw error;
@@ -304,23 +427,22 @@ const approveReport = async (schoolId, reportId) => {
       throw createError("Only DRAFT reports can be approved.", 400);
     }
 
-    // Check if PDF exists, if not generate it
-    let pdfUrl = report.pdfUrl;
-    if (!pdfUrl) {
-      logger.info(`No PDF found for report ${reportId}, generating...`);
-      const { generateReportPDF } = require("./pdf.service");
-      pdfUrl = await generateReportPDF(reportId);
-      
-      // Update report with PDF URL
-      await prisma.report.update({
-        where: { id: reportId },
-        data: { pdfUrl }
-      });
+    // Always rebuild the stored PDF at approval: remarks and positions are entered after the
+    // drafts are generated, and the stored copy is what parents receive by email.
+    const enrollment = await prisma.enrollment.findFirst({
+      where: { studentId: report.studentId, termId: report.termId },
+      select: { classId: true },
+    });
+    if (enrollment) {
+      await updateClassPositions(schoolId, enrollment.classId, report.termId);
     }
 
-    return prisma.report.update({ 
-      where: { id: reportId }, 
-      data: { status: "APPROVED" } 
+    const { generateReportPDF } = require("./pdf.service");
+    await generateReportPDF(reportId); // also saves the new pdfUrl
+
+    return prisma.report.update({
+      where: { id: reportId },
+      data: { status: "APPROVED" }
     });
   } catch (error) {
     logger.error("Approve report error:", error);
@@ -523,46 +645,42 @@ const releaseReportGroup = async (schoolId, reports, context) => {
 };
 
 // ── Helper: Update class positions ────────────────────────────
+// Rank every student of the class by AVERAGE TOTAL SCORE (ties share a position).
+// Positions are written to whatever report rows exist (draft, approved or released).
 const updateClassPositions = async (schoolId, classId, termId) => {
   try {
-    // Get all students in the class with their aggregates
-    const reports = await prisma.report.findMany({
-      where: {
-        student: {
-          schoolId,
-          enrollments: {
-            some: { classId, termId }
-          }
-        },
-        termId,
-        status: "RELEASED"
-      },
-      select: {
-        studentId: true,
-        aggregate: true
-      },
-      orderBy: {
-        aggregate: 'desc'
-      }
+    const enrollments = await prisma.enrollment.findMany({
+      where: { classId, termId, student: { schoolId } },
+      select: { studentId: true },
+    });
+    const studentIds = enrollments.map((e) => e.studentId);
+    if (studentIds.length === 0) return { updated: 0 };
+
+    const scores = await prisma.score.findMany({
+      where: { termId, studentId: { in: studentIds }, total: { not: null } },
+      select: { studentId: true, total: true },
     });
 
-    // Update positions
-    for (let i = 0; i < reports.length; i++) {
-      await prisma.report.update({
-        where: { 
-          studentId_termId: { 
-            studentId: reports[i].studentId, 
-            termId 
-          } 
-        },
-        data: {
-          classPosition: i + 1,
-          totalStudents: reports.length
-        }
+    const sums = new Map();
+    for (const s of scores) {
+      const cur = sums.get(s.studentId) || { sum: 0, n: 0 };
+      cur.sum += s.total;
+      cur.n += 1;
+      sums.set(s.studentId, cur);
+    }
+
+    const ranked = computePositions(
+      [...sums.entries()].map(([studentId, c]) => ({ studentId, total: c.sum / c.n }))
+    );
+
+    for (const r of ranked) {
+      await prisma.report.updateMany({
+        where: { studentId: r.studentId, termId },
+        data: { classPosition: r.position, totalStudents: studentIds.length },
       });
     }
 
-    return { updated: reports.length };
+    return { updated: ranked.length };
   } catch (error) {
     logger.error("Update class positions error:", error);
     throw error;
@@ -788,6 +906,8 @@ const sendSingleReportEmail = async (schoolId, reportId) => {
 };
 
 module.exports = {
+  assertReportAccess,
+  getMyReportClasses,
   generateReports,
   getReports,
   getReport,

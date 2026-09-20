@@ -42,16 +42,28 @@ const generate = async (req, res) => {
 // ─── GET /api/v1/reports ───
 const list = async (req, res) => {
   try {
-    const reports = await reportService.getReports(req.user.schoolId, req.query);
+    const reports = await reportService.getReports(req.user.schoolId, req.query, req.user);
     return sendSuccess(res, 200, "Reports fetched successfully.", reports);
   } catch (error) {
     return handleError(res, error, "List reports error", "Failed to fetch reports");
   }
 };
 
+// ─── GET /api/v1/reports/my-classes ───
+// Classes the current user can write report remarks for (admin: all, class teacher: own)
+const myClasses = async (req, res) => {
+  try {
+    const classes = await reportService.getMyReportClasses(req.user);
+    return sendSuccess(res, 200, "Classes fetched successfully.", classes);
+  } catch (error) {
+    return handleError(res, error, "My report classes error", "Failed to fetch classes");
+  }
+};
+
 // ─── GET /api/v1/reports/:id ───
 const getOne = async (req, res) => {
   try {
+    await reportService.assertReportAccess(req.user, req.params.id);
     const report = await reportService.getReport(req.user.schoolId, req.params.id);
     return sendSuccess(res, 200, "Report fetched successfully.", report);
   } catch (error) {
@@ -77,8 +89,8 @@ const sendPdf = async (res, reportId, filename, attachment = false) => {
 // ─── GET /api/v1/reports/:id/preview ───
 const preview = async (req, res) => {
   try {
-    // getReportForPdf also verifies the report belongs to this school
-    await reportService.getReportForPdf(req.user.schoolId, req.params.id);
+    // Admin: any report of the school. Class teacher: own class. Student/parent: own, released only.
+    await reportService.assertReportAccess(req.user, req.params.id);
     return await sendPdf(res, req.params.id, `preview-${req.params.id}.pdf`, false);
   } catch (error) {
     return handleError(res, error, "Preview report error", "Failed to preview report");
@@ -88,8 +100,7 @@ const preview = async (req, res) => {
 // ─── GET /api/v1/reports/:id/pdf ───
 const downloadPDF = async (req, res) => {
   try {
-    // getReportForPdf also verifies the report belongs to this school
-    await reportService.getReportForPdf(req.user.schoolId, req.params.id);
+    await reportService.assertReportAccess(req.user, req.params.id);
     return await sendPdf(res, req.params.id, `report-${req.params.id}.pdf`, true);
   } catch (error) {
     return handleError(res, error, "Download report PDF error", "Failed to download report PDF");
@@ -109,13 +120,7 @@ const regeneratePDF = async (req, res) => {
 // ─── PATCH /api/v1/reports/:id/remarks ───
 const updateRemarks = async (req, res) => {
   try {
-    const { teacherRemark, headRemark } = req.body;
-
-    if (teacherRemark === undefined && headRemark === undefined) {
-      throw createError("At least one remark field is required.", 400);
-    }
-
-    const report = await reportService.updateRemarks(req.user.schoolId, req.params.id, req.body);
+    const report = await reportService.updateRemarks(req.user, req.params.id, req.body);
     return sendSuccess(res, 200, "Remarks updated successfully.", report);
   } catch (error) {
     return handleError(res, error, "Update remarks error", "Failed to update remarks");
@@ -253,7 +258,7 @@ const getStudentReports = async (req, res) => {
       throw createError("Student ID is required.", 400);
     }
 
-    const reports = await reportService.getReports(req.user.schoolId, { studentId });
+    const reports = await reportService.getReports(req.user.schoolId, { studentId }, req.user);
     return sendSuccess(res, 200, "Student reports fetched successfully.", reports);
   } catch (error) {
     return handleError(res, error, "Get student reports error", "Failed to fetch student reports");
@@ -285,6 +290,7 @@ const generateBatch = async (req, res) => {
 };
 
 module.exports = {
+  myClasses,
   list,
   generate,
   getOne,

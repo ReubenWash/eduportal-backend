@@ -3,7 +3,7 @@ const router       = express.Router();
 const controller   = require("../controllers/report.controller");
 const authenticate = require("../middleware/auth");
 const tenantScope  = require("../middleware/tenant");
-const { isSchoolStaff, isSchoolAdmin } = require("../middleware/roles");
+const { authorize, isSchoolAdmin } = require("../middleware/roles");
 const validate     = require("../middleware/validate");
 const {
   generateReportValidator,
@@ -14,6 +14,16 @@ const {
 
 router.use(authenticate, tenantScope);
 
+// Who may do what:
+//  - canManageReports: admins + class teachers (class teachers only ever see their own class;
+//    that is enforced in report.service, not just here)
+//  - canViewReportFile: the above + students/parents, who can only open their own RELEASED report
+const canManageReports  = authorize("SUPER_ADMIN", "SCHOOL_ADMIN", "CLASS_TEACHER");
+const canViewReportFile = authorize("SUPER_ADMIN", "SCHOOL_ADMIN", "CLASS_TEACHER", "PARENT", "STUDENT");
+
+// ─── Classes the user can write remarks for (before /:id) ───
+router.get("/my-classes", canManageReports, controller.myClasses);
+
 // ─── Stats ───
 router.get("/stats", isSchoolAdmin, controller.getStats);
 
@@ -21,7 +31,7 @@ router.get("/stats", isSchoolAdmin, controller.getStats);
 router.get("/class/:classId/term/:termId", isSchoolAdmin, controller.downloadClassZIP);
 
 // ─── Student Reports ───
-router.get("/student/:studentId", isSchoolStaff, controller.getStudentReports);
+router.get("/student/:studentId", canManageReports, controller.getStudentReports);
 
 // ─── Bulk operations — also before /:id ───
 router.post("/generate", isSchoolAdmin, generateReportValidator, validate, controller.generate);
@@ -30,15 +40,15 @@ router.post("/release-bulk", isSchoolAdmin, bulkReleaseValidator, validate, cont
 router.post("/email", isSchoolAdmin, emailReportValidator, validate, controller.emailReports);
 
 // ─── List / filter ───
-router.get("/", isSchoolStaff, controller.list);
+router.get("/", canManageReports, controller.list);
 
 // ─── Single report operations ───
-router.get("/:id", isSchoolStaff, controller.getOne);
-router.get("/:id/preview", isSchoolStaff, controller.preview);
-router.get("/:id/pdf", isSchoolStaff, controller.downloadPDF);
+router.get("/:id", canManageReports, controller.getOne);
+router.get("/:id/preview", canViewReportFile, controller.preview);
+router.get("/:id/pdf", canViewReportFile, controller.downloadPDF);
 
 router.patch("/:id/remarks",
-  isSchoolStaff,
+  canManageReports,
   updateRemarksValidator,
   validate,
   controller.updateRemarks

@@ -23,23 +23,46 @@ const generateReportValidator = [
 ];
 
 // ─── Update Remarks Validator ───
+// Any of these can be sent on its own; an empty string clears the field.
+const REMARK_KEYS = ["teacherRemark", "headRemark", "attitude", "conduct", "interest", "promotedTo"];
+
 const updateRemarksValidator = [
   param("id")
     .notEmpty().withMessage("Report ID is required.")
     .isUUID().withMessage("Invalid report ID format."),
-  
+
   body("teacherRemark")
     .optional()
     .trim()
     .isLength({ max: 500 }).withMessage("Teacher remark cannot exceed 500 characters."),
-  
+
   body("headRemark")
     .optional()
     .trim()
     .isLength({ max: 500 }).withMessage("Head remark cannot exceed 500 characters."),
-  
+
+  body("attitude")
+    .optional()
+    .trim()
+    .isLength({ max: 80 }).withMessage("Attitude cannot exceed 80 characters."),
+
+  body("conduct")
+    .optional()
+    .trim()
+    .isLength({ max: 80 }).withMessage("Conduct cannot exceed 80 characters."),
+
+  body("interest")
+    .optional()
+    .trim()
+    .isLength({ max: 80 }).withMessage("Interest cannot exceed 80 characters."),
+
+  body("promotedTo")
+    .optional()
+    .trim()
+    .isLength({ max: 40 }).withMessage("Promoted to cannot exceed 40 characters."),
+
   body().custom((value) => {
-    if (!value.teacherRemark && !value.headRemark) {
+    if (!REMARK_KEYS.some((k) => value && value[k] !== undefined)) {
       throw new Error("At least one remark field is required.");
     }
     return true;

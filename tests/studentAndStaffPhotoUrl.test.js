@@ -53,6 +53,13 @@ test('report preview and download routes use a real PDF route instead of an HTML
   assert.match(reportServiceText, /await generateBulkPDFs\(reportIds\)|pdfGenerated|pdfFailed/);
 });
 
+test('report PDF layout matches the school terminal report format with a header and score table', () => {
+  const pdfServiceText = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'pdf.service.js'), 'utf8');
+
+  assert.match(pdfServiceText, /LEARNER'S TERMINAL REPORT|LEARNER\'S TERMINAL REPORT/i);
+  assert.match(pdfServiceText, /CLASS SCORE|EXAM SCORE|TOTAL SCORE|POSITION/i);
+});
+
 test('analytics trend endpoint accepts a termId request and resolves it to the correct academic year', () => {
   const analyticsServiceText = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'analytics.service.js'), 'utf8');
   const analyticsControllerText = fs.readFileSync(path.join(__dirname, '..', 'src', 'controllers', 'analytics.controller.js'), 'utf8');

@@ -1,13 +1,29 @@
 /**
- * EduTrack JHS — PDF Service (Using pdfkit)
- * Generates report card PDFs without Puppeteer
+ * EduTrack JHS — PDF Service (pdfkit)
  *
- * Key design:
- *  - buildReportPDF(reportId)  -> renders the PDF and returns the Buffer (no network, no Cloudinary)
- *  - generateReportPDF(reportId) -> buildReportPDF + upload to Cloudinary + save pdfUrl (used for email links)
- *  - Download / preview / ZIP use buildReportPDF directly, so they never depend on
- *    Cloudinary delivering the PDF back to the server (which returns 401 when
- *    "Allow delivery of PDF and ZIP files" is off).
+ * Report card layout follows the "Learner's Terminal Report" template:
+ *   header (student photo | school name, address, contact, motto | school logo)
+ *   banner, learner details, subject table (class score, exam score, total,
+ *   position, remarks), attendance / promoted to, attitude / conduct / interest,
+ *   class teacher's remarks, headteacher's signature.
+ *
+ * Data sources (nothing is hard-coded to one school):
+ *   School profile  -> name, logoUrl, address, phone (CONTACT), motto
+ *   school.reportConfig (Settings > Report Card design) -> primaryColor, title,
+ *       principalSignatureUrl, classTeacherSignatureUrl, footerText, show* flags
+ *   Score           -> caTotal (out of 30), examScore (scaled to 70), total, remark, position
+ *   Term            -> academicYear, termNumber, nextTermDate (NEXT TERM BEGINS), endDate (VACATION DATE)
+ *   Report          -> classPosition, daysPresent/totalSchoolDays, teacherRemark,
+ *                      attitude, conduct, interest, promotedTo
+ *   Class           -> level/section, class teacher name, number on roll (enrollment count)
+ *
+ * Optional reportConfig keys (no UI needed, they fall back to the school profile):
+ *   postalAddress, contact, motto, logoUrl,
+ *   classScoreWeight (default 30), examScoreWeight (default 70)  -> header labels only,
+ *   showAllSubjects (default true: list every subject of the class, blank if not scored yet)
+ *
+ * buildReportPDF(reportId)      -> renders and returns the PDF Buffer (no request to Cloudinary)
+ * generateReportPDF(reportId)   -> buildReportPDF + upload to Cloudinary + save pdfUrl (email links)
  */
 
 const PDFDocument = require('pdfkit');
@@ -16,272 +32,51 @@ const { prisma } = require("../config/db");
 const cloudinary = require("../config/cloudinary");
 const { createError } = require("../middleware/errorHandler");
 const logger = require("../config/logger");
+const { computeCATotal, computeExamContribution, computeTotal } = require("../utils/gradeEngine");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
 
 // ─────────────────────────────────────────────────────────────
-// ─── Build Report PDF (returns a Buffer) ───────────────────
+// ─── Fonts ─────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────
-
-const buildReportPDF = async (reportId) => {
-  logger.info(`Building PDF for report ${reportId} using pdfkit`);
-
-  const data = await fetchReportData(reportId);
-  const { school, student, term, scores, report } = data;
-  const theme = {
-    primaryColor: '#4F46E5',
-    secondaryColor: '#0F172A',
-    accentColor: '#E2E8F0',
-    headerTextColor: '#FFFFFF',
-    title: 'End of Term Report Card',
-    footerText: 'This is a computer-generated report card. No signature is required.',
-    motto: 'Excellence in Learning',
-    principalName: 'Head Teacher',
-    classTeacherName: 'Class Teacher',
-    principalSignatureUrl: null,
-    classTeacherSignatureUrl: null,
-    showLogo: true,
-    showSchoolName: true,
-    showStudentPhoto: true,
-    showPrincipalSignature: true,
-    showClassTeacherSignature: true,
-    ...(school?.reportConfig || {})
-  };
-
-  const doc = new PDFDocument({ margin: 50, size: 'A4' });
-
-  // Collect the output safely. The promise is created BEFORE any drawing,
-  // so the 'end' event can never be missed.
-  const buffers = [];
-  const pdfDone = new Promise((resolve, reject) => {
-    doc.on('data', (chunk) => buffers.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(buffers)));
-    doc.on('error', reject);
-  });
-
-  const headerHeight = 100;
-  doc.rect(0, 0, doc.page.width, headerHeight).fill(theme.primaryColor || '#4F46E5');
-
-  let headerLogoBuffer = null;
-  if (theme.showLogo !== false && school?.logoUrl) {
-    try {
-      headerLogoBuffer = await loadRemoteImage(school.logoUrl);
-    } catch (error) {
-      logger.warn(`Could not load report logo for school ${school?.id}: ${error.message}`);
-    }
-  }
-
-  if (headerLogoBuffer && headerLogoBuffer.length > 0) {
-    try {
-      doc.image(headerLogoBuffer, 50, 24, { fit: [52, 52] });
-    } catch (error) {
-      logger.warn(`Could not embed school logo in PDF: ${error.message}`);
-    }
-  }
-
-  const displayName = theme.showSchoolName === false ? (theme.title || 'Report Card') : (school.name || 'EduPortal');
-  doc.fillColor(theme.headerTextColor || '#FFFFFF')
-     .fontSize(24)
-     .font('Helvetica-Bold')
-     .text(displayName, 118, 25);
-
-  doc.fontSize(11)
-     .font('Helvetica')
-     .text(school.motto || 'Excellence in Learning', 118, 58, { width: 260 });
-
-  const termLabel = `${term.academicYear} — ${term.termNumber.replace('TERM', 'Term ')}`;
-  doc.roundedRect(430, 25, 115, 30, 8).fill(theme.secondaryColor || '#0F172A');
-  doc.fillColor('#FFFFFF')
-     .fontSize(9)
-     .font('Helvetica-Bold')
-     .text(termLabel, 438, 34, { width: 100, align: 'center' });
-
-  let yPos = 120;
-
-  const studentPhotoBuffer = theme.showStudentPhoto !== false && student?.photoUrl ? await loadRemoteImage(student.photoUrl) : null;
-  doc.roundedRect(50, yPos, 495, 130, 18).fillAndStroke('#FFFFFF', '#E5E7EB');
-
-  if (studentPhotoBuffer && studentPhotoBuffer.length > 0) {
-    try {
-      doc.image(studentPhotoBuffer, 68, yPos + 18, { fit: [74, 74], align: 'left' });
-    } catch (error) {
-      logger.warn(`Could not embed student photo in PDF: ${error.message}`);
-    }
-  }
-
-  doc.fillColor('#111827')
-     .fontSize(18)
-     .font('Helvetica-Bold')
-     .text(`${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Student', 158, yPos + 18);
-
-  doc.fillColor('#4B5563')
-     .fontSize(10)
-     .font('Helvetica')
-     .text('Student ID', 158, yPos + 50)
-     .text('Class', 158, yPos + 66)
-     .text('Age', 158, yPos + 82)
-     .text('Gender', 158, yPos + 98);
-
-  doc.fillColor('#111827')
-     .fontSize(10)
-     .font('Helvetica-Bold')
-     .text(student.studentNumber || 'N/A', 230, yPos + 50)
-     .text(report.enrollment?.class ? `${report.enrollment.class.level} ${report.enrollment.class.section}` : 'N/A', 230, yPos + 66)
-     .text(student.dateOfBirth ? `${Math.floor((Date.now() - new Date(student.dateOfBirth).getTime()) / 31557600000)} yrs` : 'N/A', 230, yPos + 82)
-     .text(student.gender || 'N/A', 230, yPos + 98);
-
-  const summaryCards = [
-    { label: 'Average', value: `${report.aggregate || 0}%` },
-    { label: 'Pass Rate', value: `${scores.length ? Math.round((scores.filter(s => (s.total || 0) >= 50).length / scores.length) * 100) : 0}%` },
-    { label: 'Present', value: String(report.daysPresent || 0) },
-    { label: 'Absent', value: String(report.daysAbsent || 0) },
-  ];
-
-  summaryCards.forEach((item, index) => {
-    const cardX = 370 + (index % 2) * 80;
-    const cardY = yPos + 18 + Math.floor(index / 2) * 36;
-    doc.roundedRect(cardX, cardY, 72, 26, 8).fill('#F3F4F6');
-    doc.fillColor('#6B7280').fontSize(8).font('Helvetica').text(item.label, cardX + 8, cardY + 6);
-    doc.fillColor(theme.primaryColor || '#4F46E5').fontSize(11).font('Helvetica-Bold').text(item.value, cardX + 8, cardY + 14);
-  });
-
-  yPos += 150;
-
-  doc.fillColor('#111827').fontSize(15).font('Helvetica-Bold').text('Academic Performance', 50, yPos);
-  yPos += 18;
-
-  const headers = ['Subject', 'CA1', 'CA2', 'CA3', 'Exam', 'Total', 'Grade'];
-  const colWidths = [92, 44, 44, 44, 46, 46, 46];
-  let xPos = 50;
-
-  doc.roundedRect(50, yPos, 495, 22, 8).fill(theme.primaryColor || '#4F46E5');
-  doc.fillColor('#FFFFFF').fontSize(8.5).font('Helvetica-Bold');
-  headers.forEach((header, i) => {
-    const width = colWidths[i];
-    doc.text(header, xPos + 4, yPos + 6, { width, align: 'center' });
-    xPos += width;
-  });
-
-  yPos += 26;
-
-  scores.forEach((score, index) => {
-    const total = (score.ca1 || 0) + (score.ca2 || 0) + (score.ca3 || 0) + (score.examScore || 0);
-    const grade = calculateGrade(total);
-
-    if (index % 2 === 0) {
-      doc.roundedRect(50, yPos, 495, 22, 6).fill('#F9FAFB');
-    }
-
-    doc.fillColor('#111827').fontSize(8).font('Helvetica');
-    xPos = 50;
-    const values = [
-      score.subject?.name || 'Subject',
-      score.ca1 ?? '-',
-      score.ca2 ?? '-',
-      score.ca3 ?? '-',
-      score.examScore ?? '-',
-      total || '-',
-      grade || '-'
-    ];
-
-    values.forEach((value, i) => {
-      const width = colWidths[i];
-      const textX = xPos + 4;
-      if (i === 0) {
-        doc.text(String(value), textX, yPos + 7, { width: width - 8 });
-      } else {
-        doc.text(String(value), textX, yPos + 7, { width, align: 'center' });
-      }
-      xPos += width;
-    });
-
-    yPos += 22;
-  });
-
-  yPos += 12;
-
-  doc.fillColor('#111827').fontSize(14).font('Helvetica-Bold').text('Teacher Remarks', 50, yPos);
-  yPos += 18;
-
-  const remarkBoxY = yPos;
-  if (theme.showClassTeacherSignature !== false) {
-    doc.roundedRect(50, remarkBoxY, 220, 60, 10).fill('#F8FAFC');
-    doc.fillColor('#374151').fontSize(9).font('Helvetica-Bold').text(theme.classTeacherName || 'Class Teacher', 64, remarkBoxY + 10);
-
-    const classTeacherSignature = theme.classTeacherSignatureUrl ? await loadRemoteImage(theme.classTeacherSignatureUrl) : null;
-    if (classTeacherSignature && classTeacherSignature.length > 0) {
-      try {
-        doc.image(classTeacherSignature, 64, remarkBoxY + 24, { fit: [90, 28] });
-      } catch (error) {
-        logger.warn(`Could not embed class teacher signature in PDF: ${error.message}`);
-      }
-    } else {
-      doc.fillColor('#111827').fontSize(9).font('Helvetica').text(report.teacherRemark || 'Excellent performance and strong commitment to learning.', 64, remarkBoxY + 26, { width: 190, height: 24 });
-    }
-  }
-
-  if (theme.showPrincipalSignature !== false) {
-    doc.roundedRect(280, remarkBoxY, 265, 60, 10).fill('#F8FAFC');
-    doc.fillColor('#374151').fontSize(9).font('Helvetica-Bold').text(theme.principalName || 'Head Teacher', 294, remarkBoxY + 10);
-
-    const principalSignature = theme.principalSignatureUrl ? await loadRemoteImage(theme.principalSignatureUrl) : null;
-    if (principalSignature && principalSignature.length > 0) {
-      try {
-        doc.image(principalSignature, 294, remarkBoxY + 22, { fit: [110, 28] });
-      } catch (error) {
-        logger.warn(`Could not embed principal signature in PDF: ${error.message}`);
-      }
-    } else {
-      doc.fillColor('#111827').fontSize(9).font('Helvetica').text(report.headRemark || 'Progress is satisfactory and commendable.', 294, remarkBoxY + 26, { width: 235, height: 24 });
-    }
-  }
-
-  yPos += 82;
-
-  doc.fillColor('#374151').fontSize(9).font('Helvetica-Bold').text('Attendance Summary', 50, yPos);
-  doc.fillColor('#111827').fontSize(9).font('Helvetica').text(`Present: ${report.daysPresent || 0}   Absent: ${report.daysAbsent || 0}   Late: ${report.daysLate || 0}`, 180, yPos);
-
-  const footerY = doc.page.height - 60;
-  doc.moveTo(50, footerY).lineTo(doc.page.width - 50, footerY).stroke(theme.accentColor || '#E5E7EB');
-  doc.fillColor(theme.secondaryColor || '#0F172A').fontSize(8).font('Helvetica').text(theme.footerText || 'This is a computer-generated report card. No signature is required.', 50, footerY + 15, { align: 'center' });
-  doc.text(`Generated on ${new Date().toLocaleDateString('en-GB')}`, 50, footerY + 30, { align: 'center' });
-
-  doc.end();
-  const pdfBuffer = await pdfDone;
-
-  return { pdfBuffer, student, term, report };
+// The built-in PDF fonts (Helvetica) cannot draw Ghanaian letters such as Ɛ ɛ Ɔ ɔ
+// (e.g. "YƐYƐ ADEHYƐ" in a school motto). Liberation Sans has the same metrics as
+// Helvetica and includes them. The two .ttf files live in src/assets/fonts/.
+// If they are missing, the service falls back to Helvetica.
+const FONT_DIR = path.join(__dirname, "..", "assets", "fonts");
+const BOLD = 'RC-Bold';
+const REGULAR = 'RC-Regular';
+const fontFile = (file, fallback) => {
+  const p = path.join(FONT_DIR, file);
+  return fs.existsSync(p) ? p : fallback;
 };
 
 // ─────────────────────────────────────────────────────────────
-// ─── Generate + upload (used for stored link / emails) ─────
+// ─── Small helpers ─────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────
 
-const generateReportPDF = async (reportId) => {
-  const { pdfBuffer, student, term } = await buildReportPDF(reportId);
+const TERM_WORDS = { TERM1: 'ONE', TERM2: 'TWO', TERM3: 'THREE' };
 
-  const publicId = `report_${student.studentNumber}_${term.academicYear.replace("/", "-")}_${term.termNumber}`;
-  const pdfUrl = await uploadPDFToCloudinary(pdfBuffer, publicId);
+const hasVal = (v) => v !== null && v !== undefined;
 
-  await prisma.report.update({
-    where: { id: reportId },
-    data: { pdfUrl },
-  });
+const num = (n) => (Number.isInteger(n) ? String(n) : String(Number(Number(n).toFixed(1))));
 
-  logger.info(`PDF generated and uploaded for report ${reportId}: ${pdfUrl}`);
-  return pdfUrl;
+const ordinal = (n) => {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`.toUpperCase();
 };
 
-// ─── Helper Functions ───
-
-const calculateGrade = (score) => {
-  if (score >= 80) return 'A';
-  if (score >= 70) return 'B';
-  if (score >= 60) return 'C';
-  if (score >= 50) return 'D';
-  if (score >= 40) return 'E';
-  return 'F';
+const fmtDate = (v) => {
+  if (!v) return '';
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('en-GB');
 };
+
+// ─────────────────────────────────────────────────────────────
+// ─── Data loading ──────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
 
 const fetchReportData = async (reportId) => {
   const report = await prisma.report.findUnique({
@@ -291,7 +86,10 @@ const fetchReportData = async (reportId) => {
       term: {
         include: {
           school: {
-            select: { id: true, name: true, logoUrl: true, motto: true, address: true, reportConfig: true },
+            select: {
+              id: true, name: true, logoUrl: true, motto: true,
+              address: true, phone: true, reportConfig: true,
+            },
           },
         },
       },
@@ -302,28 +100,99 @@ const fetchReportData = async (reportId) => {
 
   const scores = await prisma.score.findMany({
     where: { studentId: report.studentId, termId: report.termId },
-    include: { subject: { select: { name: true, code: true, type: true } } },
+    include: { subject: { select: { id: true, name: true, code: true, type: true } } },
     orderBy: [{ subject: { type: "asc" } }, { subject: { name: "asc" } }],
   });
 
   const enrollment = await prisma.enrollment.findFirst({
     where: { studentId: report.studentId, termId: report.termId },
-    include: { class: { select: { level: true, section: true } } },
+    include: {
+      class: {
+        select: {
+          level: true,
+          section: true,
+          classTeacher: { select: { firstName: true, lastName: true } },
+        },
+      },
+    },
   });
+
+  const numberOnRoll = enrollment?.classId
+    ? await prisma.enrollment.count({ where: { classId: enrollment.classId, termId: report.termId } })
+    : null;
 
   return {
     school: report.term.school,
     student: report.student,
     term: report.term,
     scores,
-    report: { ...report, enrollment },
+    report: { ...report, enrollment, numberOnRoll },
   };
 };
 
-// Images (logo, photos, signatures) are uploaded as resource_type "image",
-// which Cloudinary delivers normally, so this fetch is not affected by the PDF restriction.
-const loadRemoteImage = async (url) => {
+// One row per subject of the class. Subjects with no score yet stay as blank rows,
+// like the paper template. Values come from the stored Score record so the PDF always
+// matches the Scores page (same grade engine, same subject positions).
+const buildSubjectRows = async ({ scores, report }, theme) => {
+  const scoreBySubject = new Map(scores.map((s) => [s.subject?.id, s]));
+
+  let listed = [];
+  const classId = report.enrollment?.classId;
+  if (theme.showAllSubjects !== false && classId) {
+    try {
+      const classSubjects = await prisma.classSubject.findMany({
+        where: { classId },
+        include: { subject: { select: { id: true, name: true, type: true } } },
+      });
+      listed = classSubjects
+        .map((cs) => cs.subject)
+        .sort((a, b) => String(a.type).localeCompare(String(b.type)) || a.name.localeCompare(b.name));
+    } catch (error) {
+      logger.warn(`Could not load class subjects for report card: ${error.message}`);
+    }
+  }
+
+  const ordered = listed.map((s) => ({ id: s.id, name: s.name }));
+  for (const s of scores) {
+    if (!ordered.some((o) => o.id === s.subject?.id)) {
+      ordered.push({ id: s.subject?.id, name: s.subject?.name });
+    }
+  }
+
+  return ordered.map((subj) => {
+    const s = scoreBySubject.get(subj.id);
+    const scored = s && ([s.ca1, s.ca2, s.ca3, s.examScore, s.total].some(hasVal));
+    if (!scored) {
+      return { name: subj.name, ca: '', exam: '', total: '', position: '', remark: '' };
+    }
+    const ca = hasVal(s.caTotal) ? s.caTotal : computeCATotal(s.ca1, s.ca2, s.ca3);
+    const exam = computeExamContribution(s.examScore);
+    const total = hasVal(s.total) ? s.total : computeTotal(ca, exam);
+    return {
+      name: subj.name,
+      ca: num(ca),
+      exam: num(exam),
+      total: num(total),
+      position: s.position ? ordinal(s.position) : '',
+      remark: s.remark ? String(s.remark).toUpperCase() : '',
+    };
+  });
+};
+
+// Logos and signatures are the same for every report of a school, so they are cached
+// briefly (a class ZIP would otherwise download the same logo dozens of times).
+const imageCache = new Map();
+const IMAGE_TTL_MS = 10 * 60 * 1000;
+
+// Images (logo, photos, signatures) are "image" resources on Cloudinary, which are
+// delivered normally, so this is not affected by the PDF/ZIP delivery restriction.
+const loadRemoteImage = async (url, { cache = false } = {}) => {
   if (!url) return null;
+
+  if (cache) {
+    const hit = imageCache.get(url);
+    if (hit && Date.now() - hit.at < IMAGE_TTL_MS) return hit.buf;
+  }
 
   try {
     const response = await axios.get(url, {
@@ -332,12 +201,306 @@ const loadRemoteImage = async (url) => {
       validateStatus: (status) => status >= 200 && status < 400,
     });
 
-    return Buffer.from(response.data);
+    const buf = Buffer.from(response.data);
+    if (cache) imageCache.set(url, { buf, at: Date.now() });
+    return buf;
   } catch (error) {
     logger.warn(`Failed to fetch remote image ${url}: ${error.message}`);
     return null;
   }
 };
+
+// ─────────────────────────────────────────────────────────────
+// ─── Build Report PDF (returns a Buffer) ───────────────────
+// ─────────────────────────────────────────────────────────────
+
+const buildReportPDF = async (reportId) => {
+  logger.info(`Building PDF for report ${reportId} using pdfkit`);
+
+  const data = await fetchReportData(reportId);
+  const { school, student, term, report } = data;
+
+  const theme = {
+    primaryColor: '#1E2A78',
+    title: "LEARNER'S TERMINAL REPORT",
+    postalAddress: null,
+    contact: null,
+    motto: null,
+    logoUrl: null,
+    classScoreWeight: 30,
+    examScoreWeight: 70,
+    showAllSubjects: true,
+    showLogo: true,
+    showSchoolName: true,
+    showStudentPhoto: true,
+    showPrincipalSignature: true,
+    showClassTeacherSignature: true,
+    principalSignatureUrl: null,
+    classTeacherSignatureUrl: null,
+    footerText: '',
+    ...(school?.reportConfig || {}),
+  };
+
+  const rows = await buildSubjectRows(data, theme);
+
+  // bottom margin 0 so pdfkit never adds an accidental blank page near the bottom edge
+  const doc = new PDFDocument({ size: 'A4', margins: { top: 30, bottom: 0, left: 30, right: 30 } });
+  doc.registerFont(REGULAR, fontFile('LiberationSans-Regular.ttf', 'Helvetica'));
+  doc.registerFont(BOLD, fontFile('LiberationSans-Bold.ttf', 'Helvetica-Bold'));
+
+  // Collect output safely: the promise exists before any drawing happens.
+  const buffers = [];
+  const pdfDone = new Promise((resolve, reject) => {
+    doc.on('data', (chunk) => buffers.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(buffers)));
+    doc.on('error', reject);
+  });
+
+  const M = 30, W = 535, R = M + W;
+  const NAVY = theme.primaryColor || '#1E2A78';
+  const BLACK = '#000000';
+  const PAGE_H = doc.page.height;
+
+  const hline = (x1, x2, y, color = BLACK) => {
+    doc.strokeColor(color).lineWidth(0.6).moveTo(x1, y).lineTo(x2, y).stroke();
+  };
+  const vline = (x, y1, y2, color = BLACK) => {
+    doc.strokeColor(color).lineWidth(0.6).moveTo(x, y1).lineTo(x, y2).stroke();
+  };
+
+  // ── Header: student photo | school details | school logo ──
+  const PHOTO_W = 70, PHOTO_H = 82;
+
+  const studentPhoto = theme.showStudentPhoto !== false && student?.photoUrl
+    ? await loadRemoteImage(student.photoUrl) : null;
+  const logoUrl = theme.logoUrl || school?.logoUrl;
+  const logo = theme.showLogo !== false && logoUrl
+    ? await loadRemoteImage(logoUrl, { cache: true }) : null;
+
+  doc.strokeColor(BLACK).lineWidth(0.6).rect(M, M, PHOTO_W, PHOTO_H).stroke();
+  if (studentPhoto && studentPhoto.length > 0) {
+    try {
+      doc.image(studentPhoto, M + 1, M + 1, { fit: [PHOTO_W - 2, PHOTO_H - 2], align: 'center', valign: 'center' });
+    } catch (error) {
+      logger.warn(`Could not embed student photo in PDF: ${error.message}`);
+    }
+  }
+
+  if (logo && logo.length > 0) {
+    try {
+      doc.image(logo, R - PHOTO_W, M, { fit: [PHOTO_W, PHOTO_H], align: 'center', valign: 'center' });
+    } catch (error) {
+      logger.warn(`Could not embed school logo in PDF: ${error.message}`);
+    }
+  }
+
+  const centerX = M + PHOTO_W + 12;
+  const centerW = W - 2 * (PHOTO_W + 12);
+  let cy = M + 2;
+
+  if (theme.showSchoolName !== false) {
+    const schoolName = String(school?.name || 'SCHOOL NAME').toUpperCase();
+    let nameSize = 22;
+    doc.font(BOLD);
+    while (nameSize > 11 && doc.fontSize(nameSize).widthOfString(schoolName) > centerW) nameSize -= 1;
+    doc.fillColor(NAVY).fontSize(nameSize).text(schoolName, centerX, cy, { width: centerW, align: 'center' });
+    cy += doc.heightOfString(schoolName, { width: centerW }) + 4;
+  }
+
+  const address = String(theme.postalAddress || school?.address || '').toUpperCase();
+  const contactValue = theme.contact || school?.phone;
+  const contact = contactValue ? `CONTACT: ${contactValue}` : '';
+  const mottoValue = school?.motto || theme.motto;
+  const motto = mottoValue ? `MOTTO: ${String(mottoValue).toUpperCase()}` : '';
+
+  [address, contact, motto].filter(Boolean).forEach((line, i) => {
+    doc.font(BOLD).fontSize(i === 0 ? 10 : 9).fillColor(NAVY)
+       .text(line, centerX, cy, { width: centerW, align: 'center' });
+    cy += doc.heightOfString(line, { width: centerW }) + 3;
+  });
+
+  // ── Banner ──
+  const bannerY = Math.max(cy, M + PHOTO_H) + 8;
+  doc.roundedRect(centerX + 10, bannerY, centerW - 20, 24, 4).fill(NAVY);
+  doc.fillColor('#FFFFFF').font(BOLD).fontSize(11)
+     .text(String(theme.title).toUpperCase(), centerX + 10, bannerY + 7, { width: centerW - 20, align: 'center' });
+
+  // ── Learner details ──
+  let y = bannerY + 24 + 14;
+  const COL_W = 262;
+  const LEFT_X = M;
+  const RIGHT_X = R - COL_W;
+
+  const infoField = (label, value, x, fy) => {
+    const labelW = 112;
+    doc.font(BOLD).fontSize(9).fillColor(BLACK).text(label, x, fy, { width: labelW });
+    doc.text(String(value ?? ''), x + labelW, fy, { width: COL_W - labelW, align: 'center', height: 11, ellipsis: true });
+    hline(x + labelW, x + COL_W, fy + 12);
+  };
+
+  const fullName = `${student.lastName || ''} ${student.firstName || ''}${student.otherNames ? ' ' + student.otherNames : ''}`
+    .trim().toUpperCase();
+  const className = report.enrollment?.class
+    ? `${String(report.enrollment.class.level).replace(/^JHS(\d)$/, 'JHS $1')} ${report.enrollment.class.section}`.trim().toUpperCase()
+    : '';
+  const termWord = TERM_WORDS[term.termNumber] || String(term.termNumber || '').replace('TERM', '');
+
+  infoField('NAME:', fullName, LEFT_X, y);
+  infoField('CLASS:', className, RIGHT_X, y);
+  y += 22;
+  infoField('NUMBER ON ROLL:', report.numberOnRoll ?? '', LEFT_X, y);
+  infoField('POSITION IN CLASS:', report.classPosition ? ordinal(report.classPosition) : '', RIGHT_X, y);
+  y += 22;
+  infoField('ACADEMIC YEAR:', term.academicYear, LEFT_X, y);
+  infoField('TERM:', termWord, RIGHT_X, y);
+  y += 22;
+  infoField('NEXT TERM BEGINS:', fmtDate(term.nextTermDate), LEFT_X, y);
+  infoField('VACATION DATE:', fmtDate(term.endDate), RIGHT_X, y);
+  y += 22;
+
+  // ── Subject table ──
+  const HEAD_H = 34;
+  const cols = [
+    { w: 150, label: 'SUBJECT', align: 'left' },
+    { w: 55,  label: `CLASS\nSCORE\n(${theme.classScoreWeight}%)`, align: 'center' },
+    { w: 55,  label: `EXAM\nSCORE\n(${theme.examScoreWeight}%)`, align: 'center' },
+    { w: 60,  label: 'TOTAL\nSCORE\n(100%)', align: 'center' },
+    { w: 65,  label: 'POSITION', align: 'center' },
+    { w: 150, label: 'REMARKS', align: 'center' },
+  ];
+
+  const tableTop = y + 6;
+  doc.rect(M, tableTop, W, HEAD_H).fill(NAVY);
+  doc.font(BOLD).fontSize(7.5).fillColor('#FFFFFF');
+  let cx = M;
+  cols.forEach((c, i) => {
+    const h = doc.heightOfString(c.label, { width: c.w - 8 });
+    doc.text(c.label, cx + 4, tableTop + (HEAD_H - h) / 2, { width: c.w - 8, align: c.align === 'left' ? 'left' : 'center' });
+    cx += c.w;
+    if (i < cols.length - 1) vline(cx, tableTop, tableTop + HEAD_H, '#FFFFFF');
+  });
+
+  const bodyTop = tableTop + HEAD_H;
+  const BOTTOM_BLOCK_H = 178;
+  const room = PAGE_H - M - BOTTOM_BLOCK_H - bodyTop;
+  const rowH = Math.max(16, Math.min(26, Math.floor(room / Math.max(rows.length, 1))));
+
+  rows.forEach((row, i) => {
+    const rowY = bodyTop + i * rowH;
+    const values = [row.name ? String(row.name).toUpperCase() : '', row.ca, row.exam, row.total, row.position, row.remark];
+    doc.font(BOLD).fontSize(9).fillColor(BLACK);
+    let x = M;
+    cols.forEach((c, j) => {
+      doc.text(String(values[j] ?? ''), x + 4, rowY + (rowH - 10) / 2, {
+        width: c.w - 8, align: c.align, height: 11, ellipsis: true,
+      });
+      x += c.w;
+    });
+    hline(M, R, rowY + rowH);
+  });
+
+  const bodyEnd = bodyTop + rows.length * rowH;
+  let vx = M;
+  cols.forEach((c, i) => {
+    vx += c.w;
+    if (i < cols.length - 1) vline(vx, bodyTop, bodyEnd);
+  });
+  doc.strokeColor(BLACK).lineWidth(0.6).rect(M, tableTop, W, bodyEnd - tableTop).stroke();
+
+  // ── Bottom block (attendance, attitude, conduct, interest, remarks, signature) ──
+  let blockTop = bodyEnd + 14;
+  if (blockTop + BOTTOM_BLOCK_H > PAGE_H - M) {
+    doc.addPage();
+    blockTop = M + 10;
+  }
+
+  const headSignature = theme.showPrincipalSignature !== false && theme.principalSignatureUrl
+    ? await loadRemoteImage(theme.principalSignatureUrl, { cache: true }) : null;
+  const teacherSignature = theme.showClassTeacherSignature !== false && theme.classTeacherSignatureUrl
+    ? await loadRemoteImage(theme.classTeacherSignatureUrl, { cache: true }) : null;
+
+  const lineValue = (value, x, ly, w) => {
+    doc.font(BOLD).fontSize(9).fillColor(BLACK)
+       .text(String(value ?? ''), x, ly, { width: w, align: 'center', height: 11, ellipsis: true });
+    hline(x, x + w, ly + 12);
+  };
+  const label = (text, x, ly) => {
+    doc.font(BOLD).fontSize(9).fillColor(BLACK).text(text, x, ly);
+  };
+
+  let by = blockTop + 10;
+
+  label('ATTENDANCE:', M + 10, by);
+  lineValue(hasVal(report.daysPresent) ? report.daysPresent : '', M + 84, by, 50);
+  label('OUT OF', M + 142, by);
+  lineValue(report.totalSchoolDays || '', M + 182, by, 50);
+  label('PROMOTED TO:', M + 250, by);
+  lineValue(String(report.promotedTo || '').toUpperCase(), M + 330, by, R - 10 - (M + 330));
+  by += 26;
+
+  const shortX = M + 84;
+  [['ATTITUDE:', report.attitude], ['CONDUCT:', report.conduct], ['INTEREST:', report.interest]].forEach(([l, v]) => {
+    label(l, M + 10, by);
+    lineValue(v || '', shortX, by, R - 10 - shortX);
+    by += 26;
+  });
+
+  doc.font(BOLD).fontSize(9);
+  const longX = M + 10 + Math.max(
+    doc.widthOfString("CLASS TEACHER'S REMARKS:"),
+    doc.widthOfString("HEADTEACHER'S SIGNATURE:")
+  ) + 8;
+
+  // Class teacher's remarks (up to two lines), teacher name + optional signature on the right
+  const teacher = report.enrollment?.class?.classTeacher;
+  const teacherName = teacher ? `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() : '';
+  const sigW = teacherSignature ? 80 : 0;
+
+  label("CLASS TEACHER'S REMARKS:", M + 10, by);
+  doc.font(REGULAR).fontSize(9).fillColor(BLACK)
+     .text(String(report.teacherRemark || ''), longX, by, { width: R - 10 - longX - sigW, height: 22, ellipsis: true });
+  if (teacherSignature && teacherSignature.length > 0) {
+    try {
+      doc.image(teacherSignature, R - 10 - 74, by - 6, { fit: [74, 26] });
+    } catch (error) {
+      logger.warn(`Could not embed class teacher signature in PDF: ${error.message}`);
+    }
+  }
+  hline(longX, R - 10, by + 24);
+  if (teacherName) {
+    doc.font(REGULAR).fontSize(7.5).fillColor('#374151')
+       .text(`Class Teacher: ${teacherName}`, longX, by + 27, { width: R - 10 - longX, align: 'right' });
+  }
+  by += 38;
+
+  // Headteacher's signature
+  label("HEADTEACHER'S SIGNATURE:", M + 10, by + 8);
+  if (headSignature && headSignature.length > 0) {
+    try {
+      doc.image(headSignature, longX + 10, by - 4, { fit: [110, 28] });
+    } catch (error) {
+      logger.warn(`Could not embed headteacher signature in PDF: ${error.message}`);
+    }
+  }
+  hline(longX, R - 10, by + 24);
+  by += 34;
+
+  doc.strokeColor(BLACK).lineWidth(0.6).rect(M, blockTop, W, by - blockTop).stroke();
+
+  if (theme.footerText) {
+    doc.font(REGULAR).fontSize(7.5).fillColor('#374151')
+       .text(String(theme.footerText), M, Math.min(by + 10, PAGE_H - 28), { width: W, align: 'center' });
+  }
+
+  doc.end();
+  const pdfBuffer = await pdfDone;
+
+  return { pdfBuffer, student, term, report };
+};
+
+// ─────────────────────────────────────────────────────────────
+// ─── Generate + upload (used for stored link / emails) ─────
+// ─────────────────────────────────────────────────────────────
 
 const uploadPDFToCloudinary = (buffer, publicId) => {
   return new Promise((resolve, reject) => {
@@ -358,8 +521,22 @@ const uploadPDFToCloudinary = (buffer, publicId) => {
   });
 };
 
+const generateReportPDF = async (reportId) => {
+  const { pdfBuffer, student, term } = await buildReportPDF(reportId);
+
+  const publicId = `report_${student.studentNumber}_${term.academicYear.replace("/", "-")}_${term.termNumber}`;
+  const pdfUrl = await uploadPDFToCloudinary(pdfBuffer, publicId);
+
+  await prisma.report.update({
+    where: { id: reportId },
+    data: { pdfUrl },
+  });
+
+  logger.info(`PDF generated and uploaded for report ${reportId}: ${pdfUrl}`);
+  return pdfUrl;
+};
+
 // ─── Bulk PDF Generation ───
-// NOTE: results use `status: "success" | "failed"`
 const generateBulkPDFs = async (reportIds) => {
   let success = 0, failed = 0;
   const results = [];
@@ -430,11 +607,11 @@ const generateClassZIP = async (schoolId, classId, termId) => {
   return zipPath;
 };
 
-// ─── Preview Report HTML ───
+// ─── Preview Report HTML (simple fallback, not used by the PDF routes) ───
 const previewReportHTML = async (reportId) => {
-  // For pdfkit, we return a simple HTML preview
   const data = await fetchReportData(reportId);
-  const { school, student, term, scores, report } = data;
+  const { school, student, term, report } = data;
+  const rows = await buildSubjectRows(data, { ...(school?.reportConfig || {}) });
 
   return `
     <!DOCTYPE html>
@@ -444,63 +621,28 @@ const previewReportHTML = async (reportId) => {
       <style>
         body { font-family: Arial, sans-serif; margin: 40px; }
         .header { text-align: center; margin-bottom: 30px; }
-        .student-info { margin-bottom: 20px; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .summary { margin-top: 20px; }
-        .remarks { margin-top: 20px; }
+        th, td { border: 1px solid #333; padding: 8px; text-align: center; }
+        td:first-child, th:first-child { text-align: left; }
+        th { background-color: #1E2A78; color: #fff; }
       </style>
     </head>
     <body>
       <div class="header">
-        <h1>${school?.name || "EduPortal"}</h1>
-        <h2>End of Term Report Card</h2>
+        <h1>${school?.name || "School"}</h1>
+        <h2>Learner's Terminal Report</h2>
         <p><strong>${term.academicYear} — ${term.termNumber.replace("TERM", "Term ")}</strong></p>
       </div>
-
-      <div class="student-info">
-        <p><strong>Student:</strong> ${student.firstName} ${student.lastName}</p>
-        <p><strong>Student ID:</strong> ${student.studentNumber}</p>
-        <p><strong>Class:</strong> ${report.enrollment?.class ? `${report.enrollment.class.level} ${report.enrollment.class.section}` : 'N/A'}</p>
-      </div>
-
+      <p><strong>Name:</strong> ${student.lastName} ${student.firstName}</p>
+      <p><strong>Class:</strong> ${report.enrollment?.class ? `${report.enrollment.class.level} ${report.enrollment.class.section}` : 'N/A'}</p>
       <table>
-        <thead>
-          <tr>
-            <th>Subject</th>
-            <th>CA1</th>
-            <th>CA2</th>
-            <th>CA3</th>
-            <th>Exam</th>
-            <th>Total</th>
-            <th>Grade</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Subject</th><th>Class Score</th><th>Exam Score</th><th>Total</th><th>Position</th><th>Remarks</th></tr></thead>
         <tbody>
-          ${scores.map(s => `
-            <tr>
-              <td>${s.subject.name}</td>
-              <td>${s.ca1 || '-'}</td>
-              <td>${s.ca2 || '-'}</td>
-              <td>${s.ca3 || '-'}</td>
-              <td>${s.examScore || '-'}</td>
-              <td>${s.total || '-'}</td>
-              <td>${s.grade || '-'}</td>
-            </tr>
-          `).join('')}
+          ${rows.map(r => `<tr><td>${r.name}</td><td>${r.ca}</td><td>${r.exam}</td><td>${r.total}</td><td>${r.position}</td><td>${r.remark}</td></tr>`).join('')}
         </tbody>
       </table>
-
-      <div class="summary">
-        <p><strong>Average:</strong> ${scores.length > 0 ? Math.round(scores.reduce((sum, s) => sum + (s.total || 0), 0) / scores.length) : 0}%</p>
-        <p><strong>Attendance:</strong> Present: ${report.daysPresent || 0}, Absent: ${report.daysAbsent || 0}, Late: ${report.daysLate || 0}</p>
-      </div>
-
-      <div class="remarks">
-        ${report.teacherRemark ? `<p><strong>Class Teacher:</strong> ${report.teacherRemark}</p>` : ''}
-        ${report.headRemark ? `<p><strong>Head Teacher:</strong> ${report.headRemark}</p>` : ''}
-      </div>
+      <p><strong>Attendance:</strong> ${report.daysPresent || 0} out of ${report.totalSchoolDays || 0}</p>
+      ${report.teacherRemark ? `<p><strong>Class Teacher's Remarks:</strong> ${report.teacherRemark}</p>` : ''}
     </body>
     </html>
   `;
