@@ -6,6 +6,19 @@ const { generateStudentNumber } = require("../utils/generateId");
 const { createError } = require("../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 const { sendWelcomeGuardianEmail } = require("./email.service");
+const ExcelJS = require("exceljs");
+const streamifier = require("streamifier");
+const cloudinary = require("../config/cloudinary");
+const { parseStudentSheet, checkStudentRows } = require("../utils/studentImport");
+
+// Every new student starts with the same temporary password and must change it at first login,
+// so the (slow) bcrypt hash is computed once and reused instead of once per student.
+const STUDENT_TEMP_PASSWORD = "password123";
+let studentTempHash = null;
+const getStudentTempHash = async () => {
+  if (!studentTempHash) studentTempHash = await bcrypt.hash(STUDENT_TEMP_PASSWORD, 12);
+  return studentTempHash;
+};
 
 const getOrCreateEnrollmentTerm = async (tx, schoolId, classId) => {
   let activeTerm = await tx.term.findFirst({
@@ -52,10 +65,16 @@ const admitStudent = async (schoolId, data, photoUrl) => {
   const studentNumber = await generateStudentNumber(schoolId);
 
   // Standard temporary password for students
-  const tempPassword = "password123";
-  const passwordHash = await bcrypt.hash(tempPassword, 12);
+  const tempPassword = STUDENT_TEMP_PASSWORD;
+  const passwordHash = await getStudentTempHash();
 
   const student = await prisma.$transaction(async (tx) => {
+    // The class must belong to THIS school (never trust a class id sent by the browser)
+    if (data.classId) {
+      const ownClass = await tx.class.findFirst({ where: { id: data.classId, schoolId }, select: { id: true } });
+      if (!ownClass) throw createError("Class not found.", 404);
+    }
+
     // 1. Create Student User Account
     const user = await tx.user.create({
       data: {
@@ -741,43 +760,237 @@ const getStudentTranscript = async (schoolId, studentId) => {
 };
 
 // ─── Bulk Import Students ───
-const bulkImportStudents = async (schoolId, records) => {
-  let created = 0,
-    skipped = 0;
+// `records` are already checked and cleaned (see previewStudentImport). Each record creates the
+// student, their login, the guardian (with a portal login if an email is given) and enrols the
+// student in the class for the active term. Returns one result per record so the caller can show
+// exactly what happened to each row.
+const bulkImportStudents = async (schoolId, records = []) => {
+  let created = 0;
+  let skipped = 0;
   const failed = [];
+  const results = [];
 
-  for (const row of records) {
+  const classIds = [...new Set(records.map((r) => r.classId).filter(Boolean))];
+  const ownClasses = classIds.length
+    ? new Set(
+        (await prisma.class.findMany({ where: { id: { in: classIds }, schoolId }, select: { id: true } })).map((c) => c.id)
+      )
+    : new Set();
+
+  for (let index = 0; index < records.length; index += 1) {
+    const row = records[index];
     try {
       if (!row.firstName || !row.lastName || !row.gender || !row.dateOfBirth) {
-        skipped++;
+        skipped += 1;
+        results.push({ index, status: "skipped", error: "First name, last name, gender and date of birth are required." });
         continue;
       }
-      await admitStudent(schoolId, row, null);
-      created++;
+      if (row.classId && !ownClasses.has(row.classId)) {
+        throw createError("Class not found.", 404);
+      }
+
+      const admitted = await admitStudent(schoolId, row, null);
+      created += 1;
+      results.push({
+        index,
+        status: "created",
+        studentId: admitted.student.id,
+        studentNumber: admitted.student.studentNumber,
+        studentPortal: admitted.studentPortal,
+        guardian: admitted.guardian
+          ? {
+              name: admitted.guardian.name,
+              email: admitted.guardian.email,
+              isNew: admitted.guardian.isNew,
+              // only for a brand-new portal account; it is also emailed to the guardian
+              tempPassword: admitted.guardian.isNew ? admitted.guardian.tempPassword : undefined,
+            }
+          : null,
+      });
     } catch (err) {
       failed.push({ row, error: err.message });
+      results.push({ index, status: "failed", error: err.message });
     }
   }
 
-  return { created, skipped, failed };
+  return { created, skipped, failed, results };
 };
 
-// ─── Bulk Import from Excel ───
-const bulkImportStudentsFromExcelRows = async (schoolId, rows) => {
-  const records = rows.map((r) => ({
-    firstName: String(r.firstName || "").trim(),
-    lastName: String(r.lastName || "").trim(),
-    otherNames: r.otherNames ? String(r.otherNames).trim() : null,
-    gender: String(r.gender || "").trim().toUpperCase(),
-    dateOfBirth: r.dateOfBirth instanceof Date ? r.dateOfBirth.toISOString() : String(r.dateOfBirth || ""),
-    classId: r.classId ? String(r.classId).trim() : null,
-    guardianName: r.guardianName ? String(r.guardianName).trim() : null,
-    guardianPhone: r.guardianPhone ? String(r.guardianPhone).trim() : null,
-    guardianEmail: r.guardianEmail ? String(r.guardianEmail).trim() : null,
-    guardianRelationship: r.relationship || r.guardianRelationship || null,
-  }));
+// ─── Bulk import context: what the spreadsheet is checked against ───
+// Students are enrolled in the ACTIVE term, so only classes of that academic year are valid.
+const getImportContext = async (schoolId) => {
+  const activeTerm = await prisma.term.findFirst({
+    where: { schoolId, status: "ACTIVE" },
+    orderBy: { startDate: "desc" },
+  });
 
-  return bulkImportStudents(schoolId, records);
+  const classes = await prisma.class.findMany({
+    where: { schoolId, ...(activeTerm ? { academicYear: activeTerm.academicYear } : {}) },
+    select: { id: true, level: true, section: true, academicYear: true },
+    orderBy: [{ level: "asc" }, { section: "asc" }],
+  });
+
+  return { activeTerm, classes };
+};
+
+const classLabel = (c) => `${String(c.level).replace(/^JHS(\d)$/, "JHS $1")} ${c.section}`;
+
+// ─── Step 1 of the import: read + check the spreadsheet, change nothing ───
+const previewStudentImport = async (schoolId, buffer) => {
+  const parsed = await parseStudentSheet(buffer);
+  const { activeTerm, classes } = await getImportContext(schoolId);
+
+  const existingStudents = await prisma.student.findMany({
+    where: { schoolId },
+    select: { firstName: true, lastName: true, dateOfBirth: true, studentNumber: true },
+  });
+
+  const emails = [...new Set(
+    parsed.map((r) => String(r.raw.guardianEmail || "").trim().toLowerCase()).filter(Boolean)
+  )];
+  const users = emails.length
+    ? await prisma.user.findMany({
+        where: { email: { in: emails } },
+        select: { email: true, guardianProfile: { select: { id: true } } },
+      })
+    : [];
+  const guardianAccounts = new Map(
+    users.map((u) => [String(u.email).toLowerCase(), { isGuardian: Boolean(u.guardianProfile) }])
+  );
+
+  const { rows, summary } = checkStudentRows(parsed, { classes, existingStudents, guardianAccounts });
+
+  return {
+    term: activeTerm
+      ? { id: activeTerm.id, label: `${activeTerm.academicYear} ${String(activeTerm.termNumber).replace("TERM", "Term ")}` }
+      : null,
+    classes: classes.map(classLabel),
+    summary,
+    rows,
+  };
+};
+
+// ─── Legacy one-shot import (API clients): check, then import every ready row ───
+const bulkImportStudentsFromExcelBuffer = async (schoolId, buffer) => {
+  const preview = await previewStudentImport(schoolId, buffer);
+  const ready = preview.rows.filter((r) => r.status === "ready");
+  const outcome = await bulkImportStudents(schoolId, ready.map((r) => r.data));
+  return {
+    ...outcome,
+    duplicates: preview.summary.duplicates,
+    rejected: preview.rows
+      .filter((r) => r.status === "error")
+      .map((r) => ({ row: r.rowNumber, errors: r.errors })),
+  };
+};
+
+// ─── Downloadable Excel template (with the school's own class list) ───
+const buildImportTemplate = async (schoolId) => {
+  const { activeTerm, classes } = await getImportContext(schoolId);
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "EduTrack";
+
+  const NAVY = "FF1E2A78";
+  const GREY = "FF6B7280";
+  const ws = wb.addWorksheet("Students", { views: [{ state: "frozen", ySplit: 1 }] });
+  const columns = [
+    { header: "First Name",     key: "firstName",     width: 18, required: true },
+    { header: "Last Name",      key: "lastName",      width: 18, required: true },
+    { header: "Other Names",    key: "otherNames",    width: 18 },
+    { header: "Gender",         key: "gender",        width: 10, required: true },
+    { header: "Date of Birth",  key: "dateOfBirth",   width: 14, required: true },
+    { header: "Class",          key: "className",     width: 12 },
+    { header: "Guardian Name",  key: "guardianName",  width: 24 },
+    { header: "Guardian Phone", key: "guardianPhone", width: 16 },
+    { header: "Guardian Email", key: "guardianEmail", width: 28 },
+    { header: "Relationship",   key: "relationship",  width: 14 },
+  ];
+  ws.columns = columns.map((c) => ({ header: c.header, key: c.key, width: c.width }));
+  columns.forEach((c, i) => {
+    const cell = ws.getRow(1).getCell(i + 1);
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: c.required ? NAVY : GREY } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+  });
+  ws.getRow(1).height = 22;
+
+  // Dates as dates, phone numbers as text (so the leading 0 is kept)
+  for (let r = 2; r <= 1001; r += 1) {
+    ws.getCell(r, 5).numFmt = "dd/mm/yyyy";
+    ws.getCell(r, 8).numFmt = "@";
+  }
+
+  // Classes sheet (also feeds the dropdown)
+  const cs = wb.addWorksheet("Classes");
+  cs.columns = [{ header: "Class", key: "label", width: 16 }, { header: "Academic year", key: "year", width: 16 }];
+  cs.getRow(1).font = { bold: true };
+  classes.forEach((c) => cs.addRow({ label: classLabel(c), year: c.academicYear }));
+
+  for (let r = 2; r <= 1001; r += 1) {
+    ws.getCell(r, 4).dataValidation = {
+      type: "list", allowBlank: true, formulae: ['"MALE,FEMALE"'],
+      showErrorMessage: true, errorTitle: "Gender", error: "Choose MALE or FEMALE.",
+    };
+    if (classes.length > 0) {
+      ws.getCell(r, 6).dataValidation = {
+        type: "list", allowBlank: true, formulae: [`Classes!$A$2:$A$${classes.length + 1}`],
+        showErrorMessage: true, errorTitle: "Class", error: "Choose a class from the list.",
+      };
+    }
+  }
+
+  // Instructions sheet
+  const info = wb.addWorksheet("Instructions");
+  info.columns = [{ width: 110 }];
+  const lines = [
+    ["How to register and enrol students in bulk", true],
+    ["", false],
+    ["1. Fill in the 'Students' sheet: one student per row, starting on row 2. Do not change the headings in row 1.", false],
+    ["2. Required (dark headings): First Name, Last Name, Gender (MALE or FEMALE), Date of Birth (dd/mm/yyyy).", false],
+    ["3. Class: pick from the dropdown (the list is on the 'Classes' sheet). Students are enrolled in that class for the active term" +
+      (activeTerm ? ` (${activeTerm.academicYear} ${String(activeTerm.termNumber).replace("TERM", "Term ")}).` : " - there is no active term yet, create one first."), false],
+    ["4. Guardian details are optional. With a Guardian Email, the guardian gets a parent portal login by email. Brothers and sisters can share the same guardian email.", false],
+    ["5. Save the file as .xlsx, then upload it on the Students page (Import students). You will see a check of every row before anything is saved.", false],
+    ["", false],
+    ["Example row: Kofi | Mensah | | MALE | 05/03/2012 | JHS 1 A | Ama Mensah | 0244123456 | ama@example.com | Mother", false],
+    ["", false],
+    ["Each student gets a Student ID (their login) and a temporary password that they must change at first login.", false],
+  ];
+  lines.forEach(([text, bold]) => {
+    const row = info.addRow([text]);
+    row.getCell(1).alignment = { wrapText: true, vertical: "top" };
+    if (bold) row.getCell(1).font = { bold: true, size: 14 };
+  });
+
+  return wb.xlsx.writeBuffer();
+};
+
+// ─── Set / replace one student's passport photo ───
+// Uploads to Cloudinary as a portrait centred on the face (4:5) and saves the URL on the student.
+const setStudentPhoto = async (schoolId, studentId, buffer) => {
+  const student = await prisma.student.findFirst({
+    where: { id: studentId, schoolId },
+    select: { id: true },
+  });
+  if (!student) throw createError("Student not found.", 404);
+
+  const uploaded = await new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: "students",
+        transformation: [{ width: 400, height: 480, crop: "fill", gravity: "face" }],
+      },
+      (error, result) => (error ? reject(error) : resolve(result))
+    );
+    streamifier.createReadStream(buffer).pipe(stream);
+  });
+
+  return prisma.student.update({
+    where: { id: studentId },
+    data: { photoUrl: uploaded.secure_url },
+    select: { id: true, studentNumber: true, photoUrl: true },
+  });
 };
 
 // ─── Export Students for Excel ───
@@ -981,7 +1194,10 @@ module.exports = {
   getStudentReports,
   getStudentTranscript,
   bulkImportStudents,
-  bulkImportStudentsFromExcelRows,
+  previewStudentImport,
+  setStudentPhoto,
+  buildImportTemplate,
+  bulkImportStudentsFromExcelBuffer,
   getStudentsForExport,
   getAllStudents,
   getStudentByUserId,

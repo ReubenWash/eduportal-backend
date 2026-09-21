@@ -3,6 +3,7 @@ const { createError } = require("../middleware/errorHandler");
 const { sendReportCardEmail } = require("./email.service");
 const logger = require("../config/logger");
 const { computePositions } = require("../utils/gradeEngine");
+const { className: formatClassName } = require("../utils/fileNames");
 
 // ── Generate report(s) ─────────────────────────────────────────
 const generateReports = async (schoolId, { termId, studentId, classId }) => {
@@ -786,17 +787,67 @@ const emailReports = async (schoolId, { termId, classId, studentId }) => {
   }
 };
 
-// ── Download class ZIP ─────────────────────────────────────────
-const getClassZIPPath = async (schoolId, classId, termId) => {
+// ── Reports of one class + term that this user may download (bulk PDF / ZIP) ──
+// Admins: any class of their school. Class teachers: only their own class.
+// By default only RELEASED cards are included; `includeDrafts` adds draft/approved ones for proof-reading.
+const getClassReportSet = async (user, classId, termId, { includeDrafts = false } = {}) => {
   try {
     if (!classId || !termId) {
       throw createError("Class ID and Term ID are required.", 400);
     }
 
-    const { generateClassZIP } = require("./pdf.service");
-    return generateClassZIP(schoolId, classId, termId);
+    const schoolId = user.schoolId;
+    const cls = await prisma.class.findFirst({
+      where: { id: classId, schoolId },
+      select: { id: true, level: true, section: true },
+    });
+    if (!cls) throw createError("Class not found.", 404);
+
+    if (user.role === "CLASS_TEACHER") {
+      const own = await getTeacherClassIds(user, schoolId);
+      if (!own.includes(classId)) throw createError("You can only download reports for your own class.", 403);
+    } else if (!ADMIN_ROLES.includes(user.role)) {
+      throw createError("You do not have access to class reports.", 403);
+    }
+
+    const term = await prisma.term.findFirst({ where: { id: termId, schoolId } });
+    if (!term) throw createError("Term not found.", 404);
+
+    const enrollments = await prisma.enrollment.findMany({
+      where: { classId, termId },
+      select: { studentId: true },
+    });
+    const studentIds = enrollments.map((e) => e.studentId);
+    if (studentIds.length === 0) {
+      throw createError("No students enrolled in this class for this term.", 400);
+    }
+
+    const reports = await prisma.report.findMany({
+      where: {
+        studentId: { in: studentIds },
+        termId,
+        ...(includeDrafts ? {} : { status: "RELEASED" }),
+      },
+      include: { student: { select: { firstName: true, lastName: true, otherNames: true, studentNumber: true } } },
+    });
+
+    if (reports.length === 0) {
+      throw createError(
+        includeDrafts
+          ? "No report cards have been generated for this class yet."
+          : "No released report cards for this class yet. Release them first, or include the unreleased ones.",
+        400
+      );
+    }
+
+    reports.sort((a, b) =>
+      String(a.student.lastName).localeCompare(String(b.student.lastName)) ||
+      String(a.student.firstName).localeCompare(String(b.student.firstName))
+    );
+
+    return { classLabel: formatClassName(cls.level, cls.section), term, reports };
   } catch (error) {
-    logger.error("Get class ZIP error:", error);
+    logger.error("Get class report set error:", error);
     throw error;
   }
 };
@@ -920,7 +971,7 @@ module.exports = {
   bulkReleaseReports,
   bulkReleaseReportsByIds,
   emailReports,
-  getClassZIPPath,
+  getClassReportSet,
   getReportStats,
   sendSingleReportEmail,
 };

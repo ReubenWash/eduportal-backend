@@ -283,14 +283,65 @@ const getMyGrades = async (req, res) => {
   }
 };
 
+// ─── POST /students/:id/photo - upload or replace one student's passport photo ───
+const setPhoto = async (req, res) => {
+  try {
+    if (!req.file) {
+      throw createError("No photo uploaded. Expected an image under field name 'file'.", 422);
+    }
+    const student = await studentService.setStudentPhoto(req.user.schoolId, req.params.id, req.file.buffer);
+    return sendSuccess(res, 200, "Photo saved.", student);
+  } catch (error) {
+    console.error('❌ Set student photo error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to save the photo'
+    });
+  }
+};
+
 // ─── Excel Import/Export ───
+
+// GET /students/import-template - the Excel file schools fill in
+const importTemplate = async (req, res) => {
+  try {
+    const buffer = await studentService.buildImportTemplate(req.user.schoolId);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="Student Import Template.xlsx"');
+    return res.send(Buffer.from(buffer));
+  } catch (error) {
+    console.error('❌ Import template error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to create the import template'
+    });
+  }
+};
+
+// POST /students/import-preview - reads and checks the file, saves nothing
+const importPreview = async (req, res) => {
+  try {
+    if (!req.file) {
+      throw createError("No file uploaded. Expected a .xlsx file under field name 'file'.", 422);
+    }
+    const result = await studentService.previewStudentImport(req.user.schoolId, req.file.buffer);
+    return sendSuccess(res, 200, "Import preview ready.", result);
+  } catch (error) {
+    console.error('❌ Import preview error:', error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Failed to read the spreadsheet'
+    });
+  }
+};
+
+// POST /students/import-excel - one-shot import for API clients (the app uses preview + bulk-import in batches)
 const importExcel = async (req, res) => {
   try {
     if (!req.file) {
       throw createError("No file uploaded. Expected a .xlsx file under field name 'file'.", 422);
     }
-    const rows = await parseExcelBuffer(req.file.buffer);
-    const result = await studentService.bulkImportStudentsFromExcelRows(req.user.schoolId, rows);
+    const result = await studentService.bulkImportStudentsFromExcelBuffer(req.user.schoolId, req.file.buffer);
     return sendSuccess(res, 200, "Excel import completed.", result);
   } catch (error) {
     console.error('❌ Import Excel error:', error);
@@ -886,7 +937,10 @@ module.exports = {
   getMyGrades,
   
   // Excel Import/Export
+  setPhoto,
   importExcel,
+  importTemplate,
+  importPreview,
   exportExcel,
   
   // Super Admin

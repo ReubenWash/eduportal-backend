@@ -24,8 +24,10 @@ const uploadPhoto = async (req, res) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
           folder: 'students',
+          // portrait (4:5) centred on the face: fits the report card photo box
+          // and still works as a round avatar
           transformation: [
-            { width: 400, height: 400, crop: 'fill' }
+            { width: 400, height: 480, crop: 'fill', gravity: 'face' }
           ]
         },
         (error, result) => {

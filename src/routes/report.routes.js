@@ -27,8 +27,11 @@ router.get("/my-classes", canManageReports, controller.myClasses);
 // ─── Stats ───
 router.get("/stats", isSchoolAdmin, controller.getStats);
 
-// ─── Class ZIP — must be before /:id to avoid route conflict ───
-router.get("/class/:classId/term/:termId", isSchoolAdmin, controller.downloadClassZIP);
+// ─── Whole class downloads — must be before /:id to avoid route conflict ───
+// One combined PDF (one card per page) and a ZIP (one PDF per student).
+// Admins: any class. Class teachers: their own class (checked in report.service).
+router.get("/class/:classId/term/:termId/pdf", canManageReports, controller.downloadClassPDF);
+router.get("/class/:classId/term/:termId", canManageReports, controller.downloadClassZIP);
 
 // ─── Student Reports ───
 router.get("/student/:studentId", canManageReports, controller.getStudentReports);

@@ -33,6 +33,9 @@ const cloudinary = require("../config/cloudinary");
 const { createError } = require("../middleware/errorHandler");
 const logger = require("../config/logger");
 const { computeCATotal, computeExamContribution, computeTotal } = require("../utils/gradeEngine");
+const { cleanFileName, studentFullName, studentResultsFileName, storedResultsPublicId } = require("../utils/fileNames");
+const crypto = require("crypto");
+const { pdfImageUrl } = require("../utils/imageUrl");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -244,14 +247,24 @@ const loadRemoteImage = async (url, { cache = false } = {}) => {
   }
 };
 
+// Loads a photo / logo / signature for the PDF as JPEG or PNG (the only formats pdfkit can draw).
+// Cloudinary images are converted on the fly. If Cloudinary refuses the converted URL (for example
+// when "strict transformations" is switched on for the account), the original URL is tried instead.
+const loadPdfImage = async (url, kind, options = {}) => {
+  if (!url) return null;
+  const converted = pdfImageUrl(url, kind);
+  const buf = await loadRemoteImage(converted, options);
+  if (buf || converted === url) return buf;
+  return loadRemoteImage(url, options);
+};
+
 // ─────────────────────────────────────────────────────────────
 // ─── Build Report PDF (returns a Buffer) ───────────────────
 // ─────────────────────────────────────────────────────────────
 
-const buildReportPDF = async (reportId) => {
-  logger.info(`Building PDF for report ${reportId} using pdfkit`);
-
-  const data = await fetchReportData(reportId);
+// Draws ONE report card on the current page of `doc`. Used for a single student and, page
+// after page, for a whole class in one PDF.
+const drawReportCard = async (doc, data) => {
   const { school, student, term, report } = data;
 
   const theme = {
@@ -276,18 +289,6 @@ const buildReportPDF = async (reportId) => {
   };
 
   const rows = await buildSubjectRows(data, theme);
-
-  // bottom margin 0 so pdfkit never adds an accidental blank page near the bottom edge
-  const doc = new PDFDocument({ size: 'A4', margins: { top: 24, bottom: 0, left: 40, right: 40 } });
-  registerReportFonts(doc);
-
-  // Collect output safely: the promise exists before any drawing happens.
-  const buffers = [];
-  const pdfDone = new Promise((resolve, reject) => {
-    doc.on('data', (chunk) => buffers.push(chunk));
-    doc.on('end', () => resolve(Buffer.concat(buffers)));
-    doc.on('error', reject);
-  });
 
   // The whole card sits inside ONE bordered block, like the paper template: header,
   // learner details, subject table and sign-off are packed together with no loose gaps.
@@ -328,10 +329,10 @@ const buildReportPDF = async (reportId) => {
 
   // ── Header: school name across the top; photo | school details + banner | logo below ──
   const studentPhoto = theme.showStudentPhoto !== false && student?.photoUrl
-    ? await loadRemoteImage(student.photoUrl) : null;
+    ? await loadPdfImage(student.photoUrl, 'photo') : null;
   const logoUrl = theme.logoUrl || school?.logoUrl;
   const logo = theme.showLogo !== false && logoUrl
-    ? await loadRemoteImage(logoUrl, { cache: true }) : null;
+    ? await loadPdfImage(logoUrl, 'logo', { cache: true }) : null;
 
   let headTop = T + 6;
   if (theme.showSchoolName !== false) {
@@ -519,9 +520,9 @@ const buildReportPDF = async (reportId) => {
   }
 
   const headSignature = theme.showPrincipalSignature !== false && theme.principalSignatureUrl
-    ? await loadRemoteImage(theme.principalSignatureUrl, { cache: true }) : null;
+    ? await loadPdfImage(theme.principalSignatureUrl, 'logo', { cache: true }) : null;
   const teacherSignature = theme.showClassTeacherSignature !== false && theme.classTeacherSignatureUrl
-    ? await loadRemoteImage(theme.classTeacherSignatureUrl, { cache: true }) : null;
+    ? await loadPdfImage(theme.classTeacherSignatureUrl, 'logo', { cache: true }) : null;
 
   const GAP = 15;
   const HALF_W = Math.floor((INNER_W - GAP) / 2);
@@ -614,10 +615,78 @@ const buildReportPDF = async (reportId) => {
        .text(String(theme.footerText), M, Math.min(endY + 6, PAGE_H - 18), { width: W, align: 'center' });
   }
 
-  doc.end();
-  const pdfBuffer = await pdfDone;
+};
 
-  return { pdfBuffer, student, term, report };
+// A new A4 document with the report fonts. `done` resolves with the finished PDF as a Buffer.
+// The promise is created before any drawing so the 'end' event can never be missed.
+const createReportDoc = () => {
+  // bottom margin 0 so pdfkit never adds an accidental blank page near the bottom edge
+  const doc = new PDFDocument({ size: 'A4', margins: { top: 24, bottom: 0, left: 40, right: 40 } });
+  registerReportFonts(doc);
+
+  const buffers = [];
+  const done = new Promise((resolve, reject) => {
+    doc.on('data', (chunk) => buffers.push(chunk));
+    doc.on('end', () => resolve(Buffer.concat(buffers)));
+    doc.on('error', reject);
+  });
+
+  return { doc, done };
+};
+
+// One student's report card as a PDF Buffer.
+const buildReportPDF = async (reportId) => {
+  logger.info(`Building PDF for report ${reportId} using pdfkit`);
+
+  const data = await fetchReportData(reportId);
+  const { doc, done } = createReportDoc();
+
+  await drawReportCard(doc, data);
+  doc.end();
+  const pdfBuffer = await done;
+
+  return { pdfBuffer, student: data.student, term: data.term, report: data.report };
+};
+
+// A whole class in ONE PDF: one report card per page, in the order of `reportIds`.
+// A card that cannot be built is skipped (and listed in `failed`) instead of losing the whole file.
+const buildClassPDF = async (reportIds) => {
+  logger.info(`Building combined class PDF for ${reportIds.length} reports`);
+
+  const { doc, done } = createReportDoc();
+  const failed = [];
+  let drawn = 0;
+  let pageUsed = false;
+
+  for (const reportId of reportIds) {
+    let data;
+    try {
+      data = await fetchReportData(reportId);
+    } catch (error) {
+      logger.error(`Class PDF: could not load report ${reportId}: ${error.message}`);
+      failed.push({ reportId, error: error.message });
+      continue;
+    }
+
+    if (pageUsed) doc.addPage();
+    pageUsed = true;
+    try {
+      await drawReportCard(doc, data);
+      drawn += 1;
+    } catch (error) {
+      logger.error(`Class PDF: could not draw report ${reportId}: ${error.message}`);
+      failed.push({ reportId, error: error.message });
+    }
+  }
+
+  doc.end();
+  const pdfBuffer = await done;
+
+  if (drawn === 0) {
+    throw createError("No report cards could be built for this class.", 500);
+  }
+
+  return { pdfBuffer, count: drawn, failed };
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -646,7 +715,8 @@ const uploadPDFToCloudinary = (buffer, publicId) => {
 const generateReportPDF = async (reportId) => {
   const { pdfBuffer, student, term } = await buildReportPDF(reportId);
 
-  const publicId = `report_${student.studentNumber}_${term.academicYear.replace("/", "-")}_${term.termNumber}`;
+  // e.g. .../edutrack/reports/acquah-frederick-term-3-2024-2025-results-6f2f45acb2.pdf
+  const publicId = storedResultsPublicId(student, term, reportId);
   const pdfUrl = await uploadPDFToCloudinary(pdfBuffer, publicId);
 
   await prisma.report.update({
@@ -679,26 +749,15 @@ const generateBulkPDFs = async (reportIds) => {
 };
 
 // ─── Class ZIP Generation ───
-// Builds every PDF in memory and zips them. No Cloudinary download involved.
-const generateClassZIP = async (schoolId, classId, termId) => {
+// `reports` = [{ id, student }] already checked/filtered by report.service.getClassReportSet.
+// Builds every PDF in memory and zips them, one file per student:
+//   "Acquah Frederick - Term 3 2024-2025 Results.pdf". No Cloudinary download involved.
+const generateClassZIP = async (reports) => {
   const archiver = require("archiver");
 
-  const enrollments = await prisma.enrollment.findMany({
-    where: { classId, termId, student: { schoolId } },
-    select: { studentId: true },
-  });
+  if (!reports || reports.length === 0) throw createError("No report cards to download.", 400);
 
-  const studentIds = enrollments.map((e) => e.studentId);
-  if (studentIds.length === 0) throw createError("No students enrolled in this class.", 400);
-
-  const reports = await prisma.report.findMany({
-    where: { studentId: { in: studentIds }, termId, status: "RELEASED" },
-    include: { student: { select: { firstName: true, lastName: true, studentNumber: true } } },
-  });
-
-  if (reports.length === 0) throw createError("No released reports found for this class.", 400);
-
-  const zipPath = path.join(os.tmpdir(), `edutrack_class_reports_${classId}_${termId}_${Date.now()}.zip`);
+  const zipPath = path.join(os.tmpdir(), `edutrack_class_reports_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.zip`);
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip", { zlib: { level: 6 } });
 
@@ -710,16 +769,22 @@ const generateClassZIP = async (schoolId, classId, termId) => {
 
   archive.pipe(output);
 
-  const safe = (v) => String(v || "").replace(/[^a-zA-Z0-9-_]/g, "_");
+  const usedNames = new Map();
+  const uniqueName = (name, studentNumber) => {
+    const key = name.toLowerCase();
+    const n = (usedNames.get(key) || 0) + 1;
+    usedNames.set(key, n);
+    return n === 1 ? name : name.replace(/(\.[^.]+)$/, ` (${studentNumber || n})$1`);
+  };
 
   for (const report of reports) {
-    const base = `${safe(report.student.studentNumber)}_${safe(report.student.lastName)}_${safe(report.student.firstName)}`;
     try {
-      const { pdfBuffer } = await buildReportPDF(report.id);
-      archive.append(pdfBuffer, { name: `${base}.pdf` });
+      const { pdfBuffer, student, term } = await buildReportPDF(report.id);
+      archive.append(pdfBuffer, { name: uniqueName(studentResultsFileName(student, term), student.studentNumber) });
     } catch (error) {
-      logger.error(`ZIP: failed to build PDF for ${report.student.studentNumber}:`, error.message);
-      archive.append(Buffer.from(`PDF not available: ${error.message}`), { name: `${base}_ERROR.txt` });
+      const who = cleanFileName(studentFullName(report.student) || report.id);
+      logger.error(`ZIP: failed to build PDF for ${who}:`, error.message);
+      archive.append(Buffer.from(`PDF not available: ${error.message}`), { name: `${who} - ERROR.txt` });
     }
   }
 
@@ -772,6 +837,7 @@ const previewReportHTML = async (reportId) => {
 
 module.exports = {
   buildReportPDF,
+  buildClassPDF,
   generateReportPDF,
   generateBulkPDFs,
   generateClassZIP,

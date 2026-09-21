@@ -20,6 +20,8 @@ router.get("/me/grades", controller.getMyGrades);
 
 // ─── Excel Export/Import ───
 router.get("/export", isSchoolStaff, controller.exportExcel);
+router.get("/import-template", isSchoolAdmin, controller.importTemplate);
+router.post("/import-preview", isSchoolAdmin, uploadExcel, controller.importPreview);
 router.post("/import-excel", isSchoolAdmin, uploadExcel, controller.importExcel);
 
 // ─── Student Management ───
@@ -39,6 +41,9 @@ router.post(
 );
 
 router.post("/bulk-import", isSchoolAdmin, controller.bulkImport);
+
+// ─── Student passport photo (used by the bulk photo upload on the Students page) ───
+router.post("/:id/photo", isSchoolAdmin, uploadStudentPhoto, controller.setPhoto);
 
 // ─── Update Student ───
 router.patch(

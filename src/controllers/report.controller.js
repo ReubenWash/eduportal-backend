@@ -1,5 +1,6 @@
 const reportService   = require("../services/report.service");
-const { buildReportPDF } = require("../services/pdf.service");
+const { buildReportPDF, buildClassPDF, generateClassZIP } = require("../services/pdf.service");
+const { studentResultsFileName, classReportsFileName, contentDisposition } = require("../utils/fileNames");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
 const fs   = require("fs");
@@ -74,15 +75,15 @@ const getOne = async (req, res) => {
 // Renders the PDF on the server and sends it straight to the client.
 // No request to Cloudinary is made, so this works even when Cloudinary
 // blocks public delivery of PDFs (HTTP 401).
-const sendPdf = async (res, reportId, filename, attachment = false) => {
-  const { pdfBuffer } = await buildReportPDF(reportId);
+// The file is named after the student: "Acquah Frederick - Term 3 2024-2025 Results.pdf"
+const sendPdf = async (res, reportId, attachment = false) => {
+  const { pdfBuffer, student, term } = await buildReportPDF(reportId);
+  const fileName = studentResultsFileName(student, term);
 
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader(
-    "Content-Disposition",
-    `${attachment ? "attachment" : "inline"}; filename="${filename}"`
-  );
+  res.setHeader("Content-Disposition", contentDisposition(fileName, attachment));
   res.setHeader("Content-Length", pdfBuffer.length);
+  res.setHeader("Cache-Control", "private, no-store"); // student data: never cache in shared caches
   return res.end(pdfBuffer);
 };
 
@@ -91,7 +92,7 @@ const preview = async (req, res) => {
   try {
     // Admin: any report of the school. Class teacher: own class. Student/parent: own, released only.
     await reportService.assertReportAccess(req.user, req.params.id);
-    return await sendPdf(res, req.params.id, `preview-${req.params.id}.pdf`, false);
+    return await sendPdf(res, req.params.id, false);
   } catch (error) {
     return handleError(res, error, "Preview report error", "Failed to preview report");
   }
@@ -101,7 +102,7 @@ const preview = async (req, res) => {
 const downloadPDF = async (req, res) => {
   try {
     await reportService.assertReportAccess(req.user, req.params.id);
-    return await sendPdf(res, req.params.id, `report-${req.params.id}.pdf`, true);
+    return await sendPdf(res, req.params.id, true);
   } catch (error) {
     return handleError(res, error, "Download report PDF error", "Failed to download report PDF");
   }
@@ -187,27 +188,53 @@ const emailReports = async (req, res) => {
   }
 };
 
+// ─── GET /api/v1/reports/class/:classId/term/:termId/pdf ───
+// The whole class in ONE PDF (one report card per page) - ready to print.
+// ?includeDrafts=true also includes cards that are not released yet (for proof-reading).
+const downloadClassPDF = async (req, res) => {
+  try {
+    const { classId, termId } = req.params;
+    const includeDrafts = String(req.query.includeDrafts) === "true";
+
+    const { classLabel, term, reports } = await reportService.getClassReportSet(
+      req.user, classId, termId, { includeDrafts }
+    );
+
+    const { pdfBuffer, count, failed } = await buildClassPDF(reports.map((r) => r.id));
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", contentDisposition(classReportsFileName(classLabel, term, "pdf"), true));
+    res.setHeader("Content-Length", pdfBuffer.length);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Report-Count", String(count));
+    if (failed.length) res.setHeader("X-Report-Failed", String(failed.length));
+    return res.end(pdfBuffer);
+  } catch (error) {
+    return handleError(res, error, "Download class PDF error", "Failed to download class report cards");
+  }
+};
+
 // ─── GET /api/v1/reports/class/:classId/term/:termId ───
+// The whole class as a ZIP with one PDF per student.
 const downloadClassZIP = async (req, res) => {
   try {
     const { classId, termId } = req.params;
+    const includeDrafts = String(req.query.includeDrafts) === "true";
 
-    if (!classId || !termId) {
-      throw createError("Class ID and Term ID are required.", 400);
-    }
+    const { classLabel, term, reports } = await reportService.getClassReportSet(
+      req.user, classId, termId, { includeDrafts }
+    );
 
-    const zipPath = await reportService.getClassZIPPath(req.user.schoolId, classId, termId);
+    const zipPath = await generateClassZIP(reports);
 
-    // Check if file exists
     if (!fs.existsSync(zipPath)) {
       throw createError("ZIP file not found.", 404);
     }
 
-    const fileName = `reports_class_${classId}_term_${termId}.zip`;
-
     res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Content-Disposition", contentDisposition(classReportsFileName(classLabel, term, "zip"), true));
     res.setHeader("Content-Length", fs.statSync(zipPath).size);
+    res.setHeader("Cache-Control", "private, no-store");
 
     const stream = fs.createReadStream(zipPath);
     stream.pipe(res);
@@ -277,13 +304,32 @@ const generateBatch = async (req, res) => {
       throw createError("At least one class ID is required.", 400);
     }
 
+    // One empty class must not fail the whole batch: skip classes that have no students
+    // enrolled in this term, generate the rest, and tell the caller what was skipped.
     const results = [];
+    const skipped = [];
     for (const classId of classIds) {
-      const result = await reportService.generateReports(req.user.schoolId, { termId, classId });
-      results.push({ classId, ...result });
+      try {
+        const result = await reportService.generateReports(req.user.schoolId, { termId, classId });
+        results.push({ classId, ...result });
+      } catch (error) {
+        if (error.statusCode === 400 && /No students enrolled/i.test(error.message)) {
+          skipped.push({ classId, reason: error.message });
+          continue;
+        }
+        throw error;
+      }
     }
 
-    return sendSuccess(res, 201, "Batch reports generated successfully.", results);
+    if (results.length === 0) {
+      throw createError(
+        "No students are enrolled in the selected class(es) for this term. Enrol the students in this term first (check that the term and the class belong to the same academic year).",
+        400
+      );
+    }
+
+    const generated = results.reduce((sum, r) => sum + (r.generated || 0), 0);
+    return sendSuccess(res, 201, "Batch reports generated successfully.", { generated, classes: results, skipped });
   } catch (error) {
     return handleError(res, error, "Batch generate reports error", "Failed to generate batch reports");
   }
@@ -303,6 +349,7 @@ module.exports = {
   bulkRelease,
   emailReports,
   downloadClassZIP,
+  downloadClassPDF,
   getStats,
   getStudentReports,
   generateBatch,
