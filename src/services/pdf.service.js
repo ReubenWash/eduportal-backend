@@ -278,7 +278,7 @@ const buildReportPDF = async (reportId) => {
   const rows = await buildSubjectRows(data, theme);
 
   // bottom margin 0 so pdfkit never adds an accidental blank page near the bottom edge
-  const doc = new PDFDocument({ size: 'A4', margins: { top: 24, bottom: 0, left: 24, right: 24 } });
+  const doc = new PDFDocument({ size: 'A4', margins: { top: 24, bottom: 0, left: 40, right: 40 } });
   registerReportFonts(doc);
 
   // Collect output safely: the promise exists before any drawing happens.
@@ -291,12 +291,18 @@ const buildReportPDF = async (reportId) => {
 
   // The whole card sits inside ONE bordered block, like the paper template: header,
   // learner details, subject table and sign-off are packed together with no loose gaps.
-  const M = 24, W = 547, R = M + W, T = M;
-  const P = 10;                       // inner padding for text
+  // CARD WIDTH: the one number to change if the card should be narrower or wider.
+  // A4 is 595pt wide; 495 leaves about 50pt of white margin on each side.
+  const CARD_W = Math.min(547, Math.max(440, Number(theme.cardWidth) || 495));
+  const W = CARD_W;
+  const M = Math.round((doc.page.width - W) / 2);   // centred horizontally
+  const R = M + W;
+  const T = 24;                                     // top margin
+  const P = 10;                                     // inner padding for text
   const NAVY = theme.primaryColor || '#1E2A78';
   const BLACK = '#000000';
   const PAGE_H = doc.page.height;
-  const BOTTOM_LIMIT = PAGE_H - M;
+  const BOTTOM_LIMIT = PAGE_H - T;
 
   const hline = (x1, x2, y, color = BLACK, width = 0.6) => {
     doc.strokeColor(color).lineWidth(width).moveTo(x1, y).lineTo(x2, y).stroke();
@@ -442,7 +448,8 @@ const buildReportPDF = async (reportId) => {
 
   // ── Subject table (full width, touching the outer border) ──
   const HEAD_H = 36;
-  const cols = [
+  // column widths are proportions of the card width (they add up to 547 at full width)
+  const baseCols = [
     { w: 170, label: 'SUBJECT', align: 'left' },
     { w: 62,  label: `CLASS\nSCORE\n(${theme.classScoreWeight}%)`, align: 'center' },
     { w: 62,  label: `EXAM\nSCORE\n(${theme.examScoreWeight}%)`, align: 'center' },
@@ -450,6 +457,12 @@ const buildReportPDF = async (reportId) => {
     { w: 72,  label: 'POSITION', align: 'center' },
     { w: 115, label: 'REMARKS', align: 'center' },
   ];
+  let usedW = 0;
+  const cols = baseCols.map((c, i) => {
+    const w = i === baseCols.length - 1 ? W - usedW : Math.round((c.w * W) / 547);
+    usedW += w;
+    return { ...c, w };
+  });
 
   const tableTop = infoEnd;
   doc.rect(M, tableTop, W, HEAD_H).fill(NAVY);
