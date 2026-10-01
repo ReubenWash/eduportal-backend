@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const { prisma } = require("../config/db");
 const { generateStudentNumber } = require("../utils/generateId");
 const { createError } = require("../middleware/errorHandler");
+const { normalizeGuardianGradePayload } = require("../utils/guardianGradePayload");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 const { sendWelcomeGuardianEmail } = require("./email.service");
 const ExcelJS = require("exceljs");
@@ -1176,7 +1177,8 @@ const getStudentGrades = async (studentId) => {
         { subject: { name: "asc" } },
       ],
     });
-    return scores;
+
+    return normalizeGuardianGradePayload(scores);
   } catch (error) {
     console.error("[student.service] getStudentGrades error:", error);
     throw error;
