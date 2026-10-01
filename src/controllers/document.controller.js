@@ -77,6 +77,30 @@ const getOne = async (req, res) => {
   return sendSuccess(res, 200, "Document fetched.", doc);
 };
 
+// PATCH /api/v1/documents/:id
+const update = async (req, res) => {
+  const schoolId = req.user.role === 'SUPER_ADMIN' ? null : req.user.schoolId;
+  if (req.user.role !== 'SUPER_ADMIN' && !schoolId) {
+    throw createError("School ID not found for this user.", 400);
+  }
+  const doc = await documentService.updateDocument(schoolId, req.params.id, req.body);
+  return sendSuccess(res, 200, "Document updated.", doc);
+};
+
+// POST /api/v1/documents/bulk-delete
+const bulkRemove = async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    throw createError("Provide an array of document IDs to delete.", 422);
+  }
+  const schoolId = req.user.role === 'SUPER_ADMIN' ? null : req.user.schoolId;
+  if (req.user.role !== 'SUPER_ADMIN' && !schoolId) {
+    throw createError("School ID not found for this user.", 400);
+  }
+  const result = await documentService.bulkDeleteDocuments(schoolId, ids);
+  return sendSuccess(res, 200, `${result.deletedCount} document(s) deleted.`, result);
+};
+
 // DELETE /api/v1/documents/:id
 const remove = async (req, res) => {
   let schoolId = req.user.schoolId;
@@ -95,4 +119,4 @@ const remove = async (req, res) => {
   return sendSuccess(res, 200, "Document deleted.");
 };
 
-module.exports = { upload, list, getOne, remove };
+module.exports = { upload, list, getOne, update, bulkRemove, remove };

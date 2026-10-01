@@ -82,7 +82,10 @@ const getDocuments = async (schoolId, query) => {
           id: true,
           name: true
         }
-      }
+      },
+      student: { select: { id: true, firstName: true, lastName: true, studentNumber: true } },
+      staff:   { select: { id: true, firstName: true, lastName: true } },
+      guardian:{ select: { id: true, firstName: true, lastName: true } },
     },
   });
 
@@ -124,7 +127,10 @@ const getDocumentById = async (schoolId, documentId) => {
           id: true,
           name: true
         }
-      }
+      },
+      student: { select: { id: true, firstName: true, lastName: true, studentNumber: true } },
+      staff:   { select: { id: true, firstName: true, lastName: true } },
+      guardian:{ select: { id: true, firstName: true, lastName: true } },
     },
   });
   
@@ -137,6 +143,41 @@ const getDocumentById = async (schoolId, documentId) => {
       ? `${doc.uploadedBy.staff.firstName} ${doc.uploadedBy.staff.lastName}`
       : doc.uploadedBy?.email || 'Unknown'
   };
+};
+
+// ── Update a document's metadata (currently just category) ──
+const updateDocument = async (schoolId, documentId, data) => {
+  let where = { id: documentId };
+  if (schoolId) where.schoolId = schoolId;
+
+  const doc = await prisma.document.findFirst({ where });
+  if (!doc) throw createError("Document not found.", 404);
+
+  return prisma.document.update({
+    where: { id: documentId },
+    data: { category: data.category ?? doc.category },
+  });
+};
+
+// ── Delete several documents at once ──
+const bulkDeleteDocuments = async (schoolId, documentIds) => {
+  const where = { id: { in: documentIds } };
+  if (schoolId) where.schoolId = schoolId;
+
+  const docs = await prisma.document.findMany({ where });
+  if (docs.length === 0) throw createError("No matching documents found.", 404);
+
+  await Promise.all(
+    docs
+      .filter((doc) => doc.url && doc.url.includes('cloudinary'))
+      .map((doc) => deleteFromCloudinary(doc.url).catch(() => null)) // best-effort; don't block DB cleanup on one bad Cloudinary delete
+  );
+
+  const result = await prisma.document.deleteMany({
+    where: { id: { in: docs.map((d) => d.id) } },
+  });
+
+  return { deletedCount: result.count };
 };
 
 // ── Delete a document ──
@@ -190,7 +231,10 @@ const getAllDocuments = async (query) => {
           id: true,
           name: true
         }
-      }
+      },
+      student: { select: { id: true, firstName: true, lastName: true, studentNumber: true } },
+      staff:   { select: { id: true, firstName: true, lastName: true } },
+      guardian:{ select: { id: true, firstName: true, lastName: true } },
     },
   });
 
@@ -233,7 +277,10 @@ const getDocumentsBySchool = async (schoolId, query) => {
           id: true,
           name: true
         }
-      }
+      },
+      student: { select: { id: true, firstName: true, lastName: true, studentNumber: true } },
+      staff:   { select: { id: true, firstName: true, lastName: true } },
+      guardian:{ select: { id: true, firstName: true, lastName: true } },
     },
   });
 
@@ -250,6 +297,8 @@ module.exports = {
   createDocument, 
   getDocuments, 
   getDocumentById, 
+  updateDocument,
+  bulkDeleteDocuments,
   deleteDocument,
   getAllDocuments,
   getDocumentsBySchool
