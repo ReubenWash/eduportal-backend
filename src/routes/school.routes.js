@@ -101,6 +101,8 @@ router.patch(
 router.patch(
   "/:id",
   isSuperAdmin,
+  [body("phone").optional({ values: "falsy" }).custom(require("../utils/phone").isValidE164Phone).withMessage("Phone number must include a valid country calling code, e.g. +233240000000.")],
+  validate,
   controller.updateSchool
 );
 

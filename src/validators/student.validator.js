@@ -1,5 +1,6 @@
 // src/validators/student.validator.js
 const { body, param, query } = require("express-validator");
+const { isValidE164Phone } = require("../utils/phone");
 
 // ─── Admit Student Validator ───
 const admitStudentValidator = [
@@ -87,10 +88,9 @@ const admitStudentValidator = [
     .normalizeEmail(),
   
   body("guardianPhone")
-    .optional()
-    .trim()
-    .isMobilePhone()
-    .withMessage("Please provide a valid phone number."),
+    .optional({ values: "falsy" })
+    .custom(isValidE164Phone)
+    .withMessage("Guardian phone must include a valid country calling code, e.g. +233240000000."),
   
   body("guardianRelationship")
     .optional()
@@ -208,10 +208,9 @@ const updateStudentValidator = [
     .normalizeEmail(),
   
   body("guardianPhone")
-    .optional()
-    .trim()
-    .isMobilePhone()
-    .withMessage("Please provide a valid phone number."),
+    .optional({ values: "falsy" })
+    .custom(isValidE164Phone)
+    .withMessage("Guardian phone must include a valid country calling code, e.g. +233240000000."),
   
   body("guardianRelationship")
     .optional()

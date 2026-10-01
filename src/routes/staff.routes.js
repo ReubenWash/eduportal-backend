@@ -8,6 +8,7 @@ const { uploadStaffPhoto } = require("../middleware/upload");
 const { uploadExcel } = require("../middleware/uploadExcel");
 const { body } = require("express-validator");
 const validate = require("../middleware/validate");
+const { isValidE164Phone } = require("../utils/phone");
 
 // ─── All routes require authentication and tenant scope ───
 router.use(authenticate, tenantScope);
@@ -29,7 +30,7 @@ router.post(
     body("lastName").trim().notEmpty().withMessage("Last name is required."),
     body("email").trim().isEmail().withMessage("Valid email required."),
     body("role").isIn(["SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER"]).withMessage("Invalid role."),
-    body("phone").optional().trim().isLength({ min: 5, max: 20 }).withMessage("Phone must be 5-20 characters."),
+    body("phone").optional({ values: "falsy" }).custom(isValidE164Phone).withMessage("Phone must include a valid country calling code, e.g. +233240000000."),
   ],
   validate,
   uploadStaffPhoto,
@@ -45,7 +46,7 @@ router.patch(
     body("lastName").optional().trim().notEmpty().withMessage("Last name cannot be empty."),
     body("email").optional().trim().isEmail().withMessage("Valid email required."),
     body("role").optional().isIn(["SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER"]).withMessage("Invalid role."),
-    body("phone").optional().trim().isLength({ min: 5, max: 20 }).withMessage("Phone must be 5-20 characters."),
+    body("phone").optional({ values: "falsy" }).custom(isValidE164Phone).withMessage("Phone must include a valid country calling code, e.g. +233240000000."),
   ],
   validate,
   uploadStaffPhoto,

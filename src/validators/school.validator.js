@@ -1,4 +1,5 @@
 const { body, param, query } = require("express-validator");
+const { isValidE164Phone } = require("../utils/phone");
 
 const registerSchoolValidator = [
   body("name")
@@ -25,6 +26,10 @@ const registerSchoolValidator = [
   body("headmasterName")
     .trim().notEmpty().withMessage("Headmaster name is required."),
 
+  body("phone")
+    .optional({ values: "falsy" })
+    .custom(isValidE164Phone).withMessage("Phone number must include a valid country calling code, e.g. +233240000000."),
+
   body("plan")
     .optional()
     .isIn(["BASIC", "STANDARD", "PREMIUM"]).withMessage("Invalid plan selected."),
@@ -41,9 +46,8 @@ const updateSchoolValidator = [
 
   body("phone")
     .optional({ values: "falsy" })
-    .trim()
-    .isLength({ min: 5, max: 20 })
-    .withMessage("Phone number must be 5–20 characters."),
+    .custom(isValidE164Phone)
+    .withMessage("Phone number must include a valid country calling code, e.g. +233240000000."),
 
   body("email")
     .optional({ values: "falsy" })

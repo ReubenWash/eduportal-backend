@@ -165,12 +165,12 @@ const parsePhone = (v) => {
   const raw = text(v);
   if (!raw) return { value: "", warning: null };
   let digits = raw.replace(/[^\d+]/g, "");
-  if (digits.startsWith("+233")) digits = `0${digits.slice(4)}`;
-  else if (digits.startsWith("233") && digits.length === 12) digits = `0${digits.slice(3)}`;
-  else if (/^\d{9}$/.test(digits)) digits = `0${digits}`;
-  digits = digits.replace(/\+/g, "");
-  if (!/^0\d{9}$/.test(digits)) return { value: raw, warning: `Phone number "${raw}" does not look like a 10-digit Ghana number.` };
-  return { value: digits, warning: null };
+  if (/^\+[1-9]\d{7,14}$/.test(digits)) return { value: digits, warning: null };
+  if (digits.startsWith("+233")) digits = digits.slice(4);
+  else if (digits.startsWith("233") && digits.length === 12) digits = digits.slice(3);
+  else if (/^0\d{9}$/.test(digits)) digits = digits.slice(1);
+  if (!/^\d{9}$/.test(digits)) return { value: raw, warning: `Phone number "${raw}" does not look like a 10-digit Ghana number.` };
+  return { value: `+233${digits}`, warning: null };
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -280,7 +280,7 @@ function checkStudentRows(parsedRows, context, today = new Date()) {
       warnings.push("No guardian email: the guardian is saved but gets no portal login.");
     }
     const phone = parsePhone(raw.guardianPhone);
-    if (phone.warning) warnings.push(phone.warning);
+    if (phone.warning) errors.push(phone.warning);
     const relationship = text(raw.relationship) || (guardianName ? "Parent" : "");
 
     // duplicates
