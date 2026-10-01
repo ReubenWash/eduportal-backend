@@ -5,11 +5,13 @@ const loginValidator = [
     .trim()
     .notEmpty().withMessage("Email or student number is required.")
     .custom((value) => {
-      // Allow either email format OR student number format
+      // Accept email, legacy STU/YYYY/NNNN, or generated JHS-YYYY-NNNN identifiers.
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-      const isStudentNumber = /^STU\/\d{4}\/\d{4}$/.test(value.toUpperCase());
+      const normalizedValue = value.toUpperCase();
+      const isStudentNumber = /^STU\/\d{4}\/\d{4}$/.test(normalizedValue)
+        || /^JHS-\d{4}-\d{4,}$/.test(normalizedValue);
       if (!isEmail && !isStudentNumber) {
-        throw new Error("Please enter a valid email address or student number (e.g., STU/2026/0001)");
+        throw new Error("Please enter a valid email address or student number (e.g., JHS-2026-0001)");
       }
       return true;
     }),
