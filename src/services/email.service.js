@@ -1,35 +1,49 @@
 // backend/services/email.service.js
 require("dotenv").config();
+const axios = require("axios");
 const logger = require("../config/logger");
-const transporter = require("../config/email");
 
-// ── Generic send helper using SMTP (config/email.js) ─────────
+const BREVO_API_URL = process.env.BREVO_API_URL || "https://api.brevo.com/v3";
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+
+// ── Generic send helper using Brevo API ──────────────────────
 const sendMail = async ({ to, subject, html }, retries = 2) => {
   try {
-    console.log(`📧 Sending email via SMTP to ${to}...`);
+    console.log(`📧 Sending email via Brevo API to ${to}...`);
+    
+    const response = await axios.post(
+      `${BREVO_API_URL}/smtp/email`,
+      {
+        sender: {
+          name: process.env.BREVO_SENDER_NAME || "EduTrack JHS",
+          email: process.env.BREVO_SENDER_EMAIL || "asiedureubenwash@gmail.com"
+        },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: html,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': BREVO_API_KEY,
+        },
+        timeout: 30000,
+      }
+    );
 
-    const from = `"${process.env.BREVO_SENDER_NAME || "EduTrack JHS"}" <${process.env.BREVO_SENDER_EMAIL}>`;
-
-    const info = await transporter.sendMail({
-      from,
-      to,
-      subject,
-      html,
-    });
-
-    console.log(`✅ Email sent via SMTP to ${to} — ${info.messageId}`);
+    console.log(`✅ Email sent via Brevo API to ${to}`);
     logger.info(`Email sent to ${to} — ${subject}`);
-    return info;
+    return response.data;
   } catch (error) {
-    // Retry on connection timeouts
-    if ((error.code === "ETIMEDOUT" || error.code === "ECONNABORTED") && retries > 0) {
+    // If it's a timeout error and we have retries left, try again
+    if (error.code === 'ECONNABORTED' && retries > 0) {
       console.log(`⏳ Retrying... (${retries} retries left)`);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 2000));
       return sendMail({ to, subject, html }, retries - 1);
     }
-
-    logger.error(`Failed to send email to ${to}:`, error.response || error.message);
-    console.error(`❌ Failed to send email to ${to}:`, error.response || error.message);
+    
+    logger.error(`Failed to send email to ${to}:`, error.response?.data || error.message);
+    console.error(`❌ Failed to send email to ${to}:`, error.response?.data || error.message);
     throw error;
   }
 };
@@ -146,7 +160,7 @@ const sendWelcomeStaffEmail = async (email, name, tempPassword, schoolName) => {
   });
 };
 
-// ─── 4. Welcome Guardian Email ────────────────────────────────
+// ─── 4. Welcome Guardian Email (NEW - for Parent Portal) ─────
 const sendWelcomeGuardianEmail = async (email, name, tempPassword, schoolName) => {
   const loginUrl = `${process.env.CLIENT_URL || "http://localhost:5173"}/login`;
   return sendMailSafe({
@@ -428,7 +442,6 @@ const sendWelcomeStudentEmail = async (email, name, tempPassword, schoolName) =>
   });
 };
 
-// ─── 11. Announcement Email ───────────────────────────────────
 const sendAnnouncementEmail = async (to, subject, message, schoolName) => {
   return sendMailSafe({
     to,
@@ -453,17 +466,17 @@ module.exports = {
   sendMail,
   sendMailSafe,
   sendAnnouncementEmail,
-
+  
   // Auth Emails
   sendVerificationEmail,
   sendPasswordResetEmail,
-
+  
   // Welcome Emails
   sendWelcomeStaffEmail,
   sendWelcomeGuardianEmail,
   sendWelcomeStudentEmail,
   sendSchoolWelcomeEmail,
-
+  
   // Status & Notification Emails
   sendReportCardEmail,
   sendRegistrationUnderReviewEmail,
