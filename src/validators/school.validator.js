@@ -108,6 +108,24 @@ const updateSchoolValidator = [
     })
     .withMessage("Report config must be a valid JSON string or object"),
 
+  body("gradingConfig")
+    .optional({ values: "falsy" })
+    .custom((value) => {
+      if (typeof value === 'string') {
+        try {
+          JSON.parse(value);
+          return true;
+        } catch {
+          throw new Error("Grading config must be a valid JSON string or object");
+        }
+      }
+      if (typeof value === 'object' && value !== null) {
+        return true;
+      }
+      throw new Error("Grading config must be a valid JSON string or object");
+    })
+    .withMessage("Grading config must be a valid JSON string or object"),
+
   // Allow region and district to be optional during update
   body("region")
     .optional({ values: "falsy" })

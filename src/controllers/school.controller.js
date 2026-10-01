@@ -1,5 +1,6 @@
 const schoolService = require("../services/school.service");
 const { sendSuccess } = require("../utils/apiResponse");
+const { normalizeSchoolUpdatePayload } = require("../utils/schoolPayload");
 const { createError } = require("../middleware/errorHandler");
 const { prisma } = require("../config/db");
 const cloudinary = require("../config/cloudinary");
@@ -157,27 +158,19 @@ const updateProfile = async (req, res) => {
       updateData.motto = req.body.motto;
     }
     
-    // ✅ FIX: Handle scoreLabels - parse if it's a string
-    if (req.body.scoreLabels) {
-      try {
-        // If it's a string, parse it to JSON
-        if (typeof req.body.scoreLabels === 'string') {
-          updateData.scoreLabels = JSON.parse(req.body.scoreLabels);
-          console.log('✅ Parsed scoreLabels from string:', updateData.scoreLabels);
-        } else {
-          updateData.scoreLabels = req.body.scoreLabels;
-        }
-      } catch (parseError) {
-        console.error('❌ Failed to parse scoreLabels:', parseError);
-        // Don't include scoreLabels if parsing fails
-      }
+    const normalizedPayload = normalizeSchoolUpdatePayload(req.body);
+
+    if (normalizedPayload.scoreLabels) {
+      updateData.scoreLabels = normalizedPayload.scoreLabels;
     }
 
-    if (req.body.reportConfig) {
+    if (normalizedPayload.gradingConfig) {
+      updateData.gradingConfig = normalizedPayload.gradingConfig;
+    }
+
+    if (normalizedPayload.reportConfig) {
       try {
-        const parsedReportConfig = typeof req.body.reportConfig === 'string'
-          ? JSON.parse(req.body.reportConfig)
-          : req.body.reportConfig;
+        const parsedReportConfig = normalizedPayload.reportConfig;
 
         const mergedReportConfig = {
           ...(parsedReportConfig || {}),

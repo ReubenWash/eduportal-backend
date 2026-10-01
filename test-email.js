@@ -33,11 +33,11 @@ async function testEmail() {
     // Step 2: Send test email
     console.log('📧 Sending test email...');
     const fromEmail = process.env.BREVO_SENDER_EMAIL || process.env.SENDER_EMAIL || process.env.BREVO_SMTP_USER;
-    const fromName = process.env.BREVO_SENDER_NAME || process.env.SENDER_NAME || 'EduTrack JHS';
+    const fromName = process.env.BREVO_SENDER_NAME || process.env.SENDER_NAME ;
 
     const info = await transporter.sendMail({
       from: `"${fromName}" <${fromEmail}>`,
-      to: 'shaddyblaykes@gmail.com',
+      to: 'atomosei16@gmail.com',
       subject: 'Test Email from EduTrack',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9f9f9;">

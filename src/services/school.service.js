@@ -165,11 +165,12 @@ const getSchoolProfile = async (schoolId) => {
       email:        true,
       logoUrl:      true,
       motto:        true,
-      status:       true,
-      plan:         true,
-      reportConfig: true,
-      scoreLabels:  true,
-      createdAt:    true,
+      status:        true,
+      plan:          true,
+      reportConfig:  true,
+      scoreLabels:   true,
+      gradingConfig: true,
+      createdAt:     true,
     },
   });
 
