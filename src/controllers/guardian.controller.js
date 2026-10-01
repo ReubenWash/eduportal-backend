@@ -1,6 +1,7 @@
 const { prisma } = require("../config/db");
 const guardianService = require("../services/guardian.service");
 const { sendSuccess, sendError } = require("../utils/apiResponse");
+const { normalizeGuardianGradePayload } = require("../utils/guardianGradePayload");
 
 const create    = async (req, res) => { const g = await guardianService.createGuardian(req.user.schoolId, req.body); return sendSuccess(res, 201, "Guardian created.", g); };
 const list      = async (req, res) => { const r = await guardianService.getGuardians(req.user.schoolId, req.query); return sendSuccess(res, 200, "Guardians fetched.", r); };
@@ -81,7 +82,9 @@ const getChildGrades = async (req, res, next) => {
       where: { studentId },
       include: { subject: true, term: true }
     });
-    sendSuccess(res, 200, "Success", scores);
+
+    const normalizedScores = normalizeGuardianGradePayload(scores);
+    sendSuccess(res, 200, "Success", normalizedScores);
   } catch (error) {
     next(error);
   }
