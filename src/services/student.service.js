@@ -1185,6 +1185,34 @@ const getStudentGrades = async (studentId) => {
   }
 };
 
+const getStudentAttendance = async (studentId) => {
+  try {
+    const records = await prisma.attendance.findMany({
+      where: { studentId },
+      orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        date: true,
+        status: true,
+        note: true,
+        termId: true,
+      },
+    });
+
+    const summary = { present: 0, absent: 0, late: 0, total: records.length };
+    records.forEach((record) => {
+      if (record.status === "PRESENT") summary.present += 1;
+      else if (record.status === "ABSENT") summary.absent += 1;
+      else if (record.status === "LATE") summary.late += 1;
+    });
+
+    return { summary, records };
+  } catch (error) {
+    console.error("[student.service] getStudentAttendance error:", error);
+    throw error;
+  }
+};
+
 // ─── EXPORTS ───
 module.exports = {
   admitStudent,
@@ -1204,6 +1232,7 @@ module.exports = {
   getAllStudents,
   getStudentByUserId,
   getStudentGrades,
+  getStudentAttendance,
   linkGuardianToStudent,
   resendGuardianCredentials,
 };

@@ -17,6 +17,7 @@ router.use(authenticate, tenantScope);
 router.get("/me", controller.getMe);
 router.get("/me/report-cards", controller.getMyReportCards);
 router.get("/me/grades", controller.getMyGrades);
+router.get("/me/attendance", controller.getMyAttendance);
 
 // ─── Excel Export/Import ───
 router.get("/export", isSchoolStaff, controller.exportExcel);

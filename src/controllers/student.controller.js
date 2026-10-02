@@ -283,6 +283,23 @@ const getMyGrades = async (req, res) => {
   }
 };
 
+const getMyAttendance = async (req, res) => {
+  try {
+    const student = await studentService.getStudentByUserId(req.user.userId, req.user.schoolId);
+    if (!student) {
+      return res.status(404).json({ success: false, message: "Student profile not found." });
+    }
+    const attendance = await studentService.getStudentAttendance(student.id);
+    return sendSuccess(res, 200, "Attendance fetched.", attendance);
+  } catch (error) {
+    console.error("Get my attendance error:", error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to fetch attendance",
+    });
+  }
+};
+
 // ─── POST /students/:id/photo - upload or replace one student's passport photo ───
 const setPhoto = async (req, res) => {
   try {
@@ -935,6 +952,7 @@ module.exports = {
   getMe,
   getMyReportCards,
   getMyGrades,
+  getMyAttendance,
   
   // Excel Import/Export
   setPhoto,
