@@ -1228,6 +1228,7 @@ enum AuditAction {
   CREATE
   UPDATE
   DELETE
+  VIEW
   LOGIN
   LOGOUT
   LOGIN_FAILED

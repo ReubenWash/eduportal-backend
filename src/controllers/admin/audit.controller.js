@@ -3,34 +3,40 @@ const { sendSuccess } = require("../../utils/apiResponse");
 const { createError } = require("../../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../../utils/paginate");
 
+const buildAuditWhere = (query) => {
+  const where = {};
+  if (query.action) where.action = query.action;
+  if (query.resource) where.resource = query.resource;
+  if (query.userId) where.userId = query.userId;
+  if (query.schoolId) where.schoolId = query.schoolId;
+  if (query.role) where.user = { role: query.role };
+  if (query.search) {
+    where.OR = [
+      { userId: { contains: query.search, mode: 'insensitive' } },
+      { resourceId: { contains: query.search, mode: 'insensitive' } },
+      { ipAddress: { contains: query.search, mode: 'insensitive' } },
+      { user: { email: { contains: query.search, mode: 'insensitive' } } },
+      { user: { staff: { firstName: { contains: query.search, mode: 'insensitive' } } } },
+      { user: { staff: { lastName: { contains: query.search, mode: 'insensitive' } } } },
+      { school: { name: { contains: query.search, mode: 'insensitive' } } },
+      { metadata: { path: ['route'], string_contains: query.search } },
+    ];
+  }
+  if (query.from || query.to) {
+    where.createdAt = {};
+    if (query.from) where.createdAt.gte = new Date(query.from);
+    if (query.to) where.createdAt.lte = new Date(query.to);
+  }
+  return where;
+};
+
 // ─────────────────────────────────────────────────────
 // GET /api/v1/admin/audit-logs
 // ─────────────────────────────────────────────────────
 const getAuditLogs = async (req, res) => {
   const { skip, take, page, limit } = getPagination(req.query);
   
-  const where = {};
-  
-  // Filters
-  if (req.query.action) where.action = req.query.action;
-  if (req.query.resource) where.resource = req.query.resource;
-  if (req.query.userId) where.userId = req.query.userId;
-  if (req.query.schoolId) where.schoolId = req.query.schoolId;
-  if (req.query.search) {
-    where.OR = [
-      { userId: { contains: req.query.search, mode: 'insensitive' } },
-      { resourceId: { contains: req.query.search, mode: 'insensitive' } },
-      { ipAddress: { contains: req.query.search, mode: 'insensitive' } },
-    ];
-  }
-  
-  // Date range
-  if (req.query.from) {
-    where.createdAt = { gte: new Date(req.query.from) };
-  }
-  if (req.query.to) {
-    where.createdAt = { ...where.createdAt, lte: new Date(req.query.to) };
-  }
+  const where = buildAuditWhere(req.query);
 
   const [logs, total] = await Promise.all([
     prisma.auditLog.findMany({
@@ -83,11 +89,8 @@ const getAuditLogById = async (req, res) => {
 // GET /api/v1/admin/audit-logs/export
 // ─────────────────────────────────────────────────────
 const exportAuditLogs = async (req, res) => {
-  const { from, to, format = 'csv' } = req.query;
-  
-  const where = {};
-  if (from) where.createdAt = { gte: new Date(from) };
-  if (to) where.createdAt = { ...where.createdAt, lte: new Date(to) };
+  const { format = 'csv' } = req.query;
+  const where = buildAuditWhere(req.query);
 
   const logs = await prisma.auditLog.findMany({
     where,

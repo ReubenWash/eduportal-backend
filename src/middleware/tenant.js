@@ -1,5 +1,23 @@
 const { prisma }    = require("../config/db");
 const { sendError } = require("../utils/apiResponse");
+const { buildActivityAuditData } = require("../utils/activityAudit");
+
+const attachActivityAudit = (req, res) => {
+  if (!["SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER"].includes(req.user?.role)) return;
+
+  res.once("finish", () => {
+    const data = buildActivityAuditData(req, res.statusCode);
+    if (!data) return;
+    prisma.auditLog.create({
+      data,
+    }).catch(error => console.error("Activity audit write failed:", error.message));
+  });
+};
+
+const activityAudit = (req, res, next) => {
+  attachActivityAudit(req, res);
+  next();
+};
 
 /**
  * Tenant middleware — runs after authenticate
@@ -39,7 +57,9 @@ const tenantScope = async (req, res, next) => {
   }
 
   req.school = school; // attach for use in controllers
+  attachActivityAudit(req, res);
   next();
 };
 
 module.exports = tenantScope;
+module.exports.activityAudit = activityAudit;

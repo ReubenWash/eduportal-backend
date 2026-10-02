@@ -3,6 +3,7 @@ const router     = express.Router();
 const controller = require("../controllers/auth.controller");
 const validate   = require("../middleware/validate");
 const authenticate = require("../middleware/auth");
+const { activityAudit } = require("../middleware/tenant");
 const { authLimiter } = require("../middleware/rateLimiter");
 const { body } = require("express-validator"); // ← ADD THIS IMPORT
 const {
@@ -87,12 +88,13 @@ router.post(
 // ── Protected routes (auth required) ──────────────────────────
 
 // GET /api/v1/auth/me
-router.get("/me", authenticate, controller.getMe);
+router.get("/me", authenticate, activityAudit, controller.getMe);
 
 // PATCH /api/v1/auth/change-password
 router.patch(
   "/change-password",
   authenticate,
+  activityAudit,
   changePasswordValidator,
   validate,
   controller.changePassword
@@ -104,6 +106,7 @@ router.patch(
 router.post(
   "/admin/reset-student-password/:studentId",
   authenticate,
+  activityAudit,
   (req, res, next) => {
     // Allow both SCHOOL_ADMIN and SUPER_ADMIN
     if (req.user.role === 'SCHOOL_ADMIN' || req.user.role === 'SUPER_ADMIN') {
@@ -121,6 +124,7 @@ router.post(
 router.post(
   "/admin/change-password/:userId",
   authenticate,
+  activityAudit,
   (req, res, next) => {
     // Allow both SCHOOL_ADMIN and SUPER_ADMIN
     if (req.user.role === 'SCHOOL_ADMIN' || req.user.role === 'SUPER_ADMIN') {
