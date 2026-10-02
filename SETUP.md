@@ -132,6 +132,22 @@ Use it as `Bearer <token>` in the Authorization header for all other requests.
 5. Set run command: `node src/server.js`
 6. After deploy, copy the Koyeb URL into `KEEP_ALIVE_URL` in your env vars
 
+## Deployment to Render
+
+Use the backend repository root as the service root directory. Set the build command to:
+
+```bash
+npm ci --production=false && npx prisma generate && npx prisma migrate deploy
+```
+
+Set the start command to:
+
+```bash
+npm start
+```
+
+Do not use `prisma db push` or `prisma db push --force-reset` for production. The configurable class-level migration converts existing `JHSLevel` values to text while preserving class data. Deploy the latest `main` commit so Render uses the committed migration files and migration lock.
+
 ---
 
 ## Project structure reminder

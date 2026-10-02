@@ -240,7 +240,7 @@ const getMyReportCards = async (req, res) => {
         message: "Student profile not found."
       });
     }
-    const reports = await studentService.getStudentReports(student.id);
+    const reports = await studentService.getStudentReports(req.user.schoolId, student.id);
     return sendSuccess(res, 200, "Report cards fetched.", reports);
   } catch (error) {
     console.error('❌ Get my report cards error:', error);
