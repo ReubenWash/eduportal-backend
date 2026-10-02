@@ -175,7 +175,7 @@ model StudentGuardian {
 model Class {
   id             String         @id @default(uuid())
   schoolId       String
-  level          JHSLevel
+  level          String
   section        String
   classTeacherId String?
   academicYear   String
@@ -1173,12 +1173,6 @@ enum Plan {
   BASIC
   STANDARD
   PREMIUM
-}
-
-enum JHSLevel {
-  JHS1
-  JHS2
-  JHS3
 }
 
 enum SubjectType {
