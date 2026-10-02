@@ -148,6 +148,16 @@ npm start
 
 Do not use `prisma db push` or `prisma db push --force-reset` for production. The configurable class-level migration converts existing `JHSLevel` values to text while preserving class data. Deploy the latest `main` commit so Render uses the committed migration files and migration lock.
 
+### Existing production database without Prisma migration history
+
+The existing Neon database was originally created without Prisma Migrate, so `migrate deploy` first needs to baseline its existing schema. After deploying the commit containing `20261001000000_existing_schema_baseline`, temporarily use this Render build command once:
+
+```bash
+npm ci --production=false && npx prisma generate && npx prisma migrate resolve --applied 20261001000000_existing_schema_baseline && npx prisma migrate deploy
+```
+
+This records the existing database as having the baseline; it does not recreate or clear tables. The remaining migrations then add the audit action and convert existing class levels from the enum to text. After this deploy succeeds, return the Render build command to the normal command above (without `migrate resolve`) for future deploys. Do not run this baseline command against a new/empty database; an empty database should use `migrate deploy` directly so Prisma creates the baseline schema.
+
 ---
 
 ## Project structure reminder
