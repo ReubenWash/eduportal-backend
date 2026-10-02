@@ -35,7 +35,7 @@ const buildActivityAuditData = (req, statusCode) => {
   const ipAddress = req.ip || null;
 
   return {
-    userId: req.user.id,
+    userId: req.user.userId || req.user.id,
     schoolId: req.user.schoolId,
     action,
     resource: RESOURCE_BY_ROUTE[routeName] || 'SYSTEM_SETTING',

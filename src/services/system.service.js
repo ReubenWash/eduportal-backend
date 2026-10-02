@@ -6,6 +6,8 @@ const execPromise = util.promisify(exec);
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const cloudinary = require('../config/cloudinary');
+const databaseBackup = require('../utils/databaseBackup');
 
 // ─────────────────────────────────────────────────────
 // SYSTEM METRICS
@@ -294,25 +296,31 @@ const getBackupById = async (id) => {
 };
 
 const createBackup = async (data) => {
-  const { type = 'FULL', metadata } = data;
+  const { type = 'DATABASE_ONLY', metadata, userId = null } = data;
+  if (type !== 'DATABASE_ONLY') {
+    throw createError('Only database-only backups are currently supported.', 400);
+  }
 
   const backup = await prisma.backup.create({
     data: {
-      name: `${type}_${new Date().toISOString()}`,
+      name: `DATABASE_ONLY_${new Date().toISOString()}`,
       type,
       status: 'PENDING',
       metadata: metadata || {},
+      storage: 'CLOUDINARY',
       startedAt: new Date()
     }
   });
 
-  // Trigger backup asynchronously
-  processBackup(backup.id);
+  processBackup(backup.id, userId).catch(error => {
+    console.error('Backup processing failed:', error.message);
+  });
 
   return backup;
 };
 
-const processBackup = async (backupId) => {
+const processBackup = async (backupId, userId) => {
+  let dump;
   try {
     // Update status
     await prisma.backup.update({
@@ -320,40 +328,49 @@ const processBackup = async (backupId) => {
       data: { status: 'IN_PROGRESS' }
     });
 
-    // Add log
     await prisma.backupLog.create({
       data: {
         backupId,
         message: 'Backup started',
         level: 'INFO'
       }
-    });
+    }).catch(() => {});
 
-    // Simulate backup process
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Generate file URL
-    const fileUrl = `https://storage.example.com/backups/backup_${backupId}_${Date.now()}.sql.gz`;
+    dump = await databaseBackup.createDumpFile();
+    const upload = await databaseBackup.uploadDump(dump.filePath, backupId);
 
     // Update backup
-    await prisma.backup.update({
+    const completed = await prisma.backup.update({
       where: { id: backupId },
       data: {
         status: 'SUCCESS',
-        size: 1024 * 1024 * (Math.floor(Math.random() * 500) + 100),
-        fileUrl,
+        size: upload.bytes || dump.size,
+        storage: 'CLOUDINARY',
+        location: upload.public_id,
+        fileUrl: null,
         completedAt: new Date()
       }
     });
 
-    // Add success log
     await prisma.backupLog.create({
       data: {
         backupId,
         message: 'Backup completed successfully',
         level: 'INFO'
       }
-    });
+    }).catch(() => {});
+
+    if (userId) {
+      await prisma.auditLog.create({
+        data: {
+          userId,
+          action: 'BACKUP_CREATE',
+          resource: 'BACKUP',
+          resourceId: backupId,
+          metadata: { backupName: completed.name, size: completed.size, storage: completed.storage },
+        },
+      }).catch(error => console.error('Backup audit write failed:', error.message));
+    }
 
   } catch (error) {
     // Update backup with error
@@ -373,23 +390,49 @@ const processBackup = async (backupId) => {
         level: 'ERROR'
       }
     });
+    throw error;
+  } finally {
+    if (dump?.directory) await fs.promises.rm(dump.directory, { recursive: true, force: true });
   }
 };
 
-const restoreBackup = async (backupId, userId = null) => {
+const downloadBackup = async (backupId) => {
   const backup = await prisma.backup.findUnique({
     where: { id: backupId }
   });
-
   if (!backup) {
     throw createError('Backup not found', 404);
   }
+  if (backup.status !== 'SUCCESS' || backup.storage !== 'CLOUDINARY' || !backup.location) {
+    throw createError('This backup is not available for download.', 400);
+  }
+  return databaseBackup.downloadDump(backup.location);
+};
 
-  if (backup.status !== 'SUCCESS') {
-    throw createError('Only successful backups can be restored', 400);
+const restoreBackup = async (backupId, userId = null, confirmationName) => {
+  const backup = await prisma.backup.findUnique({ where: { id: backupId } });
+  if (!backup) throw createError('Backup not found', 404);
+  if (backup.status !== 'SUCCESS' || backup.storage !== 'CLOUDINARY' || !backup.location) {
+    throw createError('Only completed database backups can be restored.', 400);
+  }
+  if (backup.type !== 'DATABASE_ONLY') throw createError('This backup type cannot be restored by the database restore tool.', 400);
+  if (confirmationName !== backup.name) {
+    throw createError('Type the exact backup name to confirm this destructive restore.', 400);
   }
 
-  // Log the restore action
+  let dump;
+  try {
+    dump = await databaseBackup.downloadDump(backup.location);
+    await databaseBackup.restoreDump(dump.filePath);
+  } catch (error) {
+    await prisma.backupLog.create({
+      data: { backupId, message: `Restore failed: ${error.message}`, level: 'ERROR' },
+    }).catch(() => {});
+    throw createError(`Database restore failed: ${error.message}`, 500);
+  } finally {
+    if (dump?.directory) await fs.promises.rm(dump.directory, { recursive: true, force: true });
+  }
+
   await prisma.auditLog.create({
     data: {
       userId,
@@ -398,10 +441,12 @@ const restoreBackup = async (backupId, userId = null) => {
       resourceId: backupId,
       metadata: { backupName: backup.name }
     }
-  });
+  }).catch(error => console.error('Restore audit write failed:', error.message));
+  await prisma.backupLog.create({
+    data: { backupId, message: 'Database restore completed successfully', level: 'INFO' },
+  }).catch(error => console.error('Restore log write failed:', error.message));
 
-  // In real implementation, this would trigger a restore process
-  return { message: 'Restore initiated successfully' };
+  return { message: `Database restored from ${backup.name}.`, restored: true };
 };
 
 const deleteBackup = async (backupId, userId = null) => {
@@ -413,7 +458,9 @@ const deleteBackup = async (backupId, userId = null) => {
     throw createError('Backup not found', 404);
   }
 
-  // Delete file from storage would happen here
+  if (backup.storage === 'CLOUDINARY' && backup.location) {
+    await cloudinary.uploader.destroy(backup.location, { resource_type: 'raw', type: 'authenticated', invalidate: true });
+  }
 
   await prisma.backup.delete({
     where: { id: backupId }
@@ -428,7 +475,7 @@ const deleteBackup = async (backupId, userId = null) => {
       resourceId: backupId,
       metadata: { backupName: backup.name }
     }
-  });
+  }).catch(error => console.error('Backup deletion audit write failed:', error.message));
 
   return { message: 'Backup deleted successfully' };
 };
@@ -734,6 +781,7 @@ module.exports = {
   getBackups,
   getBackupById,
   createBackup,
+  downloadBackup,
   restoreBackup,
   deleteBackup,
   getBackupSchedule,

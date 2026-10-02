@@ -17,6 +17,7 @@ router.post('/health/check', controller.checkServiceHealth);
 // ── Backups ──
 router.get('/backups', controller.getBackups);
 router.get('/backups/schedule', controller.getBackupSchedule);
+router.get('/backups/:id/download', controller.downloadBackup);
 router.get('/backups/:id', controller.getBackupById);
 router.post('/backups', controller.createBackup);
 router.post('/backups/schedule', controller.updateBackupSchedule);

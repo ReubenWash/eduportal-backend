@@ -5,7 +5,7 @@ const { buildActivityAuditData } = require('../src/utils/activityAudit');
 const makeRequest = (overrides = {}) => ({
   method: 'PATCH',
   originalUrl: '/api/v1/students/student-123?include=class',
-  user: { id: 'user-1', schoolId: 'school-1', role: 'CLASS_TEACHER' },
+  user: { userId: 'user-1', schoolId: 'school-1', role: 'CLASS_TEACHER' },
   params: { id: 'student-123' },
   ip: '192.0.2.10',
   headers: { 'x-forwarded-for': '198.51.100.200', 'user-agent': 'test-agent' },

@@ -2,6 +2,12 @@
 
 echo "🚀 Starting Render build process..."
 
+# Database snapshots require the PostgreSQL client tools at runtime.
+if ! command -v pg_dump >/dev/null 2>&1 || ! command -v pg_restore >/dev/null 2>&1; then
+	apt-get update -qq
+	apt-get install -y postgresql-client
+fi
+
 # Create necessary directories
 mkdir -p uploads/reports
 mkdir -p uploads/temp

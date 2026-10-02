@@ -53,13 +53,21 @@ const getBackupById = async (req, res) => {
 // POST /api/v1/admin/system/backups
 const createBackup = async (req, res) => {
   const { type, metadata } = req.body;
-  const backup = await systemService.createBackup({ type, metadata });
+  const backup = await systemService.createBackup({ type, metadata, userId: req.user.userId });
   return sendSuccess(res, 201, "Backup initiated", backup);
+};
+
+const downloadBackup = async (req, res) => {
+  const artifact = await systemService.downloadBackup(req.params.id);
+  res.download(artifact.filePath, `eduportal-${req.params.id}.dump`, (error) => {
+    require('fs').promises.rm(artifact.directory, { recursive: true, force: true }).catch(() => {});
+    if (error && !res.headersSent) res.status(500).end();
+  });
 };
 
 // POST /api/v1/admin/system/backups/:id/restore
 const restoreBackup = async (req, res) => {
-  const result = await systemService.restoreBackup(req.params.id, req.user.userId);
+  const result = await systemService.restoreBackup(req.params.id, req.user.userId, req.body?.confirmationName);
   return sendSuccess(res, 200, result.message, result);
 };
 
@@ -145,6 +153,7 @@ module.exports = {
   getBackups,
   getBackupById,
   createBackup,
+  downloadBackup,
   restoreBackup,
   deleteBackup,
   getBackupSchedule,
