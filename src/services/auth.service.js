@@ -48,8 +48,7 @@ const login = async (identifier, password) => {
         select: { 
           id: true, 
           status: true, 
-          name: true,
-          headmasterName: true
+          name: true 
         } 
       }
     },
@@ -117,14 +116,6 @@ const login = async (identifier, password) => {
   // ✅ Determine login identifier for display
   const loginIdentifier = user.studentProfile?.studentNumber || user.email;
 
-  // A SCHOOL_ADMIN has no staff/student/guardian profile — their name was
-  // captured at registration as School.headmasterName. Without this, the
-  // dashboard greeting silently fell back to showing the admin's email
-  // instead of their actual name.
-  const displayName = profile
-    ? `${profile.firstName} ${profile.lastName}`
-    : (user.role === 'SCHOOL_ADMIN' && user.school?.headmasterName) || user.email;
-
   // ✅ Build the user object with all necessary data
   const userData = {
     id: user.id,
@@ -134,7 +125,7 @@ const login = async (identifier, password) => {
     schoolId: user.schoolId,
     schoolStatus: user.school?.status || 'UNKNOWN',
     schoolName: user.school?.name || null,
-    name: displayName,
+    name: profile ? `${profile.firstName} ${profile.lastName}` : user.email,
     photoUrl: profile?.photoUrl || null,
     mustChangePassword: user.mustChangePassword,
     studentNumber: user.studentProfile?.studentNumber || null,
@@ -477,24 +468,14 @@ const getMe = async (userId) => {
           name: true, 
           logoUrl: true, 
           plan: true, 
-          status: true,
-          headmasterName: true
+          status: true 
         },
       },
     },
   });
 
   if (!user) throw createError("User not found.", 404);
-
-  // Not currently called by the frontend, but kept consistent with login()'s
-  // name resolution so this doesn't become a landmine if it's wired up later —
-  // the raw Prisma object has no flattened `name` at all otherwise.
-  const profile = user.staff || user.studentProfile || user.guardianProfile || null;
-  const name = profile
-    ? `${profile.firstName} ${profile.lastName}`
-    : (user.role === 'SCHOOL_ADMIN' && user.school?.headmasterName) || user.email;
-
-  return { ...user, name };
+  return user;
 };
 
 // ── Change password ────────────────────────────────────────────
