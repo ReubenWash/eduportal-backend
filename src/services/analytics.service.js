@@ -103,7 +103,7 @@ const getTopStudents = async (schoolId, termId, limit, classId) => {
   return reports.map((r) => ({
     rank: r.classPosition,
     student: r.student,
-    aggregate: r.aggregate,
+    average: r.aggregate,
     class: r.student.enrollments[0]?.class || null,
   }));
 };
@@ -209,7 +209,7 @@ const exportAnalytics = async (schoolId, { type, termId, format }) => {
             "Student No": r.student.studentNumber,
             Name: `${r.student.firstName} ${r.student.lastName}`,
             Position: r.position,
-            Aggregate: r.aggregate,
+            Average: r.aggregate || r.average,
           }))
         );
       }
@@ -237,7 +237,7 @@ const exportAnalytics = async (schoolId, { type, termId, format }) => {
         "Student No": t.student.studentNumber,
         Name: `${t.student.firstName} ${t.student.lastName}`,
         Gender: t.student.gender,
-        Aggregate: t.aggregate,
+        Average: t.average,
         Class: t.class ? `${t.class.level} ${t.class.section}` : "—",
       }));
       filename = `top_students_${termId}`;
