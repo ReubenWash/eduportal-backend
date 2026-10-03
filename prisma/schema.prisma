@@ -309,7 +309,8 @@ model Report {
   termId          String
   classPosition   Int?
   totalStudents   Int?
-  aggregate       Float?
+  aggregate       Float?       // True GES-style aggregate (sum of best 6 subject grade-ranks, 6-54, lower=better). JHS3 BECE-prep only.
+  averageScore    Float?       // Mean of this student's subject totals for the term, 0-100. What "average" should actually mean everywhere else.
   teacherRemark   String?
   headRemark      String?
   conductScore    Json?

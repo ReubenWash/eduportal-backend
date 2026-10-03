@@ -43,11 +43,15 @@ const generateReports = async (schoolId, { termId, studentId, classId }) => {
         select: { total: true }
       });
 
-      // Calculate aggregate (average)
-      let aggregate = null;
+      // This is a percentage AVERAGE (0-100), not the true GES "aggregate"
+      // (sum of best 6 grade-ranks) — computeClassGrades() in score.service.js
+      // computes and owns the real `aggregate` field separately. These two
+      // used to both write to `aggregate`, silently overwriting each other
+      // depending on which ran last.
+      let averageScore = null;
       if (scores.length > 0) {
         const totalScore = scores.reduce((sum, s) => sum + (s.total || 0), 0);
-        aggregate = Math.round(totalScore / scores.length);
+        averageScore = Math.round(totalScore / scores.length);
       }
 
       // Attendance totals
@@ -59,7 +63,7 @@ const generateReports = async (schoolId, { termId, studentId, classId }) => {
       const daysLate    = attendance.filter((a) => a.status === "LATE").length;
       const totalSchoolDays = daysPresent + daysAbsent + daysLate;
 
-      // Upsert draft report with aggregate
+      // Upsert draft report with averageScore
       const report = await prisma.report.upsert({
         where: { 
           studentId_termId: { studentId: sId, termId } 
@@ -67,7 +71,7 @@ const generateReports = async (schoolId, { termId, studentId, classId }) => {
         create: {
           studentId: sId,
           termId,
-          aggregate,
+          averageScore,
           daysPresent,
           daysAbsent,
           daysLate,
@@ -75,7 +79,7 @@ const generateReports = async (schoolId, { termId, studentId, classId }) => {
           status: "DRAFT",
         },
         update: {
-          aggregate,
+          averageScore,
           daysPresent,
           daysAbsent,
           daysLate,

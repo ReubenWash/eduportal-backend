@@ -103,7 +103,10 @@ const getTopStudents = async (schoolId, termId, limit, classId) => {
   return reports.map((r) => ({
     rank: r.classPosition,
     student: r.student,
-    average: r.aggregate,
+    average: r.averageScore,
+    // True GES aggregate kept separately, for any view that specifically
+    // wants it (e.g. BECE prep) — but never falls back here as "average".
+    aggregate: r.aggregate,
     class: r.student.enrollments[0]?.class || null,
   }));
 };

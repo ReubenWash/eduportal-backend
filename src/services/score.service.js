@@ -150,27 +150,34 @@ const computeClassGrades = async (schoolId, classId, termId) => {
     }
   }
 
-  // Compute aggregate and overall position per student (JHS3 BECE prep)
+  // Compute the TRUE GES aggregate (sum of best 6 grade-ranks, JHS3 BECE
+  // prep) AND the plain percentage average (mean of subject totals) per
+  // student. These are two different numbers for two different purposes —
+  // they used to share one `aggregate` column and overwrite each other.
   const studentAggregates = [];
   for (const studentId of studentIds) {
-    const allGrades = await prisma.score.findMany({
+    const allScores = await prisma.score.findMany({
       where:  { studentId, termId, grade: { not: null } },
-      select: { grade: true },
+      select: { grade: true, total: true },
     });
 
-    const aggregate = computeAggregate(allGrades.map((g) => g.grade));
-    studentAggregates.push({ studentId, aggregate });
+    const aggregate = computeAggregate(allScores.map((s) => s.grade));
+    const averageScore = allScores.length > 0
+      ? Math.round(allScores.reduce((sum, s) => sum + (s.total || 0), 0) / allScores.length)
+      : null;
+    studentAggregates.push({ studentId, aggregate, averageScore });
   }
 
-  // Rank students by aggregate (lower = better)
+  // Rank students by the true aggregate (lower = better) — this ranking is
+  // specifically for BECE-style class position, independent of the average.
   const ranked = [...studentAggregates].sort((a, b) => a.aggregate - b.aggregate);
   let position = 1;
   for (let i = 0; i < ranked.length; i++) {
     if (i > 0 && ranked[i].aggregate > ranked[i - 1].aggregate) position = i + 1;
     await prisma.report.upsert({
       where:  { studentId_termId: { studentId: ranked[i].studentId, termId } },
-      create: { studentId: ranked[i].studentId, termId, classPosition: position, totalStudents: studentIds.length, aggregate: ranked[i].aggregate },
-      update: { classPosition: position, totalStudents: studentIds.length, aggregate: ranked[i].aggregate },
+      create: { studentId: ranked[i].studentId, termId, classPosition: position, totalStudents: studentIds.length, aggregate: ranked[i].aggregate, averageScore: ranked[i].averageScore },
+      update: { classPosition: position, totalStudents: studentIds.length, aggregate: ranked[i].aggregate, averageScore: ranked[i].averageScore },
     });
   }
 
