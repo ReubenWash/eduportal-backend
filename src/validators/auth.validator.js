@@ -9,9 +9,9 @@ const loginValidator = [
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
       const normalizedValue = value.toUpperCase();
       const isStudentNumber = /^STU\/\d{4}\/\d{4}$/.test(normalizedValue)
-        || /^JHS-\d{4}-\d{4,}$/.test(normalizedValue);
+        || /^(JHS|PRI|SHS|STU)-\d{4}-\d{4,}$/.test(normalizedValue);
       if (!isEmail && !isStudentNumber) {
-        throw new Error("Please enter a valid email address or student number (e.g., JHS-2026-0001)");
+        throw new Error("Please enter a valid email address or student number (e.g., PRI-2026-0001)");
       }
       return true;
     }),
@@ -72,7 +72,15 @@ const studentResetPasswordValidator = [
   body("studentNumber")
     .trim()
     .notEmpty().withMessage("Student number is required.")
-    .matches(/^STU\/\d{4}\/\d{4}$/).withMessage("Student number must be in format STU/YYYY/XXXX (e.g., STU/2026/0001)"),
+    .custom((value) => {
+      const normalizedValue = value.toUpperCase();
+      const isValid = /^STU\/\d{4}\/\d{4}$/.test(normalizedValue)
+        || /^(JHS|PRI|SHS|STU)-\d{4}-\d{4,}$/.test(normalizedValue);
+      if (!isValid) {
+        throw new Error("Invalid student number format (e.g., PRI-2026-0001)");
+      }
+      return true;
+    }),
 
   body("dateOfBirth")
     .notEmpty().withMessage("Date of birth is required.")

@@ -312,8 +312,9 @@ const getStudentsQueryValidator = [
   
   query("level")
     .optional()
-    .isIn(["JHS1", "JHS2", "JHS3"])
-    .withMessage("Level must be JHS1, JHS2, or JHS3."),
+    .trim()
+    .isLength({ min: 1, max: 40 })
+    .withMessage("Invalid level format."),
   
   query("gender")
     .optional()

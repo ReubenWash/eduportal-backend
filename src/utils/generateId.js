@@ -8,8 +8,18 @@ const parseSequence = (value, prefix) => {
 };
 
 const generateStudentNumber = async (schoolId) => {
+  const school = await prisma.school.findUnique({
+    where: { id: schoolId },
+    select: { type: true },
+  });
+
   const year = new Date().getFullYear();
-  const prefix = `JHS-${year}-`;
+  let typePrefix = "STU"; // default
+  if (school?.type === "PRIMARY") typePrefix = "PRI";
+  if (school?.type === "JHS") typePrefix = "JHS";
+  if (school?.type === "SHS") typePrefix = "SHS";
+
+  const prefix = `${typePrefix}-${year}-`;
 
   const latest = await prisma.student.findFirst({
     where: { schoolId, studentNumber: { startsWith: prefix } },

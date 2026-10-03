@@ -20,6 +20,7 @@ model School {
   logoUrl        String?
   motto          String?
   status         SchoolStatus    @default(PENDING)
+  type           SchoolType      @default(JHS)
   plan           Plan            @default(BASIC)
   reportConfig   Json?
   scoreLabels    Json?
@@ -1167,6 +1168,13 @@ enum SchoolStatus {
   SUSPENDED
   DEACTIVATED
   REJECTED
+}
+
+enum SchoolType {
+  PRIMARY
+  JHS
+  SHS
+  MIXED
 }
 
 enum Plan {
