@@ -1,10 +1,14 @@
 /**
  * EduTrack Grade Engine
- * Matches the school admin grade configuration used across the app.
- * Produces A1–F9 style grades for totals out of 100.
+ *
+ * Every number and label this produces comes from the SCHOOL'S OWN
+ * gradingConfig (School.gradingConfig, set via Settings > Grading). There
+ * is no "default" scale a real school ever actually sees — the constants
+ * below exist only as what a school starts with before it configures
+ * anything, so the admin's settings are always the live source of truth,
+ * not a fallback that silently stays in effect forever.
  */
 
-// Default school grading scale — can be overridden per school via DB config
 const DEFAULT_GRADE_SCALE = [
   { min: 90, max: 100, grade: "A1", remark: "Excellent" },
   { min: 80, max: 89,  grade: "B2", remark: "Very Good" },
@@ -17,86 +21,128 @@ const DEFAULT_GRADE_SCALE = [
   { min: 0,  max: 49,  grade: "F9", remark: "Fail" },
 ];
 
+const GRADE_REMARKS = {
+  A1: "Excellent", B2: "Very Good", B3: "Good", C4: "Fair",
+  C5: "Satisfactory", C6: "Credit", D7: "Pass", E8: "Weak", F9: "Fail",
+};
+
+// What a school starts with before visiting Settings > Grading.
+const DEFAULT_GRADING_CONFIG = {
+  caCount: 3,
+  caMaxScore: 10,    // max score per individual CA
+  examMaxScore: 70,  // exam's weight out of 100 (CA weight = 100 - this)
+  boundaries: { A1: 90, B2: 80, B3: 75, C4: 70, C5: 65, C6: 60, D7: 55, E8: 50 },
+};
+
 /**
- * Compute the CA total (normalised to 30)
- * Takes up to 3 CA scores (each max 10), averages them, scales to 30
- * @param {number|null} ca1
- * @param {number|null} ca2
- * @param {number|null} ca3
- * @returns {number} CA total out of 30
+ * Convert a { A1: 90, B2: 80, ... } boundary map into the internal
+ * min/max scale array getGradeAndRemark() uses, sorted descending by
+ * threshold. Falls back to the default GES boundaries if the map is
+ * missing, empty, or malformed.
  */
-const computeCATotal = (ca1, ca2, ca3) => {
+const boundariesToScale = (boundaries) => {
+  const src = boundaries && typeof boundaries === "object" && Object.keys(boundaries).length
+    ? boundaries
+    : DEFAULT_GRADING_CONFIG.boundaries;
+
+  const entries = Object.entries(src)
+    .map(([grade, min]) => ({ grade, min: Number(min) }))
+    .filter((e) => !Number.isNaN(e.min))
+    .sort((a, b) => b.min - a.min);
+
+  if (entries.length === 0) return DEFAULT_GRADE_SCALE;
+
+  const scale = entries.map((entry, i) => ({
+    grade: entry.grade,
+    min: entry.min,
+    max: i === 0 ? 100 : entries[i - 1].min - 1,
+    remark: GRADE_REMARKS[entry.grade] || entry.grade,
+  }));
+
+  const lowest = entries[entries.length - 1];
+  scale.push({ min: 0, max: lowest.min - 1, grade: "F9", remark: "Fail" });
+
+  return scale;
+};
+
+/**
+ * Normalise a school's raw stored gradingConfig (possibly null/undefined/
+ * partial) into a complete, safe config with a ready-to-use `scale` and
+ * derived `caWeight`. This is the single object every consumer — score
+ * computation, the PDF, the teacher's entry page, the student/parent
+ * portals — should read caMaxScore/examMaxScore/caWeight/scale from,
+ * rather than each inventing its own copy of these numbers.
+ */
+const resolveGradingConfig = (rawConfig) => {
+  const cfg = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+  const boundaries = {
+    ...DEFAULT_GRADING_CONFIG.boundaries,
+    ...(cfg.boundaries && typeof cfg.boundaries === "object" ? cfg.boundaries : {}),
+  };
+
+  const examMaxScore = Number(cfg.examMaxScore) || DEFAULT_GRADING_CONFIG.examMaxScore;
+
+  return {
+    caCount:      Number(cfg.caCount)    || DEFAULT_GRADING_CONFIG.caCount,
+    caMaxScore:   Number(cfg.caMaxScore) || DEFAULT_GRADING_CONFIG.caMaxScore,
+    examMaxScore,
+    caWeight:     100 - examMaxScore,
+    boundaries,
+    scale: boundariesToScale(boundaries),
+  };
+};
+
+const computeCATotal = (ca1, ca2, ca3, config = DEFAULT_GRADING_CONFIG) => {
   const scores = [ca1, ca2, ca3].filter((s) => s !== null && s !== undefined);
   if (scores.length === 0) return 0;
 
-  const avg = scores.reduce((sum, s) => sum + s, 0) / scores.length;
-  // Each CA is out of 10, average normalised to 30
-  return parseFloat(((avg / 10) * 30).toFixed(2));
+  const caWeight = config.caWeight ?? (100 - (config.examMaxScore ?? DEFAULT_GRADING_CONFIG.examMaxScore));
+  const maxPerCA = config.caMaxScore ?? DEFAULT_GRADING_CONFIG.caMaxScore;
+  const avg      = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+
+  return parseFloat(((avg / maxPerCA) * caWeight).toFixed(2));
 };
 
-/**
- * Compute the exam score normalised to 70
- * Raw exam score is out of 100, scaled to 70
- * @param {number|null} examScore
- * @returns {number} Exam contribution out of 70
- */
-const computeExamContribution = (examScore) => {
+// Exam is always entered/stored as a raw score out of 100, then scaled to
+// the school's configured exam weight — never "out of examMaxScore" directly.
+const computeExamContribution = (examScore, config = DEFAULT_GRADING_CONFIG) => {
   if (examScore === null || examScore === undefined) return 0;
-  return parseFloat(((examScore / 100) * 70).toFixed(2));
+  const examWeight = config.examMaxScore ?? DEFAULT_GRADING_CONFIG.examMaxScore;
+  return parseFloat(((examScore / 100) * examWeight).toFixed(2));
 };
 
-/**
- * Compute the total score out of 100
- * @param {number} caTotal      - CA contribution (out of 30)
- * @param {number} examContrib  - Exam contribution (out of 70)
- * @returns {number} Total score out of 100
- */
 const computeTotal = (caTotal, examContrib) => {
   return parseFloat((caTotal + examContrib).toFixed(2));
 };
 
-/**
- * Get grade and remark from total score
- * @param {number} total - Total score (0–100)
- * @param {Array}  scale - Optional custom grade scale
- * @returns {{ grade: string, remark: string }}
- */
 const getGradeAndRemark = (total, scale = DEFAULT_GRADE_SCALE) => {
   for (const entry of scale) {
     if (total >= entry.min && total <= entry.max) {
       return { grade: entry.grade, remark: entry.remark };
     }
   }
-  return { grade: "6", remark: "Fail" };
+  return { grade: "F9", remark: "Fail" };
 };
 
 /**
- * Full score computation for one student-subject-term record
+ * Full score computation for one student-subject-term record.
  * @param {{ ca1, ca2, ca3, examScore }} scoreData
- * @param {Array} gradeScale - Optional custom scale
- * @returns {{ caTotal, examContribution, total, grade, remark }}
+ * @param {Object|null} rawGradingConfig - School.gradingConfig as stored (raw JSON, may be null)
  */
-const computeScore = (scoreData, gradeScale = DEFAULT_GRADE_SCALE) => {
+const computeScore = (scoreData, rawGradingConfig) => {
+  const config = resolveGradingConfig(rawGradingConfig);
   const { ca1, ca2, ca3, examScore } = scoreData;
 
-  const caTotal          = computeCATotal(ca1, ca2, ca3);
-  const examContribution = computeExamContribution(examScore);
-  const total            = computeTotal(caTotal, examContribution);
-  const { grade, remark } = getGradeAndRemark(total, gradeScale);
+  const caTotal           = computeCATotal(ca1, ca2, ca3, config);
+  const examContribution  = computeExamContribution(examScore, config);
+  const total             = computeTotal(caTotal, examContribution);
+  const { grade, remark } = getGradeAndRemark(total, config.scale);
 
   return { caTotal, examContribution, total, grade, remark };
 };
 
-/**
- * Compute class positions for an array of student score totals
- * Students with equal totals share the same position (dense rank)
- * @param {Array<{ studentId: string, total: number }>} scores
- * @returns {Array<{ studentId: string, total: number, position: number }>}
- */
 const computePositions = (scores) => {
-  // Sort descending by total
   const sorted = [...scores].sort((a, b) => b.total - a.total);
-
   let position = 1;
   return sorted.map((entry, index) => {
     if (index > 0 && entry.total < sorted[index - 1].total) {
@@ -106,40 +152,14 @@ const computePositions = (scores) => {
   });
 };
 
-/**
- * Compute aggregate score (sum of best N subject grades)
- * Used for JHS 3 BECE-prep tracking — lower aggregate is better
- * @param {Array<string>} grades - Array of grade strings (e.g. ["1","2","3",...])
- * @param {number} best - Number of best subjects to sum (default 6)
- * @returns {number} Aggregate score
- */
 const gradeToRank = (grade) => {
   if (grade === null || grade === undefined || grade === '') return null;
-
   if (typeof grade === 'number') return grade;
-
   const normalized = String(grade).trim().toUpperCase();
   const mapping = {
-    A1: 1,
-    B2: 2,
-    B3: 3,
-    C4: 4,
-    C5: 5,
-    C6: 6,
-    D7: 7,
-    E8: 8,
-    F9: 9,
-    1: 1,
-    2: 2,
-    3: 3,
-    4: 4,
-    5: 5,
-    6: 6,
-    7: 7,
-    8: 8,
-    9: 9,
+    A1: 1, B2: 2, B3: 3, C4: 4, C5: 5, C6: 6, D7: 7, E8: 8, F9: 9,
+    1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 8, 9: 9,
   };
-
   return mapping[normalized] ?? null;
 };
 
@@ -147,23 +167,20 @@ const computeAggregate = (grades, best = 6) => {
   const numeric = grades
     .map((g) => gradeToRank(g))
     .filter((n) => n !== null && n !== undefined)
-    .sort((a, b) => a - b); // sort ascending (lower grade = better)
-
+    .sort((a, b) => a - b);
   return numeric.slice(0, best).reduce((sum, g) => sum + g, 0);
 };
 
-/**
- * Validate a score value is within allowed range
- * @param {number} score
- * @param {number} max
- * @returns {boolean}
- */
 const isValidScore = (score, max = 100) => {
   return score !== null && score !== undefined && score >= 0 && score <= max;
 };
 
 module.exports = {
   DEFAULT_GRADE_SCALE,
+  DEFAULT_GRADING_CONFIG,
+  GRADE_REMARKS,
+  boundariesToScale,
+  resolveGradingConfig,
   computeCATotal,
   computeExamContribution,
   computeTotal,

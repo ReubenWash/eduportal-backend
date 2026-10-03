@@ -83,7 +83,10 @@ const getChildGrades = async (req, res, next) => {
       include: { subject: true, term: true }
     });
 
-    const normalizedScores = normalizeGuardianGradePayload(scores);
+    // This guardian's own school's real grading config, so the parent
+    // portal shows the admin's actual configured CA/exam structure.
+    const school = await prisma.school.findUnique({ where: { id: req.user.schoolId }, select: { gradingConfig: true } });
+    const normalizedScores = normalizeGuardianGradePayload(scores, school?.gradingConfig || null);
     sendSuccess(res, 200, "Success", normalizedScores);
   } catch (error) {
     next(error);

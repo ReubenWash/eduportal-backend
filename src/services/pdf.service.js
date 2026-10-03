@@ -32,7 +32,7 @@ const { prisma } = require("../config/db");
 const cloudinary = require("../config/cloudinary");
 const { createError } = require("../middleware/errorHandler");
 const logger = require("../config/logger");
-const { computeCATotal, computeExamContribution, computeTotal } = require("../utils/gradeEngine");
+const { computeCATotal, computeExamContribution, computeTotal, resolveGradingConfig } = require("../utils/gradeEngine");
 const { cleanFileName, studentFullName, studentResultsFileName, storedResultsPublicId } = require("../utils/fileNames");
 const crypto = require("crypto");
 const { pdfImageUrl } = require("../utils/imageUrl");
@@ -111,7 +111,7 @@ const fetchReportData = async (reportId) => {
           school: {
             select: {
               id: true, name: true, logoUrl: true, motto: true,
-              address: true, phone: true, reportConfig: true,
+              address: true, phone: true, reportConfig: true, gradingConfig: true,
             },
           },
         },
@@ -196,14 +196,19 @@ const buildSubjectRows = async ({ school, scores, report }, theme) => {
     }
   }
 
+  // Use this school's own CA/exam weighting (Settings > Grading) rather
+  // than the hardcoded 30/70 default, so the PDF matches what was
+  // actually configured and actually computed at save time.
+  const gradingConfig = resolveGradingConfig(school?.gradingConfig);
+
   return ordered.map((subj) => {
     const s = scoreBySubject.get(subj.id);
     const scored = s && ([s.ca1, s.ca2, s.ca3, s.examScore, s.total].some(hasVal));
     if (!scored) {
       return { name: subj.name, ca: '', exam: '', total: '', position: '', remark: '' };
     }
-    const ca = hasVal(s.caTotal) ? s.caTotal : computeCATotal(s.ca1, s.ca2, s.ca3);
-    const exam = computeExamContribution(s.examScore);
+    const ca = hasVal(s.caTotal) ? s.caTotal : computeCATotal(s.ca1, s.ca2, s.ca3, gradingConfig);
+    const exam = computeExamContribution(s.examScore, gradingConfig);
     const total = hasVal(s.total) ? s.total : computeTotal(ca, exam);
     return {
       name: subj.name,
@@ -267,6 +272,10 @@ const loadPdfImage = async (url, kind, options = {}) => {
 const drawReportCard = async (doc, data) => {
   const { school, student, term, report } = data;
 
+  // Header labels ("CLASS SCORE (30%)" etc.) reflect this school's actual
+  // configured weighting — reportConfig can still override explicitly below.
+  const schoolGradingConfig = resolveGradingConfig(school?.gradingConfig);
+
   const theme = {
     primaryColor: '#1E2A78',
     title: "LEARNER'S TERMINAL REPORT",
@@ -274,8 +283,8 @@ const drawReportCard = async (doc, data) => {
     contact: null,
     motto: null,
     logoUrl: null,
-    classScoreWeight: 30,
-    examScoreWeight: 70,
+    classScoreWeight: schoolGradingConfig.caWeight,
+    examScoreWeight: schoolGradingConfig.examMaxScore,
     showAllSubjects: true,
     showLogo: true,
     showSchoolName: true,

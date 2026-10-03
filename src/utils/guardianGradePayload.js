@@ -1,4 +1,14 @@
-function normalizeGuardianGradePayload(scores = []) {
+const { resolveGradingConfig, computeCATotal, computeExamContribution } = require('./gradeEngine');
+
+/**
+ * Shared by both the student self-view (getMyGrades) and the guardian/
+ * parent view (getChildGrades) — one fix here covers both.
+ *
+ * @param {Array} scores - Raw Score rows with .term and .subject included
+ * @param {Object|null} rawGradingConfig - The school's School.gradingConfig (raw, may be null)
+ */
+function normalizeGuardianGradePayload(scores = [], rawGradingConfig = null) {
+  const config = resolveGradingConfig(rawGradingConfig);
   const groups = {};
 
   scores.forEach((score) => {
@@ -22,9 +32,13 @@ function normalizeGuardianGradePayload(scores = []) {
 
   return Object.values(groups).map((group) => {
     const subjects = group.scores.map((s) => {
-      const caTotal = s.caTotal ?? (([s.ca1, s.ca2, s.ca3].filter((v) => v !== null && v !== undefined && v !== '').reduce((sum, value) => sum + Number(value), 0) / Math.max([s.ca1, s.ca2, s.ca3].filter((v) => v !== null && v !== undefined && v !== '').length, 1)) / 10 * 30);
+      // Prefer the already-computed, already-correct values stored on the
+      // Score row (set by score.service.js using this same school's
+      // config). Only fall back to recomputing here for old/incomplete
+      // rows — and when we do, use the REAL config, not a hardcoded split.
+      const caTotal = s.caTotal ?? computeCATotal(s.ca1, s.ca2, s.ca3, config);
       const examScore = s.examScore ?? 0;
-      const total = s.total ?? (caTotal + ((examScore / 100) * 70));
+      const total = s.total ?? (caTotal + computeExamContribution(examScore, config));
 
       return {
         id: s.id,
@@ -57,6 +71,16 @@ function normalizeGuardianGradePayload(scores = []) {
       },
       subjects,
       average,
+      // The school's real CA/exam structure, so the student/parent portals
+      // can render accurate "/X" labels instead of assuming 10/30/70.
+      // Attached per term-group (not wrapped) so this stays a plain array —
+      // the shape every existing frontend consumer already expects.
+      gradingConfig: {
+        caCount: config.caCount,
+        caMaxScore: config.caMaxScore,
+        examMaxScore: config.examMaxScore,
+        caWeight: config.caWeight,
+      },
     };
   });
 }

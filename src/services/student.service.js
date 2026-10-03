@@ -1178,7 +1178,12 @@ const getStudentGrades = async (studentId) => {
       ],
     });
 
-    return normalizeGuardianGradePayload(scores);
+    // Pull this school's real grading config so the self-view shows the
+    // admin's actual configured CA/exam structure, not an assumed one.
+    const student = await prisma.student.findUnique({ where: { id: studentId }, select: { schoolId: true } });
+    const school = student ? await prisma.school.findUnique({ where: { id: student.schoolId }, select: { gradingConfig: true } }) : null;
+
+    return normalizeGuardianGradePayload(scores, school?.gradingConfig || null);
   } catch (error) {
     console.error("[student.service] getStudentGrades error:", error);
     throw error;
