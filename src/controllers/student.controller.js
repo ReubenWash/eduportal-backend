@@ -504,7 +504,17 @@ const getGuardianChildren = async (req, res) => {
                 enrollments: {
                   orderBy: { createdAt: 'desc' },
                   take: 1,
-                  include: { class: true }
+                  include: {
+                    class: {
+                      include: {
+                        classTeacher: {
+                          include: {
+                            user: { select: { email: true } }
+                          }
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -520,7 +530,28 @@ const getGuardianChildren = async (req, res) => {
       });
     }
 
-    const children = guardian.students.map(s => s.student);
+    const children = guardian.students.map(s => {
+      const student = s.student;
+      const latestEnrollment = student.enrollments?.[0];
+      const classRecord = latestEnrollment?.class;
+      const className = classRecord ? `${classRecord.level} ${classRecord.section}` : 'Unassigned';
+      const classTeacherEmail = classRecord?.classTeacher?.user?.email || null;
+
+      return {
+        id: student.id,
+        name: [student.firstName, student.lastName, student.otherNames].filter(Boolean).join(' '),
+        firstName: student.firstName,
+        lastName: student.lastName,
+        studentNo: student.studentNumber,
+        studentNumber: student.studentNumber,
+        gender: student.gender,
+        dateOfBirth: student.dateOfBirth,
+        photoUrl: student.photoUrl,
+        status: student.status,
+        className,
+        classTeacherEmail,
+      };
+    });
     return sendSuccess(res, 200, "Children fetched.", children);
   } catch (error) {
     console.error('❌ Get guardian children error:', error);
