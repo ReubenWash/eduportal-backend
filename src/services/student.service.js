@@ -462,7 +462,8 @@ const getStudents = async (schoolId, query) => {
           take: 1,
           orderBy: { createdAt: "desc" },
           select: {
-            class: { select: { level: true, section: true } },
+            classId: true,
+            class: { select: { id: true, level: true, section: true } },
           },
         },
       },
@@ -470,7 +471,18 @@ const getStudents = async (schoolId, query) => {
     prisma.student.count({ where }),
   ]);
 
-  return paginatedResponse(students, total, page, limit);
+  const formattedStudents = students.map(s => {
+    const latestEnrollment = s.enrollments?.[0];
+    const classRecord = latestEnrollment?.class;
+    return {
+      ...s,
+      classId: latestEnrollment?.classId || null,
+      className: classRecord ? `${classRecord.level} ${classRecord.section}` : null,
+      enrollments: undefined, // clean up if needed or keep
+    };
+  });
+
+  return paginatedResponse(formattedStudents, total, page, limit);
 };
 
 // ─── Get Student By ID ───
