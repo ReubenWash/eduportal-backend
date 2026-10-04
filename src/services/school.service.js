@@ -3,6 +3,7 @@ const crypto  = require("crypto");
 const { prisma }  = require("../config/db");
 const { generateSchoolSlug } = require("../utils/generateId");
 const { sendVerificationEmail, sendRegistrationUnderReviewEmail, sendSchoolStatusEmail } = require("./email.service");
+const { notifyAdminsNewSchool } = require("./billingEmail.service");
 const { createError } = require("../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 const { buildSuperAdminDashboardPayload } = require("../utils/superAdminDashboard");
@@ -91,6 +92,8 @@ const registerSchool = async ({ name, email, password, region, district, headmas
   } catch (emailError) {
     console.warn('⚠️ Under review email failed (non-blocking):', emailError.message);
   }
+
+  notifyAdminsNewSchool({ schoolName: name, region, district, gesNumber, email, phone, headmasterName });
 
   return {
     id:     result.school.id,

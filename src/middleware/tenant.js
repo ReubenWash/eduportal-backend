@@ -1,6 +1,7 @@
 const { prisma }    = require("../config/db");
 const { sendError } = require("../utils/apiResponse");
 const { buildActivityAuditData } = require("../utils/activityAudit");
+const { getBillingBlock } = require("../services/billing.service");
 
 const attachActivityAudit = (req, res) => {
   if (!["SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER"].includes(req.user?.role)) return;
@@ -37,7 +38,14 @@ const tenantScope = async (req, res, next) => {
 
   const school = await prisma.school.findUnique({
     where: { id: schoolId },
-    select: { id: true, name: true, status: true, plan: true },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      plan: true,
+      planRenewsAt: true,
+      createdAt: true,
+    },
   });
 
   if (!school) {
@@ -54,6 +62,15 @@ const tenantScope = async (req, res, next) => {
 
   if (school.status === "PENDING") {
     return sendError(res, 403, "Your school account is pending approval.");
+  }
+
+  const billingBlock = await getBillingBlock(school, req);
+  if (billingBlock) {
+    return res.status(402).json({
+      success: false,
+      code: "BILLING_REQUIRED",
+      message: billingBlock,
+    });
   }
 
   req.school = school; // attach for use in controllers

@@ -48,7 +48,9 @@ const login = async (identifier, password) => {
         select: { 
           id: true, 
           status: true, 
-          name: true 
+          name: true, 
+          logoUrl: true, 
+          motto: true 
         } 
       }
     },
@@ -125,6 +127,8 @@ const login = async (identifier, password) => {
     schoolId: user.schoolId,
     schoolStatus: user.school?.status || 'UNKNOWN',
     schoolName: user.school?.name || null,
+    schoolLogoUrl: user.school?.logoUrl || null,
+    schoolMotto: user.school?.motto || null,
     name: profile ? `${profile.firstName} ${profile.lastName}` : user.email,
     photoUrl: profile?.photoUrl || null,
     mustChangePassword: user.mustChangePassword,
@@ -467,6 +471,7 @@ const getMe = async (userId) => {
           id: true, 
           name: true, 
           logoUrl: true, 
+          motto: true, 
           plan: true, 
           status: true 
         },
