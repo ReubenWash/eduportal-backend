@@ -22,6 +22,7 @@ model School {
   status         SchoolStatus    @default(PENDING)
   type           SchoolType      @default(JHS)
   plan           Plan            @default(BASIC)
+  planRenewsAt   DateTime?                              // ← NEW
   reportConfig   Json?
   scoreLabels    Json?
   gradingConfig  Json?
@@ -36,6 +37,7 @@ model School {
   guardians      Guardian[]
   invoices       Invoice[]
   payments       Payment[]
+  schoolPayments SchoolPayment[]                        // ← NEW
   staff          Staff[]
   students       Student[]
   subjects       Subject[]
@@ -72,6 +74,8 @@ model User {
   guardianProfile           Guardian?
   notifications             Notification[]
   refreshTokens             RefreshToken[]
+  schoolPaymentsSubmitted   SchoolPayment[] @relation("SchoolPaymentSubmitter")   // ← NEW
+  schoolPaymentsReviewed    SchoolPayment[] @relation("SchoolPaymentReviewer")    // ← NEW
   staff                     Staff?
   studentProfile            Student?
   supportTicketsAssigned    SupportTicket[] @relation("TicketAssignee")
@@ -1152,6 +1156,79 @@ model WebhookDeliveryLog {
   @@index([success])
   @@index([createdAt])
   @@map("webhook_delivery_logs")
+}
+
+// ═══════════════════════════════════════════════════════════
+// MANUAL BILLING (GHS per active student per month)      ← NEW
+// ═══════════════════════════════════════════════════════════
+
+// Single row (id = "default"): flat pricing + the bank/MoMo details schools pay into.
+model BillingSettings {
+  id                String   @id @default("default")
+  pricePerStudent   Decimal  @default(4) @db.Decimal(10, 2)
+  currency          String   @default("GHS")
+  momoNetwork       String?
+  momoNumber        String?
+  momoAccountName   String?
+  bankName          String?
+  bankAccountName   String?
+  bankAccountNumber String?
+  bankBranch        String?
+  instructions      String?
+  gracePeriodDays   Int      @default(7)
+  updatedById       String?
+  updatedAt         DateTime @updatedAt
+
+  @@map("billing_settings")
+}
+
+// A school's proof of a manual (MoMo / bank) payment, reviewed by the super admin.
+model SchoolPayment {
+  id              String              @id @default(uuid())
+  reference       String              @unique
+  schoolId        String
+  submittedById   String
+  studentCount    Int
+  pricePerStudent Decimal             @db.Decimal(10, 2)
+  months          Int                 @default(1)
+  amountExpected  Decimal             @db.Decimal(12, 2)
+  amountReceived  Decimal?            @db.Decimal(12, 2)
+  currency        String              @default("GHS")
+  method          ManualPaymentMethod
+  payerName       String?
+  payerPhone      String?
+  transactionRef  String?
+  paidOn          DateTime
+  note            String?
+  proofKey        String
+  proofMime       String
+  proofName       String
+  status          ManualPaymentStatus @default(PENDING)
+  rejectionReason String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  school          School              @relation(fields: [schoolId], references: [id])
+  submittedBy     User                @relation("SchoolPaymentSubmitter", fields: [submittedById], references: [id])
+  reviewedBy      User?               @relation("SchoolPaymentReviewer", fields: [reviewedById], references: [id])
+
+  @@index([schoolId, status])
+  @@index([status, createdAt])
+  @@map("school_payments")
+}
+
+enum ManualPaymentMethod {
+  MOMO
+  BANK_TRANSFER
+}
+
+enum ManualPaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum Role {
