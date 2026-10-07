@@ -363,12 +363,16 @@ const adminChangePassword = async (userId, newPassword) => {
     throw createError("Password must be at least 6 characters.", 400);
   }
 
+  // This is the generic "admin sets anyone's password" tool (any role) —
+  // not specifically a student password reset, so it doesn't force a
+  // change on next login. adminResetStudentPassword (student-specific)
+  // is the one that still does.
   const passwordHash = await bcrypt.hash(newPassword, 12);
   await prisma.user.update({
     where: { id: userId },
     data: {
       passwordHash: passwordHash,
-      mustChangePassword: true,
+      mustChangePassword: false,
     }
   });
 
@@ -493,6 +497,12 @@ const changePassword = async (userId, currentPassword, newPassword) => {
 
   if (newPassword.length < 6) {
     throw createError("Password must be at least 6 characters.", 400);
+  }
+
+  // Security: don't allow "changing" to the same password you already have.
+  const isSameAsOld = await bcrypt.compare(newPassword, user.passwordHash);
+  if (isSameAsOld) {
+    throw createError("New password must be different from your current password.", 400);
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
