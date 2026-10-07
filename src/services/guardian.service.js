@@ -17,6 +17,7 @@ const createGuardian = async (schoolId, data) => {
       tempPassword = crypto.randomBytes(6).toString("hex");
       const passwordHash = await bcrypt.hash(tempPassword, 12);
       
+      // Account creation, not a password reset — doesn't force a change.
       user = await tx.user.create({
         data: {
           schoolId,
@@ -24,7 +25,7 @@ const createGuardian = async (schoolId, data) => {
           passwordHash,
           role: "PARENT",
           isVerified: true,
-          mustChangePassword: true,
+          mustChangePassword: false,
         },
       });
     }
