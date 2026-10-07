@@ -77,6 +77,9 @@ const admitStudent = async (schoolId, data, photoUrl) => {
     }
 
     // 1. Create Student User Account
+    // mustChangePassword is NOT set here — forcing a change only applies to
+    // an actual password reset (adminResetStudentPassword / the student's
+    // own self-service reset), not first-time account creation.
     const user = await tx.user.create({
       data: {
         schoolId,
@@ -84,7 +87,7 @@ const admitStudent = async (schoolId, data, photoUrl) => {
         passwordHash,
         role: "STUDENT",
         isVerified: true,
-        mustChangePassword: true,
+        mustChangePassword: false,
       },
     });
 
@@ -171,7 +174,8 @@ const admitStudent = async (schoolId, data, photoUrl) => {
         const firstName = nameParts[0];
         const lastName = nameParts.slice(1).join(" ") || " ";
 
-        // Create guardian user account
+        // Create guardian user account — not a password reset, so this
+        // doesn't force a change either (see note on student creation above).
         const guardianUser = await tx.user.create({
           data: {
             schoolId,
@@ -179,7 +183,7 @@ const admitStudent = async (schoolId, data, photoUrl) => {
             passwordHash: guardianPasswordHash,
             role: "PARENT",
             isVerified: true,
-            mustChangePassword: true,
+            mustChangePassword: false,
           },
         });
 
@@ -370,7 +374,8 @@ const resendGuardianCredentials = async (schoolId, guardianId) => {
     throw createError("Guardian does not have a user account.", 400);
   }
 
-  // Generate new temporary password
+  // Generate new temporary password — a guardian credential resend, not a
+  // student password reset, so this doesn't force a change on next login.
   const tempPassword = crypto.randomBytes(8).toString("hex");
   const passwordHash = await bcrypt.hash(tempPassword, 12);
 
@@ -378,7 +383,7 @@ const resendGuardianCredentials = async (schoolId, guardianId) => {
     where: { id: guardian.user.id },
     data: {
       passwordHash,
-      mustChangePassword: true,
+      mustChangePassword: false,
     },
   });
 
