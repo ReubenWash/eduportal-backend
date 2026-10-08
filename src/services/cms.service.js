@@ -539,7 +539,11 @@ const getSectionContent = (section) => {
           { number: '12,481', label: 'Total Users' },
           { number: '94,320', label: 'Total Students' },
           { number: '90.3%', label: 'Avg. Attendance' }
-        ]
+        ],
+        // "Schools that run on Goreb" trust-badge list on the landing page —
+        // stored alongside stats rather than a new section type, to avoid
+        // a schema migration for one small array.
+        schools: section.content.schools || []
       };
     case 'FEATURES':
       return {
@@ -597,6 +601,7 @@ const buildLandingPageContent = (sections = [], fallback = getDefaultLandingCont
       }
       case 'STATS':
         content.stats = Array.isArray(sectionData.stats) && sectionData.stats.length ? sectionData.stats : fallback.stats;
+        content.schools = Array.isArray(sectionData.schools) && sectionData.schools.length ? sectionData.schools : fallback.schools;
         break;
       case 'TESTIMONIALS':
         content.testimonials = Array.isArray(sectionData.testimonials) && sectionData.testimonials.length ? sectionData.testimonials : fallback.testimonials;
@@ -611,9 +616,7 @@ const buildLandingPageContent = (sections = [], fallback = getDefaultLandingCont
         content.footerTagline = sectionData.tagline || sectionData.footerTagline || fallback.footerTagline;
         content.footerLinks = Array.isArray(sectionData.links) && sectionData.links.length ? sectionData.links : fallback.footerLinks || [
           { label: 'Features', url: '#features' },
-          { label: 'Pricing', url: '#plans' },
-          { label: 'Roadmap', url: '/roadmap' },
-          { label: 'Team', url: '/team' }
+          { label: 'Pricing', url: '#plans' }
         ];
         content.socialLinks = Array.isArray(sectionData.socialLinks) ? sectionData.socialLinks : fallback.socialLinks || [];
         content.footerCopyright = sectionData.copyright || fallback.footerCopyright || '© 2025 EduPortal. All rights reserved.';
@@ -801,7 +804,14 @@ const saveLandingContent = async (content, userId = null) => {
 
   for (const type of sectionTypes) {
     let section = homepage.sections.find((item) => item.type === type);
-    const payload = content[type === 'HERO' ? 'hero' : type.toLowerCase()];
+    let payload = content[type === 'HERO' ? 'hero' : type.toLowerCase()];
+
+    // The "schools that run on Goreb" list is a top-level `schools` key
+    // from the editor, not nested under `stats` — fold it into the same
+    // STATS section's stored JSON rather than adding a new section type.
+    if (type === 'STATS' && content.schools !== undefined) {
+      payload = { ...(payload || {}), schools: content.schools };
+    }
 
     if (!section) {
       section = await prisma.cmsSection.create({
@@ -920,6 +930,9 @@ const getDefaultLandingContent = () => ({
   heroSubtitle: "EduPortal gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.",
   heroPrimaryBtn: "Register your school",
   heroTrustText: "Trusted by 200+ schools across Ghana, Nigeria & Kenya",
+  // "Schools that run on Goreb" trust-badge list — real names set by the
+  // super admin via the CMS editor replace this once any are added.
+  schools: ["Divine International", "Buokrom MA", "St. Anthony Prep", "St. Stephen's International School"],
   stats: [
     { number: "200+", label: "Schools registered" },
     { number: "84K", label: "Students managed" },
@@ -1023,4 +1036,4 @@ module.exports = {
   // Helpers
   getSectionContent,
   getDefaultLandingContent
-};
+};==
