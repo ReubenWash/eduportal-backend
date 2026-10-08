@@ -131,7 +131,7 @@ async function createDefaultLandingPage() {
       { number: "1.2M", label: "Reports generated" },
       { number: "99.9%", label: "Platform uptime" }
     ],
-    schools: ["Accra Academy", "Presec Legon", "Wesley Girls", "Achimota School", "Aburi Girls", "Holy Child"],
+    schools: ["Divine International", "Buokrom MA", "St. Anthony Prep", "St. Stephen's International School"],
     testimonials: [
       { quote: "We used to spend three weeks compiling report cards...", author: "Abena Owusu", role: "Headmistress, Holy Child School", initials: "AO", color: "#4F46E5" }
     ],
@@ -169,7 +169,7 @@ async function createDefaultLandingPage() {
             title: 'Statistics',
             order: 2,
             isActive: true,
-            content: { stats: defaultContent.stats }
+            content: { stats: defaultContent.stats, schools: defaultContent.schools }
           },
           {
             type: 'PRICING',
@@ -204,7 +204,6 @@ async function createDefaultLandingPage() {
 function transformCmsData(page, themeConfig = null) {
   const content = {};
 
-  content.schools = ["Accra Academy", "Presec Legon", "Wesley Girls", "Achimota School", "Aburi Girls", "Holy Child"];
   content.theme = themeConfig || {
     primaryColor: '#4F46E5',
     secondaryColor: '#1A3C5E',
@@ -228,6 +227,10 @@ function transformCmsData(page, themeConfig = null) {
         break;
       case 'STATS':
         content.stats = section.content?.stats || [];
+        // "Schools that run on Goreb" — real names set by the super admin
+        // via the CMS editor (stored in this same STATS section). This
+        // used to be hardcoded above regardless of what was actually saved.
+        content.schools = section.content?.schools || [];
         break;
       case 'PRICING':
         content.plans = section.content?.plans || [];
@@ -239,10 +242,7 @@ function transformCmsData(page, themeConfig = null) {
         content.footerTagline = section.content?.tagline || section.content?.footerTagline || 'A school management platform...';
         content.footerLinks = section.content?.links || [
           { label: 'Features', url: '#features' },
-          { label: 'Pricing', url: '#plans' },
-          { label: 'Changelog', url: '/changelog' },
-          { label: 'Roadmap', url: '/roadmap' },
-          { label: 'Team', url: '/team' }
+          { label: 'Pricing', url: '#plans' }
         ];
         content.socialLinks = section.content?.socialLinks || [];
         content.footerCopyright = section.content?.copyright || '© 2025 EduPortal. All rights reserved.';
@@ -254,11 +254,14 @@ function transformCmsData(page, themeConfig = null) {
   if (!content.footerLinks || content.footerLinks.length === 0) {
     content.footerLinks = [
       { label: 'Features', url: '#features' },
-      { label: 'Pricing', url: '#plans' },
-      { label: 'Changelog', url: '/changelog' },
-      { label: 'Roadmap', url: '/roadmap' },
-      { label: 'Team', url: '/team' }
+      { label: 'Pricing', url: '#plans' }
     ];
+  }
+  // Only fall back to placeholder names if the super admin hasn't saved
+  // any real ones yet — once real schools are added via the CMS editor,
+  // this never applies.
+  if (!content.schools || content.schools.length === 0) {
+    content.schools = ["Divine International", "Buokrom MA", "St. Anthony Prep", "St. Stephen's International School"];
   }
 
   return content;
