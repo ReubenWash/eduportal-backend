@@ -63,25 +63,25 @@ const admitStudentValidator = [
 
   // ─── Guardian Fields - Optional (for auto-creation) ───
   body("guardianName")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isLength({ min: 2, max: 100 })
     .withMessage("Guardian name must be between 2 and 100 characters."),
   
   body("guardianFirstName")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isLength({ min: 2, max: 50 })
     .withMessage("Guardian first name must be between 2 and 50 characters."),
   
   body("guardianLastName")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isLength({ min: 2, max: 50 })
     .withMessage("Guardian last name must be between 2 and 50 characters."),
   
   body("guardianEmail")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isEmail()
     .withMessage("Please provide a valid guardian email address.")
@@ -93,14 +93,14 @@ const admitStudentValidator = [
     .withMessage("Guardian phone must include a valid country calling code, e.g. +233240000000."),
   
   body("guardianRelationship")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isIn(["Father", "Mother", "Guardian", "Sibling", "Other"])
     .withMessage("Relationship must be: Father, Mother, Guardian, Sibling, or Other."),
   
   // ─── Alias support (for backward compatibility) ───
   body("relationship")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isIn(["Father", "Mother", "Guardian", "Sibling", "Other"])
     .withMessage("Relationship must be: Father, Mother, Guardian, Sibling, or Other."),
@@ -183,25 +183,25 @@ const updateStudentValidator = [
 
   // ─── Guardian Fields - Optional ───
   body("guardianName")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isLength({ min: 2, max: 100 })
     .withMessage("Guardian name must be between 2 and 100 characters."),
   
   body("guardianFirstName")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isLength({ min: 2, max: 50 })
     .withMessage("Guardian first name must be between 2 and 50 characters."),
   
   body("guardianLastName")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isLength({ min: 2, max: 50 })
     .withMessage("Guardian last name must be between 2 and 50 characters."),
   
   body("guardianEmail")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isEmail()
     .withMessage("Please provide a valid guardian email address.")
@@ -213,13 +213,13 @@ const updateStudentValidator = [
     .withMessage("Guardian phone must include a valid country calling code, e.g. +233240000000."),
   
   body("guardianRelationship")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isIn(["Father", "Mother", "Guardian", "Sibling", "Other"])
     .withMessage("Relationship must be: Father, Mother, Guardian, Sibling, or Other."),
   
   body("relationship")
-    .optional()
+    .optional({ values: "falsy" })
     .trim()
     .isIn(["Father", "Mother", "Guardian", "Sibling", "Other"])
     .withMessage("Relationship must be: Father, Mother, Guardian, Sibling, or Other."),
