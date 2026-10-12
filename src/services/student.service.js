@@ -2,7 +2,7 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { prisma } = require("../config/db");
-const { generateStudentNumber } = require("../utils/generateId");
+const { generateStudentNumber, buildStudentInternalEmail } = require("../utils/generateId");
 const { createError } = require("../middleware/errorHandler");
 const { normalizeGuardianGradePayload } = require("../utils/guardianGradePayload");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
@@ -83,7 +83,11 @@ const admitStudent = async (schoolId, data, photoUrl) => {
     const user = await tx.user.create({
       data: {
         schoolId,
-        email: `${studentNumber}@student.internal`.toLowerCase(),
+        // Must match generateStudentNumber()'s own collision check in
+        // generateId.js exactly, or two different schools' first students
+        // (same type+year, same resulting number) silently collide on
+        // User.email's global unique constraint.
+        email: buildStudentInternalEmail(studentNumber, schoolId),
         passwordHash,
         role: "STUDENT",
         isVerified: true,
@@ -294,7 +298,7 @@ const admitStudent = async (schoolId, data, photoUrl) => {
     student: student.student,
     guardian: student.guardianResult,
     studentPortal: {
-      email: `${studentNumber}@student.internal`.toLowerCase(),
+      email: buildStudentInternalEmail(studentNumber, schoolId),
       password: tempPassword,
     },
   };
