@@ -30,12 +30,19 @@ const generateStudentNumber = async (schoolId) => {
   let seq = parseSequence(latest?.studentNumber, prefix) + 1;
   if (seq < 1) seq = 1;
 
+  // The student NUMBER's prefix is school type + year only (e.g.
+  // "JHS-2026-"), not the specific school — two different JHS schools in
+  // the same year land on identical candidates, which is fine for the
+  // number itself (it's only ever shown within its own school). But
+  // User.email has a GLOBAL unique constraint, so the synthetic email
+  // built from this candidate must include something school-specific, or
+  // the second school's very first student collides with the first
+  // school's and silently gets bumped to 0002 instead of 0001.
   const MAX_ATTEMPTS = 10000;
   for (let i = 0; i < MAX_ATTEMPTS; i++) {
     const candidate = `${prefix}${String(seq).padStart(4, "0")}`;
-    const candidateEmail = `${candidate}@student.internal`.toLowerCase();
+    const candidateEmail = buildStudentInternalEmail(candidate, schoolId);
 
-    // findFirst — doesn't require email to be a unique key in Prisma schema
     const clash = await prisma.user.findFirst({
       where: { email: candidateEmail },
       select: { id: true },
@@ -48,6 +55,14 @@ const generateStudentNumber = async (schoolId) => {
   throw new Error(
     "Could not allocate a unique student number after many attempts."
   );
+};
+
+// Shared with student.service.js so the email actually saved at creation
+// time always matches what this collision check looked for — embeds
+// schoolId so two schools can never collide on the same student number,
+// even though the human-facing number itself stays clean (type+year+seq).
+const buildStudentInternalEmail = (studentNumber, schoolId) => {
+  return `${studentNumber}-${schoolId}@student.internal`.toLowerCase();
 };
 
 const generateStaffNumber = async (schoolId) => {
@@ -97,4 +112,5 @@ module.exports = {
   generateStudentNumber,
   generateStaffNumber,
   generateSchoolSlug,
+  buildStudentInternalEmail,
 };
