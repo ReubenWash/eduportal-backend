@@ -31,6 +31,49 @@ const ensureSeeded = async () => {
 
 const getPermissionCatalogue = () => ({ groups: PERMISSION_GROUPS, all: ALL_PERMISSIONS });
 
+// ─────────────────────────────────────────────────────
+// ENFORCEMENT — this is what was missing. The CustomRole records and the
+// admin UI to edit them already existed; nothing anywhere actually checked
+// a user's permissions against them. There's no separate "which CustomRole
+// is this user assigned to" field on User — instead, each fixed Role enum
+// value maps to the CustomRole seeded with the matching name (see
+// DEFAULT_ROLES above), so editing "Class Teacher" in the admin Roles
+// screen immediately changes what every CLASS_TEACHER user can do, with
+// no extra assignment step needed.
+// ─────────────────────────────────────────────────────
+
+const ROLE_ENUM_TO_CUSTOM_ROLE_NAME = {
+  SUPER_ADMIN:      "Super Admin",
+  SCHOOL_ADMIN:     "School Admin",
+  CLASS_TEACHER:    "Class Teacher",
+  SUBJECT_TEACHER:  "Subject Teacher",
+  // PARENT and STUDENT have no entry: they're not staff roles and were
+  // never part of this permission catalogue — hasPermission() for either
+  // always returns false, same as before this existed.
+};
+
+/**
+ * Does this role enum value currently have the given permission?
+ * SUPER_ADMIN is always true without a lookup — its CustomRole is marked
+ * isSystem and can't be edited or deleted (enforced in updateRole/deleteRole
+ * above), so this is a safe, cheap short-circuit, not a bypass.
+ * @param {string} roleEnum - a Role enum value, e.g. req.user.role
+ * @param {string} permission - one of ALL_PERMISSIONS
+ * @returns {Promise<boolean>}
+ */
+const hasPermission = async (roleEnum, permission) => {
+  if (roleEnum === "SUPER_ADMIN") return true;
+
+  const roleName = ROLE_ENUM_TO_CUSTOM_ROLE_NAME[roleEnum];
+  if (!roleName) return false;
+
+  await ensureSeeded();
+  const role = await prisma.customRole.findUnique({ where: { name: roleName } });
+  if (!role) return false;
+
+  return role.permissions.includes(permission);
+};
+
 const getRoles = async () => {
   await ensureSeeded();
   return prisma.customRole.findMany({ orderBy: { createdAt: "asc" } });
@@ -88,4 +131,4 @@ const deleteRole = async (id) => {
   return { id, deleted: true };
 };
 
-module.exports = { getPermissionCatalogue, getRoles, createRole, updateRole, deleteRole };
+module.exports = { getPermissionCatalogue, getRoles, createRole, updateRole, deleteRole, hasPermission, ALL_PERMISSIONS };
