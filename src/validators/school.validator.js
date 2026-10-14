@@ -130,6 +130,18 @@ const updateSchoolValidator = [
     })
     .withMessage("Grading config must be a valid JSON string or object"),
 
+  // The school's own 3-letter student-number prefix (e.g. "DIS" for
+  // DIS-2026-0001). Letters only — generateStudentNumber() uppercases it
+  // anyway, but reject anything that isn't 3 plain letters up front.
+  body("studentIdPrefix")
+    .optional({ values: "falsy" })
+    .trim()
+    .isLength({ min: 3, max: 3 })
+    .withMessage("Student ID prefix must be exactly 3 letters.")
+    .bail()
+    .matches(/^[A-Za-z]{3}$/)
+    .withMessage("Student ID prefix must contain only letters (A-Z)."),
+
   // Allow region and district to be optional during update
   body("region")
     .optional({ values: "falsy" })
