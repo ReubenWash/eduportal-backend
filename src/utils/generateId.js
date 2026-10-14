@@ -10,14 +10,20 @@ const parseSequence = (value, prefix) => {
 const generateStudentNumber = async (schoolId) => {
   const school = await prisma.school.findUnique({
     where: { id: schoolId },
-    select: { type: true },
+    select: { type: true, studentIdPrefix: true },
   });
 
   const year = new Date().getFullYear();
-  let typePrefix = "STU"; // default
-  if (school?.type === "PRIMARY") typePrefix = "PRI";
-  if (school?.type === "JHS") typePrefix = "JHS";
-  if (school?.type === "SHS") typePrefix = "SHS";
+
+  // A school admin's own 3-letter prefix (set in Settings) wins if present;
+  // otherwise fall back to the type-based default this always used.
+  let typePrefix = school?.studentIdPrefix?.trim().toUpperCase() || null;
+  if (!typePrefix) {
+    typePrefix = "STU"; // default
+    if (school?.type === "PRIMARY") typePrefix = "PRI";
+    if (school?.type === "JHS") typePrefix = "JHS";
+    if (school?.type === "SHS") typePrefix = "SHS";
+  }
 
   const prefix = `${typePrefix}-${year}-`;
 
@@ -30,19 +36,12 @@ const generateStudentNumber = async (schoolId) => {
   let seq = parseSequence(latest?.studentNumber, prefix) + 1;
   if (seq < 1) seq = 1;
 
-  // The student NUMBER's prefix is school type + year only (e.g.
-  // "JHS-2026-"), not the specific school — two different JHS schools in
-  // the same year land on identical candidates, which is fine for the
-  // number itself (it's only ever shown within its own school). But
-  // User.email has a GLOBAL unique constraint, so the synthetic email
-  // built from this candidate must include something school-specific, or
-  // the second school's very first student collides with the first
-  // school's and silently gets bumped to 0002 instead of 0001.
   const MAX_ATTEMPTS = 10000;
   for (let i = 0; i < MAX_ATTEMPTS; i++) {
     const candidate = `${prefix}${String(seq).padStart(4, "0")}`;
-    const candidateEmail = buildStudentInternalEmail(candidate, schoolId);
+    const candidateEmail = `${candidate}@student.internal`.toLowerCase();
 
+    // findFirst — doesn't require email to be a unique key in Prisma schema
     const clash = await prisma.user.findFirst({
       where: { email: candidateEmail },
       select: { id: true },
@@ -55,14 +54,6 @@ const generateStudentNumber = async (schoolId) => {
   throw new Error(
     "Could not allocate a unique student number after many attempts."
   );
-};
-
-// Shared with student.service.js so the email actually saved at creation
-// time always matches what this collision check looked for — embeds
-// schoolId so two schools can never collide on the same student number,
-// even though the human-facing number itself stays clean (type+year+seq).
-const buildStudentInternalEmail = (studentNumber, schoolId) => {
-  return `${studentNumber}-${schoolId}@student.internal`.toLowerCase();
 };
 
 const generateStaffNumber = async (schoolId) => {
@@ -112,5 +103,4 @@ module.exports = {
   generateStudentNumber,
   generateStaffNumber,
   generateSchoolSlug,
-  buildStudentInternalEmail,
 };
