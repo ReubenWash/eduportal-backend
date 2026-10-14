@@ -168,6 +168,10 @@ const updateProfile = async (req, res) => {
       updateData.gradingConfig = normalizedPayload.gradingConfig;
     }
 
+    if (req.body.studentIdPrefix !== undefined && req.body.studentIdPrefix !== '') {
+      updateData.studentIdPrefix = req.body.studentIdPrefix.trim().toUpperCase();
+    }
+
     if (normalizedPayload.reportConfig) {
       try {
         const parsedReportConfig = normalizedPayload.reportConfig;
