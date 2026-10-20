@@ -32,6 +32,7 @@ const ROLES = {
   SUBJECT_TEACHER: "SUBJECT_TEACHER",
   PARENT:          "PARENT",
   STUDENT:         "STUDENT",
+  ACCOUNTANT:      "ACCOUNTANT",
 };
 
 // ── Common role groups ─────────────────────────────────────────
@@ -39,6 +40,11 @@ const isAdmin = authorize("SUPER_ADMIN", "SCHOOL_ADMIN");
 const isTeacher = authorize("CLASS_TEACHER", "SUBJECT_TEACHER");
 const isSchoolStaff = authorize("SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER");
 const isSuperAdmin = authorize("SUPER_ADMIN");
+// Finance routes: school admin (full control) or an accountant (recording
+// only — manage_finance_categories isn't in their permission set, so the
+// requirePermission check on top of this still blocks them from defining
+// categories even though this role check lets them into the route group).
+const isFinanceStaff = authorize("SCHOOL_ADMIN", "SUPER_ADMIN", "ACCOUNTANT");
 
 // ✅ FIX: Allow both SCHOOL_ADMIN and SUPER_ADMIN
 const isSchoolAdmin = (req, res, next) => {
@@ -65,5 +71,6 @@ module.exports = {
   isTeacher, 
   isSchoolStaff, 
   isSuperAdmin, 
-  isSchoolAdmin 
+  isSchoolAdmin,
+  isFinanceStaff
 };
