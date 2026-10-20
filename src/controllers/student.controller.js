@@ -1,6 +1,7 @@
 // src/controllers/student.controller.js
 const { prisma } = require("../config/db");
 const studentService = require("../services/student.service");
+const financeService = require("../services/finance.service");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
 const { uploadStudentPhoto } = require("../middleware/upload");
@@ -296,6 +297,23 @@ const getMyAttendance = async (req, res) => {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.message || "Failed to fetch attendance",
+    });
+  }
+};
+
+const getMyFinance = async (req, res) => {
+  try {
+    const student = await studentService.getStudentByUserId(req.user.userId, req.user.schoolId);
+    if (!student) {
+      return res.status(404).json({ success: false, message: "Student profile not found." });
+    }
+    const summary = await financeService.getStudentFinanceSummary(req.user.schoolId, student.id);
+    return sendSuccess(res, 200, "Finance summary fetched.", summary);
+  } catch (error) {
+    console.error("Get my finance error:", error);
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to fetch finance summary",
     });
   }
 };
@@ -984,6 +1002,7 @@ module.exports = {
   getMyReportCards,
   getMyGrades,
   getMyAttendance,
+  getMyFinance,
   
   // Excel Import/Export
   setPhoto,
