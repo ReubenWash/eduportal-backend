@@ -1,5 +1,6 @@
 const { prisma } = require("../config/db");
 const guardianService = require("../services/guardian.service");
+const financeService = require("../services/finance.service");
 const { sendSuccess, sendError } = require("../utils/apiResponse");
 const { normalizeGuardianGradePayload } = require("../utils/guardianGradePayload");
 
@@ -117,4 +118,17 @@ const getChildAttendance = async (req, res, next) => {
   }
 };
 
-module.exports = { create, list, getOne, update, linkStudent, getMyChildren, getChildReportCards, getChildGrades, getChildAttendance };
+const getChildFinance = async (req, res, next) => {
+  try {
+    const { studentId } = req.params;
+    const allowed = await assertOwnChild(req.user.userId, req.user.schoolId, studentId);
+    if (!allowed) return sendError(res, 403, "You are not linked to this student.");
+
+    const summary = await financeService.getStudentFinanceSummary(req.user.schoolId, studentId);
+    sendSuccess(res, 200, "Finance summary fetched.", summary);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { create, list, getOne, update, linkStudent, getMyChildren, getChildReportCards, getChildGrades, getChildAttendance, getChildFinance };
