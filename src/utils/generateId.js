@@ -88,6 +88,39 @@ const generateStaffNumber = async (schoolId) => {
   );
 };
 
+const generateReceiptNumber = async (schoolId) => {
+  const year = new Date().getFullYear();
+  const prefix = `RCT-${year}-`;
+
+  // Unlike student/staff numbers, this checks FinancialTransaction
+  // directly (scoped to schoolId) rather than going through a synthetic
+  // email side-channel — receiptNumber's own @@unique([schoolId,
+  // receiptNumber]) constraint is exactly what this needs to respect.
+  const latest = await prisma.financialTransaction.findFirst({
+    where: { schoolId, receiptNumber: { startsWith: prefix } },
+    orderBy: { receiptNumber: "desc" },
+    select: { receiptNumber: true },
+  });
+
+  let seq = parseSequence(latest?.receiptNumber, prefix) + 1;
+  if (seq < 1) seq = 1;
+
+  const MAX_ATTEMPTS = 10000;
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    const candidate = `${prefix}${String(seq).padStart(5, "0")}`;
+    const clash = await prisma.financialTransaction.findUnique({
+      where: { schoolId_receiptNumber: { schoolId, receiptNumber: candidate } },
+      select: { id: true },
+    });
+    if (!clash) return candidate;
+    seq += 1;
+  }
+
+  throw new Error(
+    "Could not allocate a unique receipt number after many attempts."
+  );
+};
+
 const generateSchoolSlug = (name) => {
   const base = name
     .toLowerCase()
@@ -102,5 +135,6 @@ const generateSchoolSlug = (name) => {
 module.exports = {
   generateStudentNumber,
   generateStaffNumber,
+  generateReceiptNumber,
   generateSchoolSlug,
 };
