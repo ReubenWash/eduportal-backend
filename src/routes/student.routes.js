@@ -18,6 +18,7 @@ router.get("/me", controller.getMe);
 router.get("/me/report-cards", controller.getMyReportCards);
 router.get("/me/grades", controller.getMyGrades);
 router.get("/me/attendance", controller.getMyAttendance);
+router.get("/me/finance", controller.getMyFinance);
 
 // ─── Excel Export/Import ───
 router.get("/export", isSchoolStaff, controller.exportExcel);
