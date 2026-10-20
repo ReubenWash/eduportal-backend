@@ -251,7 +251,7 @@ const bulkImportStaffFromExcelRows = async (schoolId, rows) => {
       }
 
       // Validate role
-      const validRoles = ["SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER"];
+      const validRoles = ["SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER", "ACCOUNTANT"];
       if (!validRoles.includes(role)) {
         failed.push({ row, error: `Invalid role: ${role}. Must be one of: ${validRoles.join(', ')}` });
         continue;
