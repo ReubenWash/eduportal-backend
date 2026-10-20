@@ -15,6 +15,7 @@ router.get("/me/children", controller.getMyChildren);
 router.get("/me/children/:studentId/report-cards", controller.getChildReportCards);
 router.get("/me/children/:studentId/grades", controller.getChildGrades);
 router.get("/me/children/:studentId/attendance-summary", controller.getChildAttendance);
+router.get("/me/children/:studentId/finance", controller.getChildFinance);
 
 router.get("/",    isSchoolStaff, controller.list);
 router.get("/:id", isSchoolStaff, controller.getOne);
