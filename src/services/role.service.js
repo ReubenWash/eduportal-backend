@@ -10,6 +10,7 @@ const PERMISSION_GROUPS = {
   "Academic":          ["view_classes", "manage_classes", "view_students", "manage_students", "view_scores", "manage_scores", "view_attendance", "manage_attendance"],
   "Reports":           ["view_reports", "generate_reports", "download_reports", "delete_reports"],
   "Billing":           ["view_subscriptions", "manage_plans", "view_payments", "manage_payments"],
+  "Finance":           ["view_finance", "manage_finance", "manage_finance_categories"],
   "System":            ["manage_settings", "manage_integrations", "view_audit_logs", "manage_backups", "maintenance_mode"],
   "Support":           ["view_tickets", "manage_tickets", "view_feedback", "manage_announcements"],
 };
@@ -17,9 +18,10 @@ const ALL_PERMISSIONS = Object.values(PERMISSION_GROUPS).flat();
 
 const DEFAULT_ROLES = [
   { name: "Super Admin",     description: "Full platform access",              color: "indigo",  isSystem: true,  permissions: ALL_PERMISSIONS },
-  { name: "School Admin",    description: "Manages their school only",         color: "violet",  isSystem: false, permissions: ["view_schools","view_users","create_users","edit_users","view_classes","manage_classes","view_students","manage_students","view_scores","manage_scores","view_attendance","manage_attendance","view_reports","generate_reports","download_reports"] },
+  { name: "School Admin",    description: "Manages their school only",         color: "violet",  isSystem: false, permissions: ["view_schools","view_users","create_users","edit_users","view_classes","manage_classes","view_students","manage_students","view_scores","manage_scores","view_attendance","manage_attendance","view_reports","generate_reports","download_reports","view_finance","manage_finance","manage_finance_categories"] },
   { name: "Class Teacher",   description: "Manages assigned classes",          color: "emerald", isSystem: false, permissions: ["view_students","view_scores","manage_scores","view_attendance","manage_attendance","view_reports"] },
   { name: "Subject Teacher", description: "Scores and attendance only",        color: "amber",   isSystem: false, permissions: ["view_students","view_scores","manage_scores","view_attendance","manage_attendance"] },
+  { name: "Accountant",      description: "Records student payments only",     color: "teal",    isSystem: false, permissions: ["view_students","view_finance","manage_finance"] },
   { name: "Support Staff",   description: "Platform support access",           color: "blue",    isSystem: false, permissions: ["view_tickets","manage_tickets","view_feedback"] },
 ];
 
@@ -47,6 +49,7 @@ const ROLE_ENUM_TO_CUSTOM_ROLE_NAME = {
   SCHOOL_ADMIN:     "School Admin",
   CLASS_TEACHER:    "Class Teacher",
   SUBJECT_TEACHER:  "Subject Teacher",
+  ACCOUNTANT:       "Accountant",
   // PARENT and STUDENT have no entry: they're not staff roles and were
   // never part of this permission catalogue — hasPermission() for either
   // always returns false, same as before this existed.
