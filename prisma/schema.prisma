@@ -38,6 +38,8 @@ model School {
   invoices       Invoice[]
   payments       Payment[]
   schoolPayments SchoolPayment[]                        // ← NEW
+  financialCategories    FinancialCategory[]
+  financialTransactions  FinancialTransaction[]
   staff          Staff[]
   students       Student[]
   subjects       Subject[]
@@ -76,6 +78,7 @@ model User {
   refreshTokens             RefreshToken[]
   schoolPaymentsSubmitted   SchoolPayment[] @relation("SchoolPaymentSubmitter")   // ← NEW
   schoolPaymentsReviewed    SchoolPayment[] @relation("SchoolPaymentReviewer")    // ← NEW
+  financialTransactionsRecorded FinancialTransaction[] @relation("FinancialTransactionRecorder")
   staff                     Staff?
   studentProfile            Student?
   supportTicketsAssigned    SupportTicket[] @relation("TicketAssignee")
@@ -159,6 +162,7 @@ model Student {
   reports       Report[]
   scores        Score[]
   guardians     StudentGuardian[]
+  financialTransactions FinancialTransaction[]
   school        School            @relation(fields: [schoolId], references: [id])
   user          User?             @relation(fields: [userId], references: [id])
 
@@ -246,6 +250,7 @@ model Term {
   enrollments  Enrollment[]
   reports      Report[]
   scores       Score[]
+  financialTransactions FinancialTransaction[]
   school       School       @relation(fields: [schoolId], references: [id])
 
   @@unique([schoolId, academicYear, termNumber])
@@ -1231,6 +1236,80 @@ enum ManualPaymentStatus {
   REJECTED
 }
 
+// ─────────────────────────────────────────────────────
+// SCHOOL FINANCE MANAGEMENT (separate from the manual billing models
+// above — SchoolPayment/BillingSettings are the SCHOOL paying GOREB its
+// own subscription. These two models are the SCHOOL's own internal
+// finances: money the school itself collects from students/parents, for
+// whatever categories the school admin defines — not just "fees".
+// ─────────────────────────────────────────────────────
+
+// A school-defined kind of financial record — "School Fees", "Feeding",
+// "PTA Dues", "Transport", "Exam Fee", anything the admin wants to track.
+// Not a fixed enum on purpose: every school's own financial structure
+// differs, and this is meant to be fully admin-configurable.
+model FinancialCategory {
+  id              String                @id @default(uuid())
+  schoolId        String
+  name            String
+  description     String?
+  // Optional — if set, student/parent views can show "paid X of Y
+  // expected" for this category; if left null, it's just a running log
+  // of whatever gets recorded, no target amount implied.
+  expectedAmount  Decimal?              @db.Decimal(10, 2)
+  isActive        Boolean               @default(true)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  school          School                @relation(fields: [schoolId], references: [id])
+  transactions    FinancialTransaction[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@map("financial_categories")
+}
+
+// One recorded payment against a student, in a school-defined category.
+// This is a payment LEDGER (what's actually been received), not a full
+// invoicing/accounts-receivable system — balance owed, where shown, is
+// derived as category.expectedAmount minus the sum of a student's
+// transactions in that category, computed on read rather than stored.
+model FinancialTransaction {
+  id              String                @id @default(uuid())
+  schoolId        String
+  studentId       String
+  categoryId      String
+  termId          String?
+  amount          Decimal               @db.Decimal(10, 2)
+  method          FinancialPaymentMethod @default(CASH)
+  reference       String?               // bank/MoMo transaction ref, if any
+  receiptNumber   String                // auto-generated, unique per school — see generateId.js
+  notes           String?
+  recordedById    String                // the accountant/admin who entered this
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  school          School                @relation(fields: [schoolId], references: [id])
+  student         Student               @relation(fields: [studentId], references: [id])
+  category        FinancialCategory     @relation(fields: [categoryId], references: [id])
+  term            Term?                 @relation(fields: [termId], references: [id])
+  recordedBy      User                  @relation("FinancialTransactionRecorder", fields: [recordedById], references: [id])
+
+  @@unique([schoolId, receiptNumber])
+  @@index([schoolId])
+  @@index([studentId])
+  @@index([categoryId])
+  @@map("financial_transactions")
+}
+
+enum FinancialPaymentMethod {
+  CASH
+  MOMO
+  BANK_TRANSFER
+  CHEQUE
+  OTHER
+}
+
 enum Role {
   SUPER_ADMIN
   SCHOOL_ADMIN
@@ -1238,6 +1317,7 @@ enum Role {
   SUBJECT_TEACHER
   PARENT
   STUDENT
+  ACCOUNTANT
 }
 
 enum SchoolStatus {
