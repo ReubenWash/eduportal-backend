@@ -121,6 +121,40 @@ const generateReceiptNumber = async (schoolId) => {
   );
 };
 
+// ── Phase 1: Expense number ──────────────────────────────────────
+// Same pattern as generateReceiptNumber: school-scoped, year-tagged,
+// checks the Expense table's @@unique([schoolId, expenseNumber])
+// directly. Format: EXP-2025-00001
+const generateExpenseNumber = async (schoolId) => {
+  const year = new Date().getFullYear();
+  const prefix = `EXP-${year}-`;
+
+  const latest = await prisma.expense.findFirst({
+    where: { schoolId, expenseNumber: { startsWith: prefix } },
+    orderBy: { expenseNumber: "desc" },
+    select: { expenseNumber: true },
+  });
+
+  let seq = parseSequence(latest?.expenseNumber, prefix) + 1;
+  if (seq < 1) seq = 1;
+
+  const MAX_ATTEMPTS = 10000;
+  for (let i = 0; i < MAX_ATTEMPTS; i++) {
+    const candidate = `${prefix}${String(seq).padStart(5, "0")}`;
+    const clash = await prisma.expense.findUnique({
+      where: { schoolId_expenseNumber: { schoolId, expenseNumber: candidate } },
+      select: { id: true },
+    });
+    if (!clash) return candidate;
+    seq += 1;
+  }
+
+  throw new Error(
+    "Could not allocate a unique expense number after many attempts."
+  );
+};
+// ─────────────────────────────────────────────────────────────────
+
 const generateSchoolSlug = (name) => {
   const base = name
     .toLowerCase()
@@ -136,5 +170,6 @@ module.exports = {
   generateStudentNumber,
   generateStaffNumber,
   generateReceiptNumber,
+  generateExpenseNumber, // ← added
   generateSchoolSlug,
 };

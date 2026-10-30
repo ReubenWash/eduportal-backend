@@ -22,7 +22,7 @@ model School {
   status         SchoolStatus    @default(PENDING)
   type           SchoolType      @default(JHS)
   plan           Plan            @default(BASIC)
-  planRenewsAt   DateTime?                              // ← NEW
+  planRenewsAt   DateTime?
   reportConfig   Json?
   scoreLabels    Json?
   gradingConfig  Json?
@@ -37,9 +37,15 @@ model School {
   guardians      Guardian[]
   invoices       Invoice[]
   payments       Payment[]
-  schoolPayments SchoolPayment[]                        // ← NEW
+  schoolPayments SchoolPayment[]
   financialCategories    FinancialCategory[]
   financialTransactions  FinancialTransaction[]
+  // ── Phase 1: Ledger + Expenses ──
+  ledgerAccounts    LedgerAccount[]
+  ledgerEntries     LedgerEntry[]
+  expenses          Expense[]
+  expenseCategories ExpenseCategory[]
+  // ────────────────────────────────
   staff          Staff[]
   students       Student[]
   subjects       Subject[]
@@ -76,9 +82,13 @@ model User {
   guardianProfile           Guardian?
   notifications             Notification[]
   refreshTokens             RefreshToken[]
-  schoolPaymentsSubmitted   SchoolPayment[] @relation("SchoolPaymentSubmitter")   // ← NEW
-  schoolPaymentsReviewed    SchoolPayment[] @relation("SchoolPaymentReviewer")    // ← NEW
+  schoolPaymentsSubmitted   SchoolPayment[] @relation("SchoolPaymentSubmitter")
+  schoolPaymentsReviewed    SchoolPayment[] @relation("SchoolPaymentReviewer")
   financialTransactionsRecorded FinancialTransaction[] @relation("FinancialTransactionRecorder")
+  // ── Phase 1: Ledger + Expenses ──
+  ledgerEntriesRecorded     LedgerEntry[]   @relation("LedgerEntryRecorder")
+  expensesRecorded          Expense[]       @relation("ExpenseRecorder")
+  // ────────────────────────────────
   staff                     Staff?
   studentProfile            Student?
   supportTicketsAssigned    SupportTicket[] @relation("TicketAssignee")
@@ -318,8 +328,8 @@ model Report {
   termId          String
   classPosition   Int?
   totalStudents   Int?
-  aggregate       Float?       // True GES-style aggregate (sum of best 6 subject grade-ranks, 6-54, lower=better). JHS3 BECE-prep only.
-  averageScore    Float?       // Mean of this student's subject totals for the term, 0-100. What "average" should actually mean everywhere else.
+  aggregate       Float?
+  averageScore    Float?
   teacherRemark   String?
   headRemark      String?
   conductScore    Json?
@@ -1164,10 +1174,9 @@ model WebhookDeliveryLog {
 }
 
 // ═══════════════════════════════════════════════════════════
-// MANUAL BILLING (GHS per active student per month)      ← NEW
+// MANUAL BILLING (GHS per active student per month)
 // ═══════════════════════════════════════════════════════════
 
-// Single row (id = "default"): flat pricing + the bank/MoMo details schools pay into.
 model BillingSettings {
   id                String   @id @default("default")
   pricePerStudent   Decimal  @default(4) @db.Decimal(10, 2)
@@ -1187,7 +1196,6 @@ model BillingSettings {
   @@map("billing_settings")
 }
 
-// A school's proof of a manual (MoMo / bank) payment, reviewed by the super admin.
 model SchoolPayment {
   id              String              @id @default(uuid())
   reference       String              @unique
@@ -1237,25 +1245,14 @@ enum ManualPaymentStatus {
 }
 
 // ─────────────────────────────────────────────────────
-// SCHOOL FINANCE MANAGEMENT (separate from the manual billing models
-// above — SchoolPayment/BillingSettings are the SCHOOL paying GOREB its
-// own subscription. These two models are the SCHOOL's own internal
-// finances: money the school itself collects from students/parents, for
-// whatever categories the school admin defines — not just "fees".
+// SCHOOL FINANCE MANAGEMENT
 // ─────────────────────────────────────────────────────
 
-// A school-defined kind of financial record — "School Fees", "Feeding",
-// "PTA Dues", "Transport", "Exam Fee", anything the admin wants to track.
-// Not a fixed enum on purpose: every school's own financial structure
-// differs, and this is meant to be fully admin-configurable.
 model FinancialCategory {
   id              String                @id @default(uuid())
   schoolId        String
   name            String
   description     String?
-  // Optional — if set, student/parent views can show "paid X of Y
-  // expected" for this category; if left null, it's just a running log
-  // of whatever gets recorded, no target amount implied.
   expectedAmount  Decimal?              @db.Decimal(10, 2)
   isActive        Boolean               @default(true)
   createdAt       DateTime              @default(now())
@@ -1263,17 +1260,15 @@ model FinancialCategory {
 
   school          School                @relation(fields: [schoolId], references: [id])
   transactions    FinancialTransaction[]
+  // ── Phase 1: Ledger ──
+  ledgerEntries   LedgerEntry[]
+  // ────────────────────
 
   @@unique([schoolId, name])
   @@index([schoolId])
   @@map("financial_categories")
 }
 
-// One recorded payment against a student, in a school-defined category.
-// This is a payment LEDGER (what's actually been received), not a full
-// invoicing/accounts-receivable system — balance owed, where shown, is
-// derived as category.expectedAmount minus the sum of a student's
-// transactions in that category, computed on read rather than stored.
 model FinancialTransaction {
   id              String                @id @default(uuid())
   schoolId        String
@@ -1282,10 +1277,10 @@ model FinancialTransaction {
   termId          String?
   amount          Decimal               @db.Decimal(10, 2)
   method          FinancialPaymentMethod @default(CASH)
-  reference       String?               // bank/MoMo transaction ref, if any
-  receiptNumber   String                // auto-generated, unique per school — see generateId.js
+  reference       String?
+  receiptNumber   String
   notes           String?
-  recordedById    String                // the accountant/admin who entered this
+  recordedById    String
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -1309,6 +1304,124 @@ enum FinancialPaymentMethod {
   CHEQUE
   OTHER
 }
+
+// ═══════════════════════════════════════════════════════════
+// PHASE 1 — LEDGER FOUNDATION + EXPENSES
+// Single-entry: one LedgerEntry row per cash movement.
+// Income/expense categorization comes from FinancialCategory
+// (income) and ExpenseCategory (expense), not from accounts.
+// ═══════════════════════════════════════════════════════════
+
+model LedgerAccount {
+  id        String            @id @default(uuid())
+  schoolId  String
+  name      String
+  type      LedgerAccountType
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  school    School            @relation(fields: [schoolId], references: [id])
+  entries   LedgerEntry[]
+
+  @@unique([schoolId, name])
+  @@unique([schoolId, type])
+  @@index([schoolId])
+  @@map("ledger_accounts")
+}
+
+model LedgerEntry {
+  id                  String             @id @default(uuid())
+  schoolId            String
+  accountId           String
+  date                DateTime           @default(now())
+  type                LedgerEntryType
+  amount              Decimal            @db.Decimal(12, 2)
+  financialCategoryId String?
+  expenseCategoryId   String?
+  sourceType          LedgerSourceType
+  sourceId            String?
+  description         String?
+  recordedById        String
+  createdAt           DateTime           @default(now())
+
+  school              School             @relation(fields: [schoolId], references: [id])
+  account             LedgerAccount      @relation(fields: [accountId], references: [id])
+  financialCategory   FinancialCategory? @relation(fields: [financialCategoryId], references: [id])
+  expenseCategory     ExpenseCategory?   @relation(fields: [expenseCategoryId], references: [id])
+  recordedBy          User               @relation("LedgerEntryRecorder", fields: [recordedById], references: [id])
+
+  @@unique([schoolId, sourceType, sourceId])
+  @@index([schoolId, date])
+  @@index([accountId])
+  @@index([financialCategoryId])
+  @@index([expenseCategoryId])
+  @@map("ledger_entries")
+}
+
+model ExpenseCategory {
+  id            String         @id @default(uuid())
+  schoolId      String
+  name          String
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  school        School         @relation(fields: [schoolId], references: [id])
+  expenses      Expense[]
+  ledgerEntries LedgerEntry[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id                String                  @id @default(uuid())
+  schoolId          String
+  expenseCategoryId String
+  vendor            String?
+  amount            Decimal                 @db.Decimal(12, 2)
+  method            FinancialPaymentMethod  @default(CASH)
+  notes             String?
+  receiptUrl        String?
+  expenseNumber     String
+  recordedById      String
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  school            School                  @relation(fields: [schoolId], references: [id])
+  expenseCategory   ExpenseCategory         @relation(fields: [expenseCategoryId], references: [id])
+  recordedBy        User                    @relation("ExpenseRecorder", fields: [recordedById], references: [id])
+
+  @@unique([schoolId, expenseNumber])
+  @@index([schoolId])
+  @@index([expenseCategoryId])
+  @@map("expenses")
+}
+
+enum LedgerAccountType {
+  CASH
+  BANK
+  MOMO
+}
+
+enum LedgerEntryType {
+  IN
+  OUT
+}
+
+enum LedgerSourceType {
+  FEE_PAYMENT
+  CANTEEN_SALE
+  WALLET_TOPUP
+  EXPENSE
+  MANUAL
+}
+
+// ═══════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════
 
 enum Role {
   SUPER_ADMIN
@@ -1437,6 +1550,11 @@ enum AuditResource {
   SUPPORT_TICKET
   API_KEY
   WEBHOOK
+  // ── Phase 1: Ledger + Expenses ──
+  EXPENSE
+  EXPENSE_CATEGORY
+  LEDGER_ENTRY
+  // ────────────────────────────────
 }
 
 enum SubscriptionStatus {

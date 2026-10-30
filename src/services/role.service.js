@@ -10,7 +10,11 @@ const PERMISSION_GROUPS = {
   "Academic":          ["view_classes", "manage_classes", "view_students", "manage_students", "view_scores", "manage_scores", "view_attendance", "manage_attendance"],
   "Reports":           ["view_reports", "generate_reports", "download_reports", "delete_reports"],
   "Billing":           ["view_subscriptions", "manage_plans", "view_payments", "manage_payments"],
-  "Finance":           ["view_finance", "manage_finance", "manage_finance_categories"],
+  // Phase 1 added: manage_expenses, view_ledger.
+  // Phase 2 will add: manage_invoices, manage_concessions, view_arrears.
+  // Phase 3 will add: manage_canteen, operate_till.
+  // Phase 4 will add: approve_transactions, manage_reconciliation.
+  "Finance":           ["view_finance", "manage_finance", "manage_finance_categories", "manage_expenses", "view_ledger"],
   "System":            ["manage_settings", "manage_integrations", "view_audit_logs", "manage_backups", "maintenance_mode"],
   "Support":           ["view_tickets", "manage_tickets", "view_feedback", "manage_announcements"],
 };
@@ -18,10 +22,24 @@ const ALL_PERMISSIONS = Object.values(PERMISSION_GROUPS).flat();
 
 const DEFAULT_ROLES = [
   { name: "Super Admin",     description: "Full platform access",              color: "indigo",  isSystem: true,  permissions: ALL_PERMISSIONS },
-  { name: "School Admin",    description: "Manages their school only",         color: "violet",  isSystem: false, permissions: ["view_schools","view_users","create_users","edit_users","view_classes","manage_classes","view_students","manage_students","view_scores","manage_scores","view_attendance","manage_attendance","view_reports","generate_reports","download_reports","view_finance","manage_finance","manage_finance_categories"] },
+  { name: "School Admin",    description: "Manages their school only",         color: "violet",  isSystem: false, permissions: [
+      "view_schools",
+      "view_users","create_users","edit_users",
+      "view_classes","manage_classes",
+      "view_students","manage_students",
+      "view_scores","manage_scores",
+      "view_attendance","manage_attendance",
+      "view_reports","generate_reports","download_reports",
+      "view_finance","manage_finance","manage_finance_categories",
+      "manage_expenses","view_ledger",
+    ] },
   { name: "Class Teacher",   description: "Manages assigned classes",          color: "emerald", isSystem: false, permissions: ["view_students","view_scores","manage_scores","view_attendance","manage_attendance","view_reports"] },
   { name: "Subject Teacher", description: "Scores and attendance only",        color: "amber",   isSystem: false, permissions: ["view_students","view_scores","manage_scores","view_attendance","manage_attendance"] },
-  { name: "Accountant",      description: "Records student payments only",     color: "teal",    isSystem: false, permissions: ["view_students","view_finance","manage_finance"] },
+  { name: "Accountant",      description: "Records payments and expenses, views the ledger", color: "teal", isSystem: false, permissions: [
+      "view_students",
+      "view_finance","manage_finance",
+      "manage_expenses","view_ledger",
+    ] },
   { name: "Support Staff",   description: "Platform support access",           color: "blue",    isSystem: false, permissions: ["view_tickets","manage_tickets","view_feedback"] },
 ];
 

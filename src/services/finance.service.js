@@ -2,6 +2,7 @@ const { prisma } = require("../config/db");
 const { createError } = require("../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 const { generateReceiptNumber } = require("../utils/generateId");
+const ledgerService = require("./ledger.service"); // ← Phase 1
 
 // ─────────────────────────────────────────────────────
 // CATEGORIES — school-admin-defined. "School Fees" is just one possible
@@ -88,24 +89,50 @@ const recordTransaction = async (schoolId, recordedById, data) => {
 
   const receiptNumber = await generateReceiptNumber(schoolId);
 
-  return prisma.financialTransaction.create({
-    data: {
+  return prisma.$transaction(async (tx) => {
+    const txn = await tx.financialTransaction.create({
+      data: {
+        schoolId,
+        studentId,
+        categoryId,
+        termId: termId || null,
+        amount: Number(amount),
+        method: method || "CASH",
+        reference: reference || null,
+        receiptNumber,
+        notes: notes || null,
+        recordedById,
+      },
+      include: {
+        category: { select: { id: true, name: true } },
+        student: { select: { id: true, firstName: true, lastName: true, studentNumber: true } },
+        recordedBy: { select: { id: true, email: true } },
+      },
+    });
+
+    // ── Phase 1: post to single-entry ledger ──
+    const account = await ledgerService.resolveAccountForMethod(
       schoolId,
-      studentId,
-      categoryId,
-      termId: termId || null,
-      amount: Number(amount),
-      method: method || "CASH",
-      reference: reference || null,
-      receiptNumber,
-      notes: notes || null,
-      recordedById,
-    },
-    include: {
-      category: { select: { id: true, name: true } },
-      student: { select: { id: true, firstName: true, lastName: true, studentNumber: true } },
-      recordedBy: { select: { id: true, email: true } },
-    },
+      txn.method,
+      tx
+    );
+
+    await ledgerService.postToLedger(
+      {
+        schoolId,
+        sourceType: "FEE_PAYMENT",
+        sourceId: txn.id,
+        accountId: account.id,
+        type: "IN",
+        amount: txn.amount,
+        financialCategoryId: txn.categoryId,
+        description: `Fee payment — ${student.firstName} ${student.lastName} (${receiptNumber})`,
+        recordedById,
+      },
+      tx
+    );
+
+    return txn;
   });
 };
 
@@ -130,12 +157,18 @@ const updateTransaction = async (schoolId, transactionId, data) => {
 // duplicate entry) but requires a reason, which goes into the audit log
 // the caller (controller) is expected to also write via existing
 // audit-logging middleware/conventions elsewhere in this codebase.
+//
+// Phase 1: deleting a fee payment also reverses its ledger entry so the
+// daybook stays consistent with the financial records.
 const deleteTransaction = async (schoolId, transactionId) => {
   const txn = await prisma.financialTransaction.findFirst({ where: { id: transactionId, schoolId } });
   if (!txn) throw createError("Transaction not found.", 404);
 
-  await prisma.financialTransaction.delete({ where: { id: transactionId } });
-  return { id: transactionId, deleted: true };
+  return prisma.$transaction(async (tx) => {
+    await ledgerService.reverseSource(schoolId, "FEE_PAYMENT", transactionId, tx);
+    await tx.financialTransaction.delete({ where: { id: transactionId } });
+    return { id: transactionId, deleted: true };
+  });
 };
 
 const getTransactions = async (schoolId, query) => {

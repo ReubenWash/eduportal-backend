@@ -11,6 +11,9 @@ router.use("/schools",       require("./school.routes"));
 router.use("/activity-logs", require("./activity-log.routes"));
 router.use("/staff",         require("./staff.routes"));
 router.use("/finance",       require("./finance.routes"));
+router.use("/expenses",      require("./expense.routes"));
+router.use("/ledger",        require("./ledger.routes"));
+
 router.use("/students",      require("./student.routes"));
 router.use("/guardians",     require("./guardian.routes"));
 router.use("/classes",       require("./class.routes"));

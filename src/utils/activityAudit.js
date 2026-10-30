@@ -14,9 +14,20 @@ const RESOURCE_BY_ROUTE = {
   notifications: 'NOTIFICATION',
   documents: 'DOCUMENT',
   upload: 'DOCUMENT',
+  // ── Finance ── (added because ACCOUNTANT is now audit-logged)
+  finance: 'PAYMENT',
+  // ── Phase 1: Ledger + Expenses ──
+  expenses: 'EXPENSE',
+  ledger: 'LEDGER_ENTRY',
+  // ────────────────────────────────
 };
 
-const STAFF_ROLES = new Set(['SCHOOL_ADMIN', 'CLASS_TEACHER', 'SUBJECT_TEACHER']);
+const STAFF_ROLES = new Set([
+  'SCHOOL_ADMIN',
+  'CLASS_TEACHER',
+  'SUBJECT_TEACHER',
+  'ACCOUNTANT', // ← ships as-is, per your explicit confirmation
+]);
 
 const buildActivityAuditData = (req, statusCode) => {
   if (statusCode < 200 || statusCode >= 400) return null;
