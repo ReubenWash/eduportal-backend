@@ -7,9 +7,14 @@ const {
 } = require("../utils/generateToken");
 const { sendVerificationEmail, sendPasswordResetEmail } = require("./email.service");
 const { createError } = require("../middleware/errorHandler");
+const { isSupportedPortal, isRoleAllowedForPortal } = require("../utils/authPortal");
 
 // ── Login ──────────────────────────────────────────────────────
-const login = async (identifier, password) => {
+const login = async (identifier, password, portal) => {
+  if (!isSupportedPortal(portal)) {
+    throw createError("A valid login portal is required.", 400);
+  }
+
   // identifier can be email OR student number
   const user = await prisma.user.findFirst({
     where: {
@@ -63,6 +68,10 @@ const login = async (identifier, password) => {
   const isMatch = await bcrypt.compare(password, user.passwordHash);
   if (!isMatch) {
     throw createError("Invalid email/student number or password.", 401);
+  }
+
+  if (!isRoleAllowedForPortal(portal, user.role)) {
+    throw createError("This account does not have access to the selected portal.", 403);
   }
 
   if (!user.isVerified) {

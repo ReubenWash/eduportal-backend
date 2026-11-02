@@ -1,6 +1,12 @@
 const { body, param } = require("express-validator");
 
 const loginValidator = [
+  body("portal")
+    .isString().withMessage("A login portal is required.")
+    .bail()
+    .isIn(["school-administration", "teaching-staff", "parents-guardians", "students"])
+    .withMessage("Please select a valid login portal."),
+
   body("email")
     .trim()
     .notEmpty().withMessage("Email or student number is required.")

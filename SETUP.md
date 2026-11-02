@@ -101,10 +101,15 @@ POST http://localhost:5000/api/v1/auth/login
 Content-Type: application/json
 
 {
+  "portal": "school-administration",
   "email": "admin@demo.edu.gh",
   "password": "Admin@1234"
 }
 ```
+
+The `portal` field is required. Use `school-administration`, `teaching-staff`,
+`parents-guardians`, or `students`; the account's role must be authorized for
+the selected portal.
 
 Copy the `accessToken` from the response.
 Use it as `Bearer <token>` in the Authorization header for all other requests.

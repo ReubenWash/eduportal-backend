@@ -9,13 +9,13 @@ const {
 // POST /api/v1/auth/login
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, portal } = req.body;
 
-    if (!email || !password) {
-      throw createError("Email/Student number and password are required", 400);
+    if (!email || !password || !portal) {
+      throw createError("Login portal, email/student number, and password are required", 400);
     }
 
-    const { accessToken, refreshToken, user } = await authService.login(email, password);
+    const { accessToken, refreshToken, user } = await authService.login(email, password, portal);
 
     setRefreshTokenCookie(res, refreshToken);
 
