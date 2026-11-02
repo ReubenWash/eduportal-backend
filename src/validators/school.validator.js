@@ -191,7 +191,7 @@ const createTermValidator = [
     }),
 
   body("nextTermDate")
-    .optional()
+    .optional({ values: "null" })
     .isISO8601().withMessage("Next term date must be a valid date."),
 ];
 
@@ -202,6 +202,9 @@ const updateTermValidator = [
     .isIn(["UPCOMING", "ACTIVE", "COMPLETED"]).withMessage("Invalid term status."),
   body("startDate").optional().isISO8601().withMessage("Start date must be a valid date."),
   body("endDate").optional().isISO8601().withMessage("End date must be a valid date."),
+  body("nextTermDate")
+    .optional({ values: "null" })
+    .isISO8601().withMessage("Next term date must be a valid date."),
   body("academicYear")
     .optional()
     .matches(/^\d{4}\/\d{4}$/).withMessage("Academic year must be in format YYYY/YYYY (e.g. 2024/2025)."),

@@ -5,7 +5,7 @@
  *   header (student photo | school name, address, contact, motto | school logo)
  *   banner, learner details, subject table (class score, exam score, total,
  *   position, remarks), attendance / promoted to, attitude / conduct / interest,
- *   class teacher's remarks, headteacher's signature.
+ *   class teacher's remarks.
  *
  * Data sources (nothing is hard-coded to one school):
  *   School profile  -> name, logoUrl, address, phone (CONTACT), motto
@@ -289,10 +289,6 @@ const drawReportCard = async (doc, data) => {
     showLogo: true,
     showSchoolName: true,
     showStudentPhoto: true,
-    showPrincipalSignature: true,
-    showClassTeacherSignature: true,
-    principalSignatureUrl: null,
-    classTeacherSignatureUrl: null,
     footerText: '',
     ...(school?.reportConfig || {}),
   };
@@ -452,9 +448,8 @@ const drawReportCard = async (doc, data) => {
   })();
   const remarkRuleCount = Math.max(2, remarkLines.length);
   const FIELD_STEP = 25;
-  const SIGN_STEP = 32;
-  // pad 6 + 3 field rows + gap 4 + remark rules + gap 6 + 2 sign-off rows + pad 4
-  const BOTTOM_BLOCK_H = 6 + 3 * FIELD_STEP + 4 + remarkRuleCount * RULE_GAP + 6 + 2 * SIGN_STEP + 4;
+  // pad 6 + 3 field rows + gap 4 + remark rules + gap 6 + bottom pad 4
+  const BOTTOM_BLOCK_H = 6 + 3 * FIELD_STEP + 4 + remarkRuleCount * RULE_GAP + 6 + 4;
 
   // ── Subject table (full width, touching the outer border) ──
   const HEAD_H = 36;
@@ -528,11 +523,6 @@ const drawReportCard = async (doc, data) => {
     blockTop = T;
   }
 
-  const headSignature = theme.showPrincipalSignature !== false && theme.principalSignatureUrl
-    ? await loadPdfImage(theme.principalSignatureUrl, 'logo', { cache: true }) : null;
-  const teacherSignature = theme.showClassTeacherSignature !== false && theme.classTeacherSignatureUrl
-    ? await loadPdfImage(theme.classTeacherSignatureUrl, 'logo', { cache: true }) : null;
-
   const GAP = 15;
   const HALF_W = Math.floor((INNER_W - GAP) / 2);
   const LEFT = INNER_X;
@@ -585,35 +575,6 @@ const drawReportCard = async (doc, data) => {
     }
   }
   by += remarkRuleCount * RULE_GAP + 6;
-
-  // Sign-off. Both rows share the same columns so the lines line up.
-  const signLabelW = Math.max(labelW('CLASS TEACHER:'), labelW("HEADTEACHER'S SIGNATURE:"));
-  const SIGN_LINE_W = 190;
-  const rightX = LEFT + signLabelW + SIGN_LINE_W + 14;
-  const rightW = INNER_X + INNER_W - rightX;
-  const teacher = report.enrollment?.class?.classTeacher;
-  const teacherName = teacher ? `${teacher.firstName || ''} ${teacher.lastName || ''}`.trim() : '';
-
-  // row S1: class teacher's name | signature
-  let lineY = by + 24;
-  label('CLASS TEACHER:', LEFT, lineY - 12);
-  doc.font(BOLD).fontSize(9).fillColor(BLACK)
-     .text(teacherName.toUpperCase(), LEFT + signLabelW, lineY - 12, { width: SIGN_LINE_W, align: 'center', height: 11, ellipsis: true });
-  hline(LEFT + signLabelW, LEFT + signLabelW + SIGN_LINE_W, lineY);
-  label('SIGNATURE:', rightX, lineY - 12);
-  const sigLw = labelW('SIGNATURE:');
-  image(teacherSignature, rightX + sigLw, lineY - 28, rightW - sigLw, 26, 'class teacher signature');
-  hline(rightX + sigLw, rightX + rightW, lineY);
-  by += SIGN_STEP;
-
-  // row S2: headteacher's signature | date
-  lineY = by + 24;
-  label("HEADTEACHER'S SIGNATURE:", LEFT, lineY - 12);
-  image(headSignature, LEFT + signLabelW + 20, lineY - 28, SIGN_LINE_W - 40, 26, 'headteacher signature');
-  hline(LEFT + signLabelW, LEFT + signLabelW + SIGN_LINE_W, lineY);
-  label('DATE:', rightX, lineY - 12);
-  hline(rightX + labelW('DATE:'), rightX + rightW, lineY);
-  by += SIGN_STEP;
 
   // the single outer border that holds the whole card
   const endY = by + 4;
