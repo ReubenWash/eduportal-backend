@@ -10,6 +10,10 @@ const BREVO_API_KEY = process.env.BREVO_API_KEY;
 // ── Generic send helper using Brevo API ──────────────────────
 const sendMail = async ({ to, subject, html }, retries = 2) => {
   try {
+    if (!BREVO_API_KEY) {
+      throw new Error("Email delivery is not configured: BREVO_API_KEY is missing.");
+    }
+
     console.log(`Sending email via Brevo API to ${to}...`);
     
     const response = await axios.post(

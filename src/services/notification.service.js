@@ -52,10 +52,18 @@ const sendSchoolAnnouncementEmails = async ({ title, message, audience, selected
     ? selectedSchools
     : Array.isArray(schoolIds) ? schoolIds : [];
 
-  if (!schoolIdList.length && normalizeAudience(audience) !== "ALL_SCHOOLS") return { sent: 0, failed: 0 };
+  const normalizedAudience = normalizeAudience(audience);
+  const isSchoolAudience = ["SCHOOLS", "ALL_SCHOOLS", "PREMIUM_ONLY", "BASIC_ONLY"].includes(normalizedAudience);
+  if (!schoolIdList.length && !isSchoolAudience) {
+    return { sent: 0, failed: 0, attempted: 0, noRecipients: true, recipients: [] };
+  }
 
-  const where = normalizeAudience(audience) === "ALL_SCHOOLS"
-    ? { status: "ACTIVE" }
+  const where = isSchoolAudience
+    ? {
+        ...(normalizedAudience !== "SCHOOLS" && { status: "ACTIVE" }),
+        ...(normalizedAudience === "PREMIUM_ONLY" && { plan: "PREMIUM" }),
+        ...(normalizedAudience === "BASIC_ONLY" && { plan: "BASIC" }),
+      }
     : { id: { in: schoolIdList } };
 
   const schools = await prisma.school.findMany({
@@ -82,7 +90,10 @@ const sendSchoolAnnouncementEmails = async ({ title, message, audience, selected
   const recipients = [...recipientSet];
   const results = await Promise.all(recipients.map(async (to) => {
     try {
-      await sendAnnouncementEmail(to, title, message, "EduTrack JHS");
+      const result = await sendAnnouncementEmail(to, title, message, "EduTrack JHS");
+      if (result?.success === false) {
+        return { to, success: false, error: result.error || "Email provider rejected the message." };
+      }
       return { to, success: true };
     } catch (err) {
       return { to, success: false, error: err.message };
@@ -90,7 +101,13 @@ const sendSchoolAnnouncementEmails = async ({ title, message, audience, selected
   }));
 
   const sent = results.filter(r => r.success).length;
-  return { sent, failed: results.length - sent, recipients: results };
+  return {
+    sent,
+    failed: results.length - sent,
+    attempted: results.length,
+    noRecipients: results.length === 0,
+    recipients: results,
+  };
 };
 
 const getNotifications = async (userId, unreadOnly) => {
