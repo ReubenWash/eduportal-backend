@@ -51,7 +51,7 @@ const massBroadcast = async (req, res) => {
   const r = await notificationService.massBroadcast(req.body);
   
   // Emit to all connected clients
-  if (r.sent > 0) {
+  if (req.body.channels?.inApp === true && r.sent > 0) {
     const notification = {
       id: r.notificationId || Date.now(),
       title: req.body.title,

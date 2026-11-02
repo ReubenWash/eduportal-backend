@@ -198,6 +198,7 @@ const broadcast = async (schoolId, { title, message, type, audience }) => {
 const massBroadcast = async ({ title, message, type, audience, channels, selectedSchools, schoolIds }) => {
   const normalizedAudience = normalizeAudience(audience);
   const enabledChannels = channels || {};
+  const shouldCreateInApp = enabledChannels.inApp === true;
   const selectedSchoolIds = Array.isArray(selectedSchools) ? selectedSchools : Array.isArray(schoolIds) ? schoolIds : [];
 
   const roleMap = {
@@ -230,10 +231,12 @@ const massBroadcast = async ({ title, message, type, audience, channels, selecte
     if (roleFilter) where.role = roleFilter;
   }
 
-  const users = await prisma.user.findMany({
-    where,
-    select: { id: true, schoolId: true, email: true },
-  });
+  const users = shouldCreateInApp
+    ? await prisma.user.findMany({
+        where,
+        select: { id: true, schoolId: true, email: true },
+      })
+    : [];
 
   if (users.length === 0 && !enabledChannels.email) {
     return { sent: 0, notificationId: null, email: { sent: 0, failed: 0 } };
@@ -268,10 +271,12 @@ const massBroadcast = async ({ title, message, type, audience, channels, selecte
     ? await sendSchoolAnnouncementEmails({ title, message, audience: normalizedAudience, selectedSchools: selectedSchoolIds, schoolIds: selectedSchoolIds })
     : { sent: 0, failed: 0 };
 
-  const firstNotification = await prisma.notification.findFirst({
-    where: { title, message, type: type || "info" },
-    orderBy: { createdAt: 'desc' }
-  });
+  const firstNotification = shouldCreateInApp
+    ? await prisma.notification.findFirst({
+        where: { title, message, type: type || "info" },
+        orderBy: { createdAt: 'desc' }
+      })
+    : null;
 
   return { sent: users.length, notificationId: firstNotification?.id, email: emailResult };
 };
@@ -304,7 +309,13 @@ const removeDeviceToken = async (userId, token) => {
 const pushNotification = async ({ title, body, audience }) => {
   // Always create the in-app notifications so the request has a
   // guaranteed, visible effect regardless of push provider status.
-  const inAppResult = await massBroadcast({ title, message: body, type: "push", audience });
+  const inAppResult = await massBroadcast({
+    title,
+    message: body,
+    type: "push",
+    audience,
+    channels: { inApp: true },
+  });
 
   const roleMap = {
     ALL:      undefined,
