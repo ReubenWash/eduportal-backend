@@ -173,8 +173,8 @@ const updateProfile = async (req, res) => {
     if (req.body.address !== undefined && req.body.address !== '') {
       updateData.address = req.body.address;
     }
-    if (req.body.motto !== undefined && req.body.motto !== '') {
-      updateData.motto = req.body.motto;
+    if (req.body.motto !== undefined) {
+      updateData.motto = req.body.motto || null;
     }
     
     const normalizedPayload = normalizeSchoolUpdatePayload(req.body);
