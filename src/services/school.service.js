@@ -177,6 +177,7 @@ const getSchoolProfile = async (schoolId) => {
       email:        true,
       logoUrl:      true,
       motto:        true,
+      studentIdPrefix: true,
       status:        true,
       plan:          true,
       reportConfig:  true,

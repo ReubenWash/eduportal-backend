@@ -19,6 +19,7 @@ model School {
   email          String
   logoUrl        String?
   motto          String?
+  studentIdPrefix String?
   status         SchoolStatus    @default(PENDING)
   type           SchoolType      @default(JHS)
   plan           Plan            @default(BASIC)
