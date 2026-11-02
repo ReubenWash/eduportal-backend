@@ -15,7 +15,12 @@ const login = async (req, res) => {
       throw createError("Login portal, email/student number, and password are required", 400);
     }
 
-    const { accessToken, refreshToken, user } = await authService.login(email, password, portal);
+    const { accessToken, refreshToken, user } = await authService.login(
+      email,
+      password,
+      portal,
+      req.get("origin")
+    );
 
     setRefreshTokenCookie(res, refreshToken);
 

@@ -1,4 +1,5 @@
 // src/utils/generateId.js
+const crypto = require("crypto");
 const { prisma } = require("../config/db");
 
 const parseSequence = (value, prefix) => {
@@ -160,9 +161,11 @@ const generateSchoolSlug = (name) => {
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, "")
     .trim()
-    .replace(/\s+/g, "-");
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "school";
 
-  const suffix = Math.random().toString(36).substring(2, 6);
+  const suffix = crypto.randomBytes(8).toString("hex");
   return `${base}-${suffix}`;
 };
 

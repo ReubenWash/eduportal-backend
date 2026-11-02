@@ -25,6 +25,12 @@ router.post(
   controller.register
 );
 
+router.get(
+  "/portal/:slug",
+  publicLimiter,
+  controller.getPublicPortal
+);
+
 // ── Protected — school-scoped ──────────────────────────────────
 router.use(authenticate, tenantScope);
 

@@ -30,6 +30,7 @@ Open `.env` and fill in:
 | `CLOUDINARY_API_SECRET` | Cloudinary Dashboard |
 | `SMTP_HOST` / `SMTP_PASS` | [Resend](https://resend.com) → API Keys |
 | `CLIENT_URL` | `http://localhost:5173` for local dev |
+| `TENANT_ROOT_DOMAIN` | Your verified school portal root domain, e.g. `schools.example.com` |
 
 ---
 
@@ -115,6 +116,31 @@ Copy the `accessToken` from the response.
 Use it as `Bearer <token>` in the Authorization header for all other requests.
 
 ---
+
+## School subdomain setup
+
+The backend creates a unique school slug during school registration and
+super-admin school creation. It is stored in the existing unique
+`schools.slug` column. A school portal is served at
+`https://<slug>.<TENANT_ROOT_DOMAIN>`.
+
+For Vercel frontend hosting:
+
+1. Add the root domain and wildcard domain (`*.example.com`) to the frontend
+   project's Domains settings. Configure the DNS records Vercel displays for
+   your domain provider. Vercel provisions SSL after the domain and DNS are
+   verified.
+2. Set `VITE_TENANT_ROOT_DOMAIN=example.com` in the frontend project's
+   production environment and redeploy.
+3. Set `TENANT_ROOT_DOMAIN=example.com` on the backend host. Ensure
+   `CLIENT_URL` is the frontend's canonical HTTPS root URL, then redeploy.
+
+Use the same root domain value in both environments. Wildcard DNS and SSL are
+hosting-provider settings and cannot be enabled by application code alone.
+Tenant-host login requests are checked against the account's saved school
+slug; authenticated API routes continue to use the existing school ID tenant
+scope and role permissions. The public school lookup exposes only the school's
+name, slug, logo, and motto.
 
 ## Useful commands
 

@@ -8,6 +8,7 @@ const routes = require("./routes");
 const sseRoutes = require("./routes/sse.routes");
 const errorHandler = require("./middleware/errorHandler");
 const logger = require("./config/logger");
+const { isAllowedTenantOrigin } = require("./utils/tenantDomain");
 
 const app = express();
 
@@ -49,6 +50,11 @@ app.use(
         return callback(null, true);
       }
 
+      // Local development using school.localhost
+      if (process.env.NODE_ENV !== "production" && /^http:\/\/[a-z0-9-]+\.localhost(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+
       // Any Render subdomain
       if (/^https:\/\/[a-z0-9-]+\.onrender\.com$/.test(origin)) {
         return callback(null, true);
@@ -56,6 +62,10 @@ app.use(
 
       // Any Vercel subdomain (covers preview deployments)
       if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)) {
+        return callback(null, true);
+      }
+
+      if (isAllowedTenantOrigin(origin, process.env.TENANT_ROOT_DOMAIN)) {
         return callback(null, true);
       }
 

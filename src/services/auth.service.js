@@ -8,9 +8,10 @@ const {
 const { sendVerificationEmail, sendPasswordResetEmail } = require("./email.service");
 const { createError } = require("../middleware/errorHandler");
 const { isSupportedPortal, isRoleAllowedForPortal } = require("../utils/authPortal");
+const { getTenantSlugFromOrigin } = require("../utils/tenantDomain");
 
 // ── Login ──────────────────────────────────────────────────────
-const login = async (identifier, password, portal) => {
+const login = async (identifier, password, portal, origin) => {
   if (!isSupportedPortal(portal)) {
     throw createError("A valid login portal is required.", 400);
   }
@@ -52,6 +53,7 @@ const login = async (identifier, password, portal) => {
       school: { 
         select: { 
           id: true, 
+          slug: true,
           status: true, 
           name: true, 
           logoUrl: true, 
@@ -68,6 +70,11 @@ const login = async (identifier, password, portal) => {
   const isMatch = await bcrypt.compare(password, user.passwordHash);
   if (!isMatch) {
     throw createError("Invalid email/student number or password.", 401);
+  }
+
+  const tenantSlug = getTenantSlugFromOrigin(origin, process.env.TENANT_ROOT_DOMAIN);
+  if (tenantSlug && user.school?.slug !== tenantSlug) {
+    throw createError("This account does not belong to the school portal in this address.", 403);
   }
 
   if (!isRoleAllowedForPortal(portal, user.role)) {

@@ -70,6 +70,25 @@ const getProfile = async (req, res) => {
   }
 };
 
+const getPublicPortal = async (req, res) => {
+  try {
+    const school = await schoolService.getPublicSchoolPortal(req.params.slug);
+    return sendSuccess(res, 200, "School portal fetched.", school);
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({
+        success: false,
+        message: error.message
+      });
+    }
+    console.error("Get public school portal error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch school portal."
+    });
+  }
+};
+
 // ─── PATCH /api/v1/schools/me ───
 const updateProfile = async (req, res) => {
   console.log('🔍 updateProfile called');
@@ -651,6 +670,7 @@ const debugGetAllSchools = async (req, res) => {
 module.exports = {
   register,
   manualCreate,
+  getPublicPortal,
   getProfile,
   updateProfile,
   getDashboard,

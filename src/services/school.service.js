@@ -8,6 +8,11 @@ const { createError } = require("../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 const { buildSuperAdminDashboardPayload } = require("../utils/superAdminDashboard");
 
+const getSchoolPortalUrl = (slug) => {
+  const rootDomain = process.env.TENANT_ROOT_DOMAIN?.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
+  return rootDomain ? `https://${slug}.${rootDomain}` : null;
+};
+
 // ── Register new school ────────────────────────────────────────
 const registerSchool = async ({ name, email, password, region, district, headmasterName, gesNumber, address, phone, plan }) => {
   // Check email not already in use
@@ -99,6 +104,7 @@ const registerSchool = async ({ name, email, password, region, district, headmas
     id:     result.school.id,
     name:   result.school.name,
     slug:   result.school.slug,
+    portalUrl: getSchoolPortalUrl(result.school.slug),
     status: result.school.status,
   };
 };
@@ -149,7 +155,10 @@ const manualCreateSchool = async ({ name, email, password, region, district, hea
     return { school, user };
   });
 
-  return result.school;
+  return {
+    ...result.school,
+    portalUrl: getSchoolPortalUrl(result.school.slug),
+  };
 };
 
 // ── Get school profile ─────────────────────────────────────────
@@ -178,6 +187,21 @@ const getSchoolProfile = async (schoolId) => {
   });
 
   if (!school) throw createError("School not found.", 404);
+  return school;
+};
+
+const getPublicSchoolPortal = async (slug) => {
+  const school = await prisma.school.findUnique({
+    where: { slug },
+    select: {
+      name: true,
+      slug: true,
+      logoUrl: true,
+      motto: true,
+    },
+  });
+
+  if (!school) throw createError("School portal not found.", 404);
   return school;
 };
 
@@ -1166,6 +1190,7 @@ module.exports = {
   registerSchool,
   manualCreateSchool,
   getSchoolProfile,
+  getPublicSchoolPortal,
   updateSchoolProfile,
   updateSchoolById,
   updateSchoolPlan,

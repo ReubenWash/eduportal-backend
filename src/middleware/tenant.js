@@ -2,6 +2,7 @@ const { prisma }    = require("../config/db");
 const { sendError } = require("../utils/apiResponse");
 const { buildActivityAuditData } = require("../utils/activityAudit");
 const { getBillingBlock } = require("../services/billing.service");
+const { getTenantSlugFromOrigin } = require("../utils/tenantDomain");
 
 const attachActivityAudit = (req, res) => {
   if (!["SCHOOL_ADMIN", "CLASS_TEACHER", "SUBJECT_TEACHER"].includes(req.user?.role)) return;
@@ -28,6 +29,15 @@ const activityAudit = (req, res, next) => {
  * Skip for SUPER_ADMIN (they operate across all schools)
  */
 const tenantScope = async (req, res, next) => {
+  const tenantSlug = getTenantSlugFromOrigin(
+    req.get("origin"),
+    process.env.TENANT_ROOT_DOMAIN
+  );
+
+  if (tenantSlug && req.user.role === "SUPER_ADMIN") {
+    return sendError(res, 403, "Platform administrators must use the main platform portal.");
+  }
+
   if (req.user.role === "SUPER_ADMIN") return next();
 
   const { schoolId } = req.user;
@@ -41,6 +51,7 @@ const tenantScope = async (req, res, next) => {
     select: {
       id: true,
       name: true,
+      slug: true,
       status: true,
       plan: true,
       planRenewsAt: true,
@@ -50,6 +61,10 @@ const tenantScope = async (req, res, next) => {
 
   if (!school) {
     return sendError(res, 404, "School not found.");
+  }
+
+  if (tenantSlug && school.slug !== tenantSlug) {
+    return sendError(res, 403, "This account does not belong to the school portal in this address.");
   }
 
   if (school.status === "SUSPENDED") {
