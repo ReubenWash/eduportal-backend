@@ -11,6 +11,10 @@ const {
   updateCategoryValidator,
   recordTransactionValidator,
   updateTransactionValidator,
+  feeStructureValidator,
+  generateFeeInvoicesValidator,
+  concessionValidator,
+  reminderValidator,
 } = require("../validators/finance.validator");
 
 router.use(authenticate, tenantScope, isFinanceStaff);
@@ -37,5 +41,15 @@ router.delete("/transactions/:id",requirePermission("manage_finance"), controlle
 // student.routes.js / guardian.routes.js), but reachable by finance staff
 // for any student in the school rather than only your own record.
 router.get("/students/:studentId/summary", requirePermission("view_finance"), controller.getStudentSummary);
+
+// ── Phase 2: fee structures, invoices, concessions, and arrears ──
+router.get("/fee-options", requirePermission("view_finance"), controller.getFeeOptions);
+router.get("/fee-structures", requirePermission("view_finance"), controller.listFeeStructures);
+router.put("/fee-structures", requirePermission("manage_invoices"), feeStructureValidator, validate, controller.saveFeeStructure);
+router.post("/invoices/generate", requirePermission("manage_invoices"), generateFeeInvoicesValidator, validate, controller.generateFeeInvoices);
+router.get("/invoices", requirePermission("view_finance"), controller.listFeeInvoices);
+router.post("/invoices/:id/concessions", requirePermission("manage_concessions"), concessionValidator, validate, controller.addInvoiceConcession);
+router.get("/arrears", requirePermission("view_arrears"), controller.listArrears);
+router.post("/arrears/reminders", requirePermission("view_arrears"), reminderValidator, validate, controller.sendArrearsReminders);
 
 module.exports = router;

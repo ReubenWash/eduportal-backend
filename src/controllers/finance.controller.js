@@ -1,4 +1,5 @@
 const financeService = require("../services/finance.service");
+const feeInvoiceService = require("../services/fee-invoice.service");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
 
@@ -59,6 +60,51 @@ const getStudentSummary = async (req, res) => {
   return sendSuccess(res, 200, "Student finance summary fetched.", summary);
 };
 
+const listFeeStructures = async (req, res) => {
+  const structures = await feeInvoiceService.getFeeStructures(getSchoolId(req));
+  return sendSuccess(res, 200, "Fee structures fetched.", structures);
+};
+
+const getFeeOptions = async (req, res) => {
+  const options = await feeInvoiceService.getFeeOptions(getSchoolId(req));
+  return sendSuccess(res, 200, "Fee setup options fetched.", options);
+};
+
+const saveFeeStructure = async (req, res) => {
+  const structure = await feeInvoiceService.saveFeeStructure(getSchoolId(req), req.body);
+  return sendSuccess(res, 200, "Fee structure saved.", structure);
+};
+
+const generateFeeInvoices = async (req, res) => {
+  const result = await feeInvoiceService.generateInvoices(getSchoolId(req), req.body);
+  return sendSuccess(res, 201, "Fee invoices generated.", result);
+};
+
+const listFeeInvoices = async (req, res) => {
+  const invoices = await feeInvoiceService.getInvoices(getSchoolId(req), req.query);
+  return sendSuccess(res, 200, "Fee invoices fetched.", invoices);
+};
+
+const listArrears = async (req, res) => {
+  const arrears = await feeInvoiceService.getArrears(getSchoolId(req), req.query);
+  return sendSuccess(res, 200, "Fee arrears fetched.", arrears);
+};
+
+const addInvoiceConcession = async (req, res) => {
+  const invoice = await feeInvoiceService.addConcession(
+    getSchoolId(req),
+    req.user.userId,
+    req.params.id,
+    req.body
+  );
+  return sendSuccess(res, 201, "Concession applied.", invoice);
+};
+
+const sendArrearsReminders = async (req, res) => {
+  const result = await feeInvoiceService.sendArrearsReminders(getSchoolId(req), req.body.invoiceIds);
+  return sendSuccess(res, 200, "Fee reminders processed.", result);
+};
+
 module.exports = {
   listCategories,
   createCategory,
@@ -69,4 +115,12 @@ module.exports = {
   updateTransaction,
   deleteTransaction,
   getStudentSummary,
+  listFeeStructures,
+  getFeeOptions,
+  saveFeeStructure,
+  generateFeeInvoices,
+  listFeeInvoices,
+  listArrears,
+  addInvoiceConcession,
+  sendArrearsReminders,
 };

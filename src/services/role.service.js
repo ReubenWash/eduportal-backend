@@ -11,10 +11,9 @@ const PERMISSION_GROUPS = {
   "Reports":           ["view_reports", "generate_reports", "download_reports", "delete_reports"],
   "Billing":           ["view_subscriptions", "manage_plans", "view_payments", "manage_payments"],
   // Phase 1 added: manage_expenses, view_ledger.
-  // Phase 2 will add: manage_invoices, manage_concessions, view_arrears.
   // Phase 3 will add: manage_canteen, operate_till.
   // Phase 4 will add: approve_transactions, manage_reconciliation.
-  "Finance":           ["view_finance", "manage_finance", "manage_finance_categories", "manage_expenses", "view_ledger"],
+  "Finance":           ["view_finance", "manage_finance", "manage_finance_categories", "manage_expenses", "view_ledger", "manage_invoices", "manage_concessions", "view_arrears"],
   "System":            ["manage_settings", "manage_integrations", "view_audit_logs", "manage_backups", "maintenance_mode"],
   "Support":           ["view_tickets", "manage_tickets", "view_feedback", "manage_announcements"],
 };
@@ -32,6 +31,7 @@ const DEFAULT_ROLES = [
       "view_reports","generate_reports","download_reports",
       "view_finance","manage_finance","manage_finance_categories",
       "manage_expenses","view_ledger",
+      "manage_invoices","manage_concessions","view_arrears",
     ] },
   { name: "Class Teacher",   description: "Manages assigned classes",          color: "emerald", isSystem: false, permissions: ["view_students","view_scores","manage_scores","view_attendance","manage_attendance","view_reports"] },
   { name: "Subject Teacher", description: "Scores and attendance only",        color: "amber",   isSystem: false, permissions: ["view_students","view_scores","manage_scores","view_attendance","manage_attendance"] },
@@ -39,6 +39,7 @@ const DEFAULT_ROLES = [
       "view_students",
       "view_finance","manage_finance",
       "manage_expenses","view_ledger",
+      "manage_invoices","view_arrears",
     ] },
   { name: "Support Staff",   description: "Platform support access",           color: "blue",    isSystem: false, permissions: ["view_tickets","manage_tickets","view_feedback"] },
 ];

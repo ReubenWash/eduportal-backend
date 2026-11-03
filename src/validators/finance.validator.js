@@ -34,6 +34,8 @@ const updateCategoryValidator = [
 const recordTransactionValidator = [
   body("studentId").notEmpty().withMessage("studentId is required."),
   body("categoryId").notEmpty().withMessage("categoryId is required."),
+  body("termId").optional({ values: "falsy" }).isString(),
+  body("feeInvoiceId").optional({ values: "falsy" }).isString(),
   body("amount")
     .isFloat({ gt: 0 })
     .withMessage("Amount must be a positive number."),
@@ -62,9 +64,37 @@ const updateTransactionValidator = [
     .withMessage("Invalid payment method."),
 ];
 
+const feeStructureValidator = [
+  body("classId").notEmpty().isString(),
+  body("termId").notEmpty().isString(),
+  body("items").isArray({ min: 1, max: 50 }).withMessage("Add between 1 and 50 fee items."),
+  body("items.*.categoryId").notEmpty().isString(),
+  body("items.*.amount").isFloat({ gt: 0 }),
+];
+
+const generateFeeInvoicesValidator = [
+  body("classId").notEmpty().isString(),
+  body("termId").notEmpty().isString(),
+  body("dueDate").isISO8601().withMessage("A valid due date is required."),
+];
+
+const concessionValidator = [
+  body("amount").isFloat({ gt: 0 }),
+  body("reason").trim().isLength({ min: 2, max: 500 }),
+];
+
+const reminderValidator = [
+  body("invoiceIds").isArray({ min: 1, max: 100 }),
+  body("invoiceIds.*").isString().notEmpty(),
+];
+
 module.exports = {
   createCategoryValidator,
   updateCategoryValidator,
   recordTransactionValidator,
   updateTransactionValidator,
+  feeStructureValidator,
+  generateFeeInvoicesValidator,
+  concessionValidator,
+  reminderValidator,
 };

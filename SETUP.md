@@ -179,6 +179,8 @@ npm start
 
 Do not use `prisma db push` or `prisma db push --force-reset` for production. The configurable class-level migration converts existing `JHSLevel` values to text while preserving class data. Deploy the latest `main` commit so Render uses the committed migration files and migration lock.
 
+The Phase 2 school fee invoicing migration (`20261103090000_school_fee_invoicing`) is applied automatically by `prisma migrate deploy`. It adds school-scoped fee structures, fee invoices, concessions, and invoice links on financial transactions; it does not enable later finance phases.
+
 ### Existing production database without Prisma migration history
 
 The existing Neon database was originally created without Prisma Migrate, so `migrate deploy` first needs to baseline its existing schema. After deploying the commit containing `20261001000000_existing_schema_baseline`, temporarily use this Render build command once:

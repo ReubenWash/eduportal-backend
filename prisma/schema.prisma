@@ -41,6 +41,8 @@ model School {
   schoolPayments SchoolPayment[]
   financialCategories    FinancialCategory[]
   financialTransactions  FinancialTransaction[]
+  feeStructures          FeeStructure[]
+  feeInvoices            FeeInvoice[]
   // ── Phase 1: Ledger + Expenses ──
   ledgerAccounts    LedgerAccount[]
   ledgerEntries     LedgerEntry[]
@@ -89,6 +91,7 @@ model User {
   // ── Phase 1: Ledger + Expenses ──
   ledgerEntriesRecorded     LedgerEntry[]   @relation("LedgerEntryRecorder")
   expensesRecorded          Expense[]       @relation("ExpenseRecorder")
+  feeConcessionsCreated     FeeInvoiceConcession[]
   // ────────────────────────────────
   staff                     Staff?
   studentProfile            Student?
@@ -174,6 +177,7 @@ model Student {
   scores        Score[]
   guardians     StudentGuardian[]
   financialTransactions FinancialTransaction[]
+  feeInvoices           FeeInvoice[]
   school        School            @relation(fields: [schoolId], references: [id])
   user          User?             @relation(fields: [userId], references: [id])
 
@@ -205,6 +209,7 @@ model Class {
   classTeacher   Staff?         @relation(fields: [classTeacherId], references: [id])
   school         School         @relation(fields: [schoolId], references: [id])
   enrollments    Enrollment[]
+  feeStructures  FeeStructure[]
 
   @@unique([schoolId, level, section, academicYear])
   @@map("classes")
@@ -262,6 +267,8 @@ model Term {
   reports      Report[]
   scores       Score[]
   financialTransactions FinancialTransaction[]
+  feeStructures          FeeStructure[]
+  feeInvoices            FeeInvoice[]
   school       School       @relation(fields: [schoolId], references: [id])
 
   @@unique([schoolId, academicYear, termNumber])
@@ -1261,6 +1268,8 @@ model FinancialCategory {
 
   school          School                @relation(fields: [schoolId], references: [id])
   transactions    FinancialTransaction[]
+  feeStructureItems FeeStructureItem[]
+  feeInvoiceItems  FeeInvoiceItem[]
   // ── Phase 1: Ledger ──
   ledgerEntries   LedgerEntry[]
   // ────────────────────
@@ -1276,6 +1285,7 @@ model FinancialTransaction {
   studentId       String
   categoryId      String
   termId          String?
+  feeInvoiceId    String?
   amount          Decimal               @db.Decimal(10, 2)
   method          FinancialPaymentMethod @default(CASH)
   reference       String?
@@ -1289,13 +1299,103 @@ model FinancialTransaction {
   student         Student               @relation(fields: [studentId], references: [id])
   category        FinancialCategory     @relation(fields: [categoryId], references: [id])
   term            Term?                 @relation(fields: [termId], references: [id])
+  feeInvoice      FeeInvoice?           @relation(fields: [feeInvoiceId], references: [id], onDelete: SetNull)
   recordedBy      User                  @relation("FinancialTransactionRecorder", fields: [recordedById], references: [id])
 
   @@unique([schoolId, receiptNumber])
   @@index([schoolId])
   @@index([studentId])
   @@index([categoryId])
+  @@index([feeInvoiceId])
   @@map("financial_transactions")
+}
+
+model FeeStructure {
+  id        String            @id @default(uuid())
+  schoolId  String
+  classId   String
+  termId    String
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  school    School            @relation(fields: [schoolId], references: [id])
+  class     Class             @relation(fields: [classId], references: [id])
+  term      Term              @relation(fields: [termId], references: [id])
+  items     FeeStructureItem[]
+
+  @@unique([schoolId, classId, termId])
+  @@index([schoolId, termId])
+  @@map("fee_structures")
+}
+
+model FeeStructureItem {
+  id               String        @id @default(uuid())
+  feeStructureId   String
+  categoryId       String
+  amount           Decimal       @db.Decimal(10, 2)
+  feeStructure     FeeStructure  @relation(fields: [feeStructureId], references: [id], onDelete: Cascade)
+  category         FinancialCategory @relation(fields: [categoryId], references: [id])
+
+  @@unique([feeStructureId, categoryId])
+  @@map("fee_structure_items")
+}
+
+model FeeInvoice {
+  id            String           @id @default(uuid())
+  schoolId      String
+  studentId     String
+  termId        String
+  invoiceNumber String
+  amount        Decimal          @db.Decimal(10, 2)
+  dueDate       DateTime
+  status        FeeInvoiceStatus @default(ISSUED)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  school        School           @relation(fields: [schoolId], references: [id])
+  student       Student          @relation(fields: [studentId], references: [id])
+  term          Term             @relation(fields: [termId], references: [id])
+  items         FeeInvoiceItem[]
+  concessions   FeeInvoiceConcession[]
+  transactions  FinancialTransaction[]
+
+  @@unique([schoolId, invoiceNumber])
+  @@unique([schoolId, studentId, termId])
+  @@index([schoolId, dueDate, status])
+  @@index([studentId, termId])
+  @@map("fee_invoices")
+}
+
+model FeeInvoiceItem {
+  id          String         @id @default(uuid())
+  invoiceId   String
+  categoryId  String
+  description String
+  amount      Decimal        @db.Decimal(10, 2)
+  invoice     FeeInvoice     @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  category    FinancialCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([invoiceId])
+  @@map("fee_invoice_items")
+}
+
+model FeeInvoiceConcession {
+  id          String     @id @default(uuid())
+  invoiceId   String
+  amount      Decimal    @db.Decimal(10, 2)
+  reason      String
+  createdById String
+  createdAt   DateTime   @default(now())
+  invoice     FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  createdBy   User       @relation(fields: [createdById], references: [id])
+
+  @@index([invoiceId])
+  @@map("fee_invoice_concessions")
+}
+
+enum FeeInvoiceStatus {
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
 }
 
 enum FinancialPaymentMethod {

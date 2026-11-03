@@ -3,6 +3,7 @@ const { createError } = require("../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 const { generateReceiptNumber } = require("../utils/generateId");
 const ledgerService = require("./ledger.service"); // ← Phase 1
+const feeInvoiceService = require("./fee-invoice.service");
 
 // ─────────────────────────────────────────────────────
 // CATEGORIES — school-admin-defined. "School Fees" is just one possible
@@ -73,11 +74,12 @@ const deactivateCategory = async (schoolId, categoryId) => {
 // ─────────────────────────────────────────────────────
 
 const recordTransaction = async (schoolId, recordedById, data) => {
-  const { studentId, categoryId, termId, amount, method, reference, notes } = data;
+  const { studentId, categoryId, termId, feeInvoiceId, amount, method, reference, notes } = data;
+  const numericAmount = Number(amount);
 
   if (!studentId) throw createError("studentId is required.", 422);
   if (!categoryId) throw createError("categoryId is required.", 422);
-  if (!amount || Number(amount) <= 0) throw createError("A valid amount is required.", 422);
+  if (!Number.isFinite(numericAmount) || numericAmount <= 0) throw createError("A valid amount is required.", 422);
 
   const [student, category] = await Promise.all([
     prisma.student.findFirst({ where: { id: studentId, schoolId } }),
@@ -88,15 +90,40 @@ const recordTransaction = async (schoolId, recordedById, data) => {
   if (!category.isActive) throw createError("This category is no longer active.", 422);
 
   const receiptNumber = await generateReceiptNumber(schoolId);
+  let resolvedTermId = termId || null;
 
-  return prisma.$transaction(async (tx) => {
+  return feeInvoiceService.runSerializable(async (tx) => {
+    if (feeInvoiceId) {
+      const invoice = await tx.feeInvoice.findFirst({
+        where: { id: feeInvoiceId, schoolId },
+        include: {
+          items: { select: { categoryId: true } },
+          concessions: { select: { amount: true } },
+          transactions: { select: { amount: true } },
+        },
+      });
+      if (!invoice) throw createError("Fee invoice not found.", 404);
+      if (invoice.studentId !== studentId || invoice.termId !== (termId || invoice.termId)) {
+        throw createError("Payment details do not match this invoice.", 422);
+      }
+      resolvedTermId = invoice.termId;
+      if (!invoice.items.some((item) => item.categoryId === categoryId)) {
+        throw createError("Select a category included in this invoice.", 422);
+      }
+      const { balance } = feeInvoiceService.getInvoiceTotals(invoice);
+      if (numericAmount > balance) {
+        throw createError("Payment exceeds the remaining invoice balance.", 422);
+      }
+    }
+
     const txn = await tx.financialTransaction.create({
       data: {
         schoolId,
         studentId,
         categoryId,
-        termId: termId || null,
-        amount: Number(amount),
+        termId: resolvedTermId,
+        feeInvoiceId: feeInvoiceId || null,
+        amount: numericAmount,
         method: method || "CASH",
         reference: reference || null,
         receiptNumber,
@@ -132,13 +159,19 @@ const recordTransaction = async (schoolId, recordedById, data) => {
       tx
     );
 
+    if (feeInvoiceId) {
+      await feeInvoiceService.refreshInvoiceStatus(tx, schoolId, feeInvoiceId);
+    }
     return txn;
-  });
+  }, "The invoice or payment was updated at the same time. Refresh and try again.");
 };
 
 const updateTransaction = async (schoolId, transactionId, data) => {
   const txn = await prisma.financialTransaction.findFirst({ where: { id: transactionId, schoolId } });
   if (!txn) throw createError("Transaction not found.", 404);
+  if (txn.feeInvoiceId) {
+    throw createError("Invoice payments cannot be edited. Delete and re-record the payment instead.", 422);
+  }
 
   const { amount, method, reference, notes } = data;
   return prisma.financialTransaction.update({
@@ -167,8 +200,11 @@ const deleteTransaction = async (schoolId, transactionId) => {
   return prisma.$transaction(async (tx) => {
     await ledgerService.reverseSource(schoolId, "FEE_PAYMENT", transactionId, tx);
     await tx.financialTransaction.delete({ where: { id: transactionId } });
+    if (txn.feeInvoiceId) {
+      await feeInvoiceService.refreshInvoiceStatus(tx, schoolId, txn.feeInvoiceId);
+    }
     return { id: transactionId, deleted: true };
-  });
+  }, { isolationLevel: "Serializable" });
 };
 
 const getTransactions = async (schoolId, query) => {
@@ -206,12 +242,21 @@ const getStudentFinanceSummary = async (schoolId, studentId) => {
   const student = await prisma.student.findFirst({ where: { id: studentId, schoolId } });
   if (!student) throw createError("Student not found.", 404);
 
-  const [categories, transactions] = await Promise.all([
+  const [categories, transactions, feeInvoices] = await Promise.all([
     prisma.financialCategory.findMany({ where: { schoolId, isActive: true }, orderBy: { name: "asc" } }),
     prisma.financialTransaction.findMany({
       where: { schoolId, studentId },
       orderBy: { createdAt: "desc" },
       include: { category: { select: { id: true, name: true } } },
+    }),
+    prisma.feeInvoice.findMany({
+      where: { schoolId, studentId },
+      orderBy: { dueDate: "desc" },
+      include: {
+        concessions: { select: { amount: true } },
+        transactions: { select: { amount: true } },
+        term: { select: { termNumber: true, academicYear: true } },
+      },
     }),
   ]);
 
@@ -234,6 +279,14 @@ const getStudentFinanceSummary = async (schoolId, studentId) => {
     studentId,
     categories: byCategory,
     totalPaid: transactions.reduce((sum, t) => sum + Number(t.amount), 0),
+    feeInvoices: feeInvoices.map((invoice) => ({
+      id: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      amount: Number(invoice.amount),
+      dueDate: invoice.dueDate,
+      term: invoice.term,
+      ...feeInvoiceService.getInvoiceTotals(invoice),
+    })),
     recentTransactions: transactions.slice(0, 10).map((t) => ({
       id: t.id,
       categoryName: t.category.name,
