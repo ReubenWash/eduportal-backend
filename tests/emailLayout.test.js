@@ -9,11 +9,17 @@ test('email layout wraps template content in the shared responsive branded frame
   assert.match(result, /name="viewport"/);
   assert.match(result, /max-width:640px/);
   assert.match(result, /<h1>Welcome<\/h1>/);
-  assert.match(result, /EduTrack JHS/);
+  assert.match(result, /Goreb/);
 });
 
 test('email layout does not wrap content that already has the shared frame', () => {
   const wrapped = applyEmailLayout('<p>First message</p>');
 
   assert.equal(applyEmailLayout(wrapped), wrapped);
+});
+
+test('email layout preserves templates wrapped with the legacy marker', () => {
+  const legacyWrapped = '<table data-eduportal-email-layout><tr><td>Existing template</td></tr></table>';
+
+  assert.equal(applyEmailLayout(legacyWrapped), legacyWrapped);
 });

@@ -1,7 +1,7 @@
 {
   "name": "eduport",
   "version": "1.0.0",
-  "description": "EduTrack JHS — Node.js/Express REST API",
+  "description": "Goreb — Node.js/Express REST API",
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",

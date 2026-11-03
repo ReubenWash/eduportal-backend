@@ -911,7 +911,7 @@ const buildImportTemplate = async (schoolId) => {
   const { activeTerm, classes } = await getImportContext(schoolId);
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "EduTrack";
+  wb.creator = "Goreb";
 
   const NAVY = "FF1E2A78";
   const GREY = "FF6B7280";

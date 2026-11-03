@@ -19,7 +19,7 @@ const ask = (question) =>
 
 async function main() {
   console.log("\n╔══════════════════════════════════════════╗");
-  console.log("║   EduTrack JHS — Super Admin Setup       ║");
+  console.log("║   Goreb — Super Admin Setup              ║");
   console.log("╚══════════════════════════════════════════╝\n");
 
   const email    = await ask("Super Admin email:    ");

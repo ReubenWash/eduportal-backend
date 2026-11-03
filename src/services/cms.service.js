@@ -619,7 +619,7 @@ const buildLandingPageContent = (sections = [], fallback = getDefaultLandingCont
           { label: 'Pricing', url: '#plans' }
         ];
         content.socialLinks = Array.isArray(sectionData.socialLinks) ? sectionData.socialLinks : fallback.socialLinks || [];
-        content.footerCopyright = sectionData.copyright || fallback.footerCopyright || '© 2025 EduPortal. All rights reserved.';
+        content.footerCopyright = sectionData.copyright || fallback.footerCopyright || '© 2025 Goreb. All rights reserved.';
         break;
       default:
         break;
@@ -666,7 +666,7 @@ const getLandingContent = async () => {
           content: {
             heading: 'Run your school.',
             highlight: 'Not paperwork.',
-            subtitle: 'EduPortal gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.',
+            subtitle: 'Goreb gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.',
             trustBadge: 'Trusted by 200+ schools across Ghana, Nigeria & Kenya'
           }
         },
@@ -694,7 +694,7 @@ const getLandingContent = async () => {
           content: {
             testimonials: [
               {
-                quote: "We used to spend three weeks compiling report cards. With EduPortal, the whole process takes two days.",
+                quote: "We used to spend three weeks compiling report cards. With Goreb, the whole process takes two days.",
                 author: "Abena Owusu",
                 role: "Headmistress, Holy Child School",
                 initials: "AO",
@@ -901,7 +901,7 @@ const getFooter = async () => {
       { label: 'Pricing', url: '#plans' }
     ],
     socialLinks: footerContent.socialLinks || [],
-    copyright: footerContent.copyright || `© ${new Date().getFullYear()} EduPortal. All rights reserved.`
+    copyright: footerContent.copyright || `© ${new Date().getFullYear()} Goreb. All rights reserved.`
   };
 };
 
@@ -927,7 +927,7 @@ const getTheme = async () => {
 const getDefaultLandingContent = () => ({
   heroHeadline: "Run your school.",
   heroHeadlineHighlight: "Not paperwork.",
-  heroSubtitle: "EduPortal gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.",
+  heroSubtitle: "Goreb gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.",
   heroPrimaryBtn: "Register your school",
   heroTrustText: "Trusted by 200+ schools across Ghana, Nigeria & Kenya",
   // "Schools that run on Goreb" trust-badge list — real names set by the
@@ -941,7 +941,7 @@ const getDefaultLandingContent = () => ({
   ],
   testimonials: [
     {
-      quote: "We used to spend three weeks compiling report cards. With EduPortal, the whole process takes two days.",
+      quote: "We used to spend three weeks compiling report cards. With Goreb, the whole process takes two days.",
       author: "Abena Owusu",
       role: "Headmistress, Holy Child School",
       initials: "AO",
@@ -986,7 +986,7 @@ const getDefaultLandingContent = () => ({
     { label: 'Team', url: '/team' }
   ],
   socialLinks: [],
-  footerCopyright: '© 2025 EduPortal. All rights reserved.',
+  footerCopyright: '© 2025 Goreb. All rights reserved.',
   theme: {
     primaryColor: '#4F46E5',
     secondaryColor: '#1A3C5E',

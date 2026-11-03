@@ -20,7 +20,7 @@ const sendMail = async ({ to, subject, html }, retries = 2) => {
       `${BREVO_API_URL}/smtp/email`,
       {
         sender: {
-          name: process.env.BREVO_SENDER_NAME || "EduTrack JHS",
+          name: process.env.BREVO_SENDER_NAME || "Goreb",
           email: process.env.BREVO_SENDER_EMAIL || "asiedureubenwash@gmail.com"
         },
         to: [{ email: to }],
@@ -69,16 +69,16 @@ const sendMailSafe = async ({ to, subject, html }) => {
 const sendVerificationEmail = async (email, name, code) => {
   return sendMailSafe({
     to: email,
-    subject: "Verify your EduTrack account",
+    subject: "Verify your Goreb account",
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">EduTrack JHS</h1>
+          <h1 style="color:#fff;margin:0;font-size:24px;">Goreb</h1>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
           <h2 style="color:#1A3C5E;">Hello, ${name}!</h2>
           <p style="color:#444;line-height:1.6;">
-            Thank you for registering your school on EduTrack JHS.
+            Thank you for registering your school on Goreb.
             Please use the verification code below to activate your account.
           </p>
           <div style="text-align:center;margin:32px 0;padding:20px;background:#f0f4ff;border-radius:8px;border:2px dashed #4F46E5;">
@@ -103,11 +103,11 @@ const sendPasswordResetEmail = async (email, name, token) => {
   const url = `${process.env.CLIENT_URL}/reset-password/${token}`;
   return sendMailSafe({
     to: email,
-    subject: "Reset your EduTrack password",
+    subject: "Reset your Goreb password",
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">EduTrack JHS</h1>
+          <h1 style="color:#fff;margin:0;font-size:24px;">Goreb</h1>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
           <h2 style="color:#1A3C5E;">Password Reset</h2>
@@ -133,11 +133,11 @@ const sendWelcomeStaffEmail = async (email, name, tempPassword, schoolName) => {
   const loginUrl = `${process.env.CLIENT_URL}/login`;
   return sendMailSafe({
     to: email,
-    subject: `Welcome to ${schoolName} on EduTrack JHS`,
+    subject: `Welcome to ${schoolName} on Goreb`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">EduTrack JHS</h1>
+          <h1 style="color:#fff;margin:0;font-size:24px;">Goreb</h1>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
           <h2 style="color:#1A3C5E;">Welcome, ${name}!</h2>
@@ -157,7 +157,7 @@ const sendWelcomeStaffEmail = async (email, name, tempPassword, schoolName) => {
             <a href="${loginUrl}"
                style="background:#2E75B6;color:#fff;padding:14px 32px;
                       border-radius:6px;text-decoration:none;font-weight:bold;font-size:15px;">
-              Login to EduTrack
+              Login to Goreb
             </a>
           </div>
         </div>
@@ -174,7 +174,7 @@ const sendWelcomeGuardianEmail = async (email, name, tempPassword, schoolName) =
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "EduTrack JHS"}</h1>
+          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "Goreb"}</h1>
           <p style="color:#A8C8E8;margin:4px 0 0;">Parent Portal Access</p>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
@@ -232,7 +232,7 @@ const sendReportCardEmail = async (email, parentName, studentName, term, pdfUrl,
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
           <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName}</h1>
-          <p style="color:#A8C8E8;margin:4px 0 0;">Powered by EduTrack JHS</p>
+          <p style="color:#A8C8E8;margin:4px 0 0;">Powered by Goreb</p>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
           <h2 style="color:#1A3C5E;">Dear ${parentName},</h2>
@@ -263,7 +263,7 @@ const sendRegistrationUnderReviewEmail = async (email, name, schoolName) => {
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">EduTrack JHS</h1>
+          <h1 style="color:#fff;margin:0;font-size:24px;">Goreb</h1>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
           <h2 style="color:#1A3C5E;">Registration Under Review</h2>
@@ -316,7 +316,7 @@ const sendSchoolStatusEmail = async (email, schoolName, status) => {
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">EduTrack JHS</h1>
+          <h1 style="color:#fff;margin:0;font-size:24px;">Goreb</h1>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
           <h2 style="color:${color};">${title}</h2>
@@ -339,16 +339,16 @@ const sendSchoolStatusEmail = async (email, schoolName, status) => {
 const sendSchoolWelcomeEmail = async (email, schoolName) => {
   return sendMailSafe({
     to: email,
-    subject: `Welcome to EduTrack JHS, ${schoolName}!`,
+    subject: `Welcome to Goreb, ${schoolName}!`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">EduTrack JHS</h1>
+          <h1 style="color:#fff;margin:0;font-size:24px;">Goreb</h1>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
           <h2 style="color:#1A3C5E;">Welcome aboard!</h2>
           <p style="color:#444;line-height:1.6;">
-            Welcome to EduTrack JHS! <strong>${schoolName}</strong> is now set up and ready to go. Log in to start adding staff, students, and classes.
+            Welcome to Goreb! <strong>${schoolName}</strong> is now set up and ready to go. Log in to start adding staff, students, and classes.
           </p>
           <p style="color:#888;font-size:13px;margin-top:20px;">
             If you have any questions, our support team is here to help.
@@ -363,11 +363,11 @@ const sendGuardianCredentialsResentEmail = async (email, name, tempPassword, sch
   const loginUrl = `${process.env.CLIENT_URL || "http://localhost:5173"}/login`;
   return sendMailSafe({
     to: email,
-    subject: `Your Parent Portal Credentials - ${schoolName || "EduTrack JHS"}`,
+    subject: `Your Parent Portal Credentials - ${schoolName || "Goreb"}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "EduTrack JHS"}</h1>
+          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "Goreb"}</h1>
           <p style="color:#A8C8E8;margin:4px 0 0;">Parent Portal Access</p>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
@@ -409,11 +409,11 @@ const sendWelcomeStudentEmail = async (email, name, tempPassword, schoolName) =>
   const loginUrl = `${process.env.CLIENT_URL || "http://localhost:5173"}/login`;
   return sendMailSafe({
     to: email,
-    subject: `Welcome to ${schoolName || "EduTrack JHS"} Student Portal`,
+    subject: `Welcome to ${schoolName || "Goreb"} Student Portal`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "EduTrack JHS"}</h1>
+          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "Goreb"}</h1>
           <p style="color:#A8C8E8;margin:4px 0 0;">Student Portal Access</p>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
@@ -450,11 +450,11 @@ const sendWelcomeStudentEmail = async (email, name, tempPassword, schoolName) =>
 const sendAnnouncementEmail = async (to, subject, message, schoolName) => {
   return sendMailSafe({
     to,
-    subject: subject || `Announcement from ${schoolName || "EduTrack JHS"}`,
+    subject: subject || `Announcement from ${schoolName || "Goreb"}`,
     html: `
       <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
         <div style="background:#1A3C5E;padding:24px;text-align:center;">
-          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "EduTrack JHS"}</h1>
+          <h1 style="color:#fff;margin:0;font-size:24px;">${schoolName || "Goreb"}</h1>
         </div>
         <div style="padding:32px;background:#f9f9f9;">
           <h2 style="color:#1A3C5E;">${subject || "School Announcement"}</h2>

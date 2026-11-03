@@ -1,5 +1,5 @@
 /**
- * EduTrack Grade Engine
+ * Goreb Grade Engine
  *
  * Every number and label this produces comes from the SCHOOL'S OWN
  * gradingConfig (School.gradingConfig, set via Settings > Grading). There

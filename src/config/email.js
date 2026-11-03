@@ -10,7 +10,7 @@ const transporter = nodemailer.createTransport({
     pass: process.env.BREVO_SMTP_PASSWORD,
   },
   // 👇 Default sender applied to every email that doesn't specify one
-  from: `"${process.env.BREVO_SENDER_NAME || 'EduTrack'}" <${process.env.BREVO_SENDER_EMAIL}>`,
+  from: `"${process.env.BREVO_SENDER_NAME || 'Goreb'}" <${process.env.BREVO_SENDER_EMAIL}>`,
 });
 
 transporter.verify((error) => {

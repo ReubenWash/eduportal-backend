@@ -1,5 +1,5 @@
 /**
- * EduTrack JHS — PDF Service (pdfkit)
+ * Goreb — PDF Service (pdfkit)
  *
  * Report card layout follows the "Learner's Terminal Report" template:
  *   header (student photo | school name, address, contact, motto | school logo)
@@ -727,7 +727,7 @@ const generateClassZIP = async (reports) => {
 
   if (!reports || reports.length === 0) throw createError("No report cards to download.", 400);
 
-  const zipPath = path.join(os.tmpdir(), `edutrack_class_reports_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.zip`);
+  const zipPath = path.join(os.tmpdir(), `goreb_class_reports_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.zip`);
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip", { zlib: { level: 6 } });
 

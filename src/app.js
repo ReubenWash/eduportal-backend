@@ -111,7 +111,7 @@ if (process.env.NODE_ENV !== "test") {
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
-    message: "EduTrack API is running",
+    message: "Goreb API is running",
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
   });

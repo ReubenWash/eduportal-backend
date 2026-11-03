@@ -198,7 +198,7 @@ const exportAnalytics = async (schoolId, { type, termId, format }) => {
   if (!termId) throw require("../middleware/errorHandler").createError("termId is required.", 400);
 
   let data = [];
-  let filename = "edutrack_export";
+  let filename = "goreb_export";
 
   switch (type) {
     case "class-summary": {

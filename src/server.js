@@ -20,7 +20,7 @@ async function startServer() {
 
     // 2. Start HTTP server
     server.listen(PORT, () => {
-      logger.info(`🚀 EduTrack API running on port ${PORT}`);
+      logger.info(`🚀 Goreb API running on port ${PORT}`);
       logger.info(`📦 Environment: ${process.env.NODE_ENV}`);
       logger.info(`🔌 Socket.IO initialized`);
     });

@@ -59,7 +59,7 @@ const createBackup = async (req, res) => {
 
 const downloadBackup = async (req, res) => {
   const artifact = await systemService.downloadBackup(req.params.id);
-  res.download(artifact.filePath, `eduportal-${req.params.id}.dump`, (error) => {
+  res.download(artifact.filePath, `goreb-${req.params.id}.dump`, (error) => {
     require('fs').promises.rm(artifact.directory, { recursive: true, force: true }).catch(() => {});
     if (error && !res.headersSent) res.status(500).end();
   });

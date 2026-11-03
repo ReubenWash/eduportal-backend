@@ -22,19 +22,19 @@ router.post('/test-email', async (req, res) => {
 
     const result = await sendMail({
       to: to,
-      subject: subject || 'Test Email from EduTrack',
+      subject: subject || 'Test Email from Goreb',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9f9f9;">
           <div style="background: #4F46E5; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0;">EduTrack JHS</h1>
+            <h1 style="color: white; margin: 0;">Goreb</h1>
           </div>
           <div style="background: white; padding: 30px; border-radius: 0 0 8px 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
             <h2 style="color: #1A3C5E;">Test Email</h2>
-            <p style="color: #444; line-height: 1.6;">${message || 'This is a test email from EduTrack JHS to verify that your SMTP configuration is working correctly.'}</p>
+            <p style="color: #444; line-height: 1.6;">${message || 'This is a test email from Goreb to verify that your SMTP configuration is working correctly.'}</p>
             <p style="color: #444; line-height: 1.6;">If you received this email, your email configuration is working properly!</p>
             <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
             <p style="color: #888; font-size: 12px; text-align: center;">
-              Sent from EduTrack JHS - ${new Date().toLocaleString()}
+              Sent from Goreb - ${new Date().toLocaleString()}
             </p>
           </div>
         </div>

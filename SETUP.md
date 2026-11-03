@@ -1,4 +1,4 @@
-# EduTrack JHS — Backend Setup Guide
+# Goreb — Backend Setup Guide
 
 Follow these steps in exact order to get the backend running.
 

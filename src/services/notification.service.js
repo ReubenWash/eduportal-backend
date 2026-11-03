@@ -90,7 +90,7 @@ const sendSchoolAnnouncementEmails = async ({ title, message, audience, selected
   const recipients = [...recipientSet];
   const results = await Promise.all(recipients.map(async (to) => {
     try {
-      const result = await sendAnnouncementEmail(to, title, message, "EduTrack JHS");
+      const result = await sendAnnouncementEmail(to, title, message, "Goreb");
       if (result?.success === false) {
         return { to, success: false, error: result.error || "Email provider rejected the message." };
       }

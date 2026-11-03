@@ -1,8 +1,9 @@
-const EMAIL_LAYOUT_MARKER = "data-eduportal-email-layout";
+const EMAIL_LAYOUT_MARKER = "data-goreb-email-layout";
+const LEGACY_EMAIL_LAYOUT_MARKER = "data-eduportal-email-layout";
 
 const applyEmailLayout = (content) => {
   const html = String(content || "");
-  if (html.includes(EMAIL_LAYOUT_MARKER)) return html;
+  if (html.includes(EMAIL_LAYOUT_MARKER) || html.includes(LEGACY_EMAIL_LAYOUT_MARKER)) return html;
 
   return `<!doctype html>
 <html lang="en">
@@ -11,7 +12,7 @@ const applyEmailLayout = (content) => {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light">
     <meta name="supported-color-schemes" content="light">
-    <title>EduTrack JHS</title>
+    <title>Goreb</title>
   </head>
   <body style="margin:0;padding:0;background-color:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#243247;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;background-color:#f1f5f9;">
@@ -25,7 +26,7 @@ const applyEmailLayout = (content) => {
             </tr>
             <tr>
               <td align="center" style="padding:20px 24px;border-top:1px solid #e8edf3;color:#718096;font-size:12px;line-height:18px;">
-                EduTrack JHS &nbsp;|&nbsp; School management portal
+                Goreb &nbsp;|&nbsp; School management portal
               </td>
             </tr>
           </table>

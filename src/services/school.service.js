@@ -1048,7 +1048,7 @@ const generateRegistrationPdf = async (schoolId, user) => {
   doc.fillColor('#FFFFFF')
      .fontSize(24)
      .font('Helvetica-Bold')
-     .text('EduPortal', 50, 25);
+     .text('Goreb', 50, 25);
   
   doc.fontSize(12)
      .font('Helvetica')
@@ -1136,7 +1136,7 @@ const generateRegistrationPdf = async (schoolId, user) => {
   doc.fillColor('#6B7280')
      .fontSize(11)
      .font('Helvetica')
-     .text('This document is an official record of the school registration on EduPortal.', 50, 80);
+     .text('This document is an official record of the school registration on Goreb.', 50, 80);
 
   const footerFields = [
     { label: 'Document ID', value: `REG-${school.id.substring(0, 8).toUpperCase()}` },

@@ -13,7 +13,7 @@ const day = (d) => new Date(d).toISOString().slice(0, 10);
 const layout = (title, color, body, button) => `
   <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;">
     <div style="background:#1A3C5E;padding:24px;text-align:center;">
-      <h1 style="color:#fff;margin:0;font-size:24px;">EduPortal</h1>
+      <h1 style="color:#fff;margin:0;font-size:24px;">Goreb</h1>
     </div>
     <div style="padding:32px;background:#f9f9f9;">
       <h2 style="color:${color};">${esc(title)}</h2>

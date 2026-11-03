@@ -122,7 +122,7 @@ async function createDefaultLandingPage() {
   const defaultContent = {
     heroHeadline: "Run your school.",
     heroHeadlineHighlight: "Not paperwork.",
-    heroSubtitle: "EduPortal gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.",
+    heroSubtitle: "Goreb gives school administrators, teachers, and parents one place to manage students, scores, attendance, and term reports — without the spreadsheets.",
     heroPrimaryBtn: "Register your school",
     heroTrustText: "Trusted by 200+ schools across Ghana, Nigeria & Kenya",
     stats: [
@@ -221,7 +221,7 @@ function transformCmsData(page, themeConfig = null) {
       case 'HERO':
         content.heroHeadline = section.content?.heading || section.content?.headline || 'Run your school.';
         content.heroHeadlineHighlight = section.content?.highlight || section.content?.headlineHighlight || 'Not paperwork.';
-        content.heroSubtitle = section.content?.subtitle || 'EduPortal gives school administrators...';
+        content.heroSubtitle = section.content?.subtitle || 'Goreb gives school administrators...';
         content.heroPrimaryBtn = section.content?.ctaText || section.content?.primaryBtn || 'Register your school';
         content.heroTrustText = section.content?.trustBadge || section.content?.trustText || 'Trusted by 200+ schools...';
         break;
@@ -245,7 +245,7 @@ function transformCmsData(page, themeConfig = null) {
           { label: 'Pricing', url: '#plans' }
         ];
         content.socialLinks = section.content?.socialLinks || [];
-        content.footerCopyright = section.content?.copyright || '© 2025 EduPortal. All rights reserved.';
+        content.footerCopyright = section.content?.copyright || '© 2025 Goreb. All rights reserved.';
         break;
     }
   });

@@ -186,12 +186,12 @@ const seedDefaultTemplates = async () => {
     {
       key: 'welcome_email',
       name: 'Welcome Email',
-      subject: 'Welcome to EduTrack JHS',
+      subject: 'Welcome to Goreb',
       isDefault: true,
       htmlContent: templateBody({
         label: 'Account access',
         title: 'Welcome, {{name}}',
-        copy: '<p style="margin:0;">Your account is ready. Sign in to access {{school}} on EduTrack JHS.</p>',
+        copy: '<p style="margin:0;">Your account is ready. Sign in to access {{school}} on Goreb.</p>',
         details: '<strong>Login email</strong><br>{{email}}<br><br><strong>Temporary password</strong><br>{{password}}',
         actionLabel: 'Sign in to your account',
         actionUrl: '{{loginLink}}',
@@ -203,7 +203,7 @@ const seedDefaultTemplates = async () => {
         { name: 'email', description: 'User\'s email', example: 'john@school.edu' },
         { name: 'password', description: 'Temporary password', example: 'Temp@123' },
         { name: 'school', description: 'School name', example: 'Sunshine Academy' },
-        { name: 'loginLink', description: 'Login URL', example: 'https://app.eduportal.com/login' }
+        { name: 'loginLink', description: 'Login URL', example: 'https://your-goreb-domain/login' }
       ]
     },
     {
@@ -217,12 +217,12 @@ const seedDefaultTemplates = async () => {
         copy: '<p style="margin:0;">Your school, <strong>{{school}}</strong>, has been approved. You can now sign in and begin managing your school community.</p>',
         actionLabel: 'Go to your portal',
         actionUrl: '{{loginLink}}',
-        note: 'If you need help getting started, contact the EduTrack JHS support team.'
+        note: 'If you need help getting started, contact the Goreb support team.'
       }),
       description: 'Sent when a school registration is approved',
       variables: [
         { name: 'school', description: 'School name', example: 'Sunshine Academy' },
-        { name: 'loginLink', description: 'Login URL', example: 'https://app.eduportal.com/login' }
+        { name: 'loginLink', description: 'Login URL', example: 'https://your-goreb-domain/login' }
       ]
     },
     {
@@ -259,7 +259,7 @@ const seedDefaultTemplates = async () => {
       description: 'Sent when a user requests password reset',
       variables: [
         { name: 'name', description: 'User\'s name', example: 'John Doe' },
-        { name: 'resetLink', description: 'Reset password URL', example: 'https://app.eduportal.com/reset/123' },
+        { name: 'resetLink', description: 'Reset password URL', example: 'https://your-goreb-domain/reset/123' },
         { name: 'expiry', description: 'Expiry in minutes', example: '60' }
       ]
     },
@@ -282,7 +282,7 @@ const seedDefaultTemplates = async () => {
         { name: 'amount', description: 'Payment amount', example: '$199.00' },
         { name: 'plan', description: 'Subscription plan', example: 'Standard' },
         { name: 'date', description: 'Payment date', example: '2025-01-15' },
-        { name: 'receiptUrl', description: 'Receipt download URL', example: 'https://app.eduportal.com/receipt/INV-001' }
+        { name: 'receiptUrl', description: 'Receipt download URL', example: 'https://your-goreb-domain/receipt/INV-001' }
       ]
     },
     {
@@ -302,7 +302,7 @@ const seedDefaultTemplates = async () => {
       variables: [
         { name: 'school', description: 'School name', example: 'Sunshine Academy' },
         { name: 'expiryDate', description: 'Expiry date', example: '2025-02-15' },
-        { name: 'renewLink', description: 'Renewal URL', example: 'https://app.eduportal.com/billing' }
+        { name: 'renewLink', description: 'Renewal URL', example: 'https://your-goreb-domain/billing' }
       ]
     },
     {
@@ -323,7 +323,7 @@ const seedDefaultTemplates = async () => {
         { name: 'name', description: 'User\'s name', example: 'John Doe' },
         { name: 'ticketNumber', description: 'Ticket number', example: 'TKT-001' },
         { name: 'reply', description: 'Reply message', example: 'We are looking into this issue...' },
-        { name: 'ticketLink', description: 'Ticket URL', example: 'https://app.eduportal.com/support/TKT-001' }
+        { name: 'ticketLink', description: 'Ticket URL', example: 'https://your-goreb-domain/support/TKT-001' }
       ]
     }
   ];

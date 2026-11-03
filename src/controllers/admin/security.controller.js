@@ -102,7 +102,7 @@ const enable2FA = async (req, res) => {
 
   // Generate TOTP secret
   const secret = speakeasy.generateSecret({
-    name: `EduPortal:${user.email}`
+    name: `Goreb:${user.email}`
   });
 
   // Store secret

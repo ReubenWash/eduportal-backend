@@ -10,7 +10,7 @@ const DEFAULT_LEGAL_DOCUMENTS = {
     isPublished: true,
     content: `
       <h2>Privacy Policy</h2>
-      <p>EduPortal respects the privacy of students, parents, schools, and staff.</p>
+      <p>Goreb respects the privacy of students, parents, schools, and staff.</p>
       <p>We collect only the data necessary to deliver school management, reporting, and communication services.</p>
       <ul>
         <li>Student and staff profile information required for school operations.</li>
@@ -31,9 +31,9 @@ const DEFAULT_LEGAL_DOCUMENTS = {
     isPublished: true,
     content: `
       <h2>Terms & Conditions</h2>
-      <p>By using EduPortal, you agree to maintain accurate school, staff, student, and guardian records.</p>
+      <p>By using Goreb, you agree to maintain accurate school, staff, student, and guardian records.</p>
       <p>School administrators are responsible for the accuracy of data entered, the security of user accounts, and compliance with local education policies.</p>
-      <p>EduPortal provides infrastructure for school administration and academic processes. The platform must not be used for unlawful activity, impersonation, or abuse.</p>
+      <p>Goreb provides infrastructure for school administration and academic processes. The platform must not be used for unlawful activity, impersonation, or abuse.</p>
       <p>We may suspend or restrict accounts that violate these terms or jeopardize the integrity of school data.</p>
     `,
     updatedAt: new Date().toISOString(),
@@ -47,7 +47,7 @@ const DEFAULT_LEGAL_DOCUMENTS = {
     isPublished: true,
     content: `
       <h2>Cookie Policy</h2>
-      <p>EduPortal uses cookies to remember login sessions, maintain application state, and improve functionality across the platform.</p>
+      <p>Goreb uses cookies to remember login sessions, maintain application state, and improve functionality across the platform.</p>
       <p>We use essential cookies for authentication and session continuity. Optional analytics cookies may be used where enabled by the school or administrator.</p>
       <p>Users may configure cookie preferences in their browser settings. Disabling cookies may impact access to some features.</p>
     `,
@@ -62,7 +62,7 @@ const DEFAULT_LEGAL_DOCUMENTS = {
     isPublished: true,
     content: `
       <h2>GDPR Compliance</h2>
-      <p>EduPortal is designed to help schools process personal data lawfully, transparently, and securely.</p>
+      <p>Goreb is designed to help schools process personal data lawfully, transparently, and securely.</p>
       <p>We support role-based access, audit logging, consent tracking, and data minimization as part of our school management workflows.</p>
       <p>Data subjects may request disclosure, correction, or deletion of personal data through approved school processes and support channels.</p>
     `,
