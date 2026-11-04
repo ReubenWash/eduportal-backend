@@ -70,6 +70,47 @@ const getInvoiceTotals = (invoice, now = new Date()) => {
   return { amount, concessions: money(concessions), paid: money(paid), totalDue, balance, status };
 };
 
+const getInvoiceCategoryTotals = (invoice) => {
+  const amounts = new Map();
+  for (const item of invoice.items || []) {
+    amounts.set(item.categoryId, (amounts.get(item.categoryId) || 0) + amountOf(item.amount));
+  }
+
+  const totalLineItems = [...amounts.values()].reduce((sum, amount) => sum + amount, 0);
+  const concessionCents = Math.round(Math.min(
+    amountOf(invoice.amount),
+    (invoice.concessions || []).reduce((sum, item) => sum + amountOf(item.amount), 0)
+  ) * 100);
+  const categories = [...amounts.entries()];
+  let allocatedConcessionCents = 0;
+  const totals = {};
+
+  categories.forEach(([categoryId, grossAmount], index) => {
+    const categoryCents = Math.round(grossAmount * 100);
+    const discountCents = index === categories.length - 1
+      ? concessionCents - allocatedConcessionCents
+      : totalLineItems > 0
+        ? Math.round(concessionCents * (grossAmount / totalLineItems))
+        : 0;
+    allocatedConcessionCents += discountCents;
+    totals[categoryId] = {
+      expected: Math.max(0, (categoryCents - discountCents) / 100),
+      paid: 0,
+      outstanding: 0,
+    };
+  });
+
+  for (const transaction of invoice.transactions || []) {
+    const category = totals[transaction.categoryId];
+    if (category) category.paid = money(category.paid + amountOf(transaction.amount));
+  }
+  for (const category of Object.values(totals)) {
+    category.outstanding = Math.max(0, money(category.expected - category.paid));
+  }
+
+  return totals;
+};
+
 const refreshInvoiceStatus = async (tx, schoolId, invoiceId) => {
   const invoice = await tx.feeInvoice.findFirst({
     where: { id: invoiceId, schoolId },
@@ -382,6 +423,7 @@ module.exports = {
   addConcession,
   sendArrearsReminders,
   getInvoiceTotals,
+  getInvoiceCategoryTotals,
   refreshInvoiceStatus,
   runSerializable,
 };

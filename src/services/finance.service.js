@@ -97,9 +97,9 @@ const recordTransaction = async (schoolId, recordedById, data) => {
       const invoice = await tx.feeInvoice.findFirst({
         where: { id: feeInvoiceId, schoolId },
         include: {
-          items: { select: { categoryId: true } },
+          items: { select: { categoryId: true, amount: true } },
           concessions: { select: { amount: true } },
-          transactions: { select: { amount: true } },
+          transactions: { select: { amount: true, categoryId: true } },
         },
       });
       if (!invoice) throw createError("Fee invoice not found.", 404);
@@ -113,6 +113,10 @@ const recordTransaction = async (schoolId, recordedById, data) => {
       const { balance } = feeInvoiceService.getInvoiceTotals(invoice);
       if (numericAmount > balance) {
         throw createError("Payment exceeds the remaining invoice balance.", 422);
+      }
+      const categoryBalance = feeInvoiceService.getInvoiceCategoryTotals(invoice)[categoryId]?.outstanding || 0;
+      if (numericAmount > categoryBalance) {
+        throw createError("Payment exceeds the remaining balance for this fee category.", 422);
       }
     }
 
@@ -254,7 +258,8 @@ const getStudentFinanceSummary = async (schoolId, studentId) => {
       orderBy: { dueDate: "desc" },
       include: {
         concessions: { select: { amount: true } },
-        transactions: { select: { amount: true } },
+        items: { select: { categoryId: true, amount: true } },
+        transactions: { select: { amount: true, categoryId: true } },
         term: { select: { termNumber: true, academicYear: true } },
       },
     }),
@@ -262,15 +267,26 @@ const getStudentFinanceSummary = async (schoolId, studentId) => {
 
   const byCategory = categories.map((cat) => {
     const catTransactions = transactions.filter((t) => t.categoryId === cat.id);
-    const paid = catTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
-    const expected = cat.expectedAmount !== null ? Number(cat.expectedAmount) : null;
+    const invoicedTotals = feeInvoices
+      .map((invoice) => feeInvoiceService.getInvoiceCategoryTotals(invoice)[cat.id])
+      .filter(Boolean);
+    const hasInvoices = invoicedTotals.length > 0;
+    const paid = hasInvoices
+      ? invoicedTotals.reduce((sum, category) => sum + category.paid, 0)
+      : catTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
+    const expected = hasInvoices
+      ? invoicedTotals.reduce((sum, category) => sum + category.expected, 0)
+      : cat.expectedAmount !== null ? Number(cat.expectedAmount) : null;
+    const outstanding = hasInvoices
+      ? invoicedTotals.reduce((sum, category) => sum + category.outstanding, 0)
+      : expected !== null ? Math.max(0, expected - paid) : null;
 
     return {
       categoryId: cat.id,
       categoryName: cat.name,
       expected,
       paid,
-      outstanding: expected !== null ? Math.max(0, expected - paid) : null,
+      outstanding,
       transactionCount: catTransactions.length,
     };
   });
