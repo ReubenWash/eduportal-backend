@@ -54,6 +54,10 @@ const recordTransactionValidator = [
 ];
 
 const updateTransactionValidator = [
+  body("feeInvoiceId")
+    .optional({ values: "falsy" })
+    .isString()
+    .withMessage("feeInvoiceId must be a string."),
   body("amount")
     .optional({ values: "falsy" })
     .isFloat({ gt: 0 })

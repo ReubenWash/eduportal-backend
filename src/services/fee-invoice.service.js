@@ -35,7 +35,7 @@ const escapeHtml = (value) => String(value || "").replace(/[&<>"']/g, (character
 const includeInvoiceDetails = {
   items: { include: { category: { select: { id: true, name: true } } } },
   concessions: true,
-  transactions: { select: { amount: true } },
+  transactions: { select: { amount: true, categoryId: true } },
   student: {
     select: {
       id: true,
@@ -287,6 +287,7 @@ const generateInvoices = async (schoolId, data) => {
 
 const getInvoices = async (schoolId, query = {}) => {
   const where = { schoolId };
+  if (query.studentId) where.studentId = query.studentId;
   if (query.termId) where.termId = query.termId;
   if (query.classId) {
     where.student = { enrollments: { some: { termId: query.termId, classId: query.classId } } };
@@ -302,6 +303,7 @@ const getInvoices = async (schoolId, query = {}) => {
     return {
       ...invoice,
       ...totals,
+      categoryTotals: getInvoiceCategoryTotals(invoice),
       student: {
         ...invoice.student,
         class: enrollment?.class || null,

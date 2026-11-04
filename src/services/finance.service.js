@@ -118,6 +118,25 @@ const recordTransaction = async (schoolId, recordedById, data) => {
       if (numericAmount > categoryBalance) {
         throw createError("Payment exceeds the remaining balance for this fee category.", 422);
       }
+    } else {
+      const outstandingInvoices = await tx.feeInvoice.findMany({
+        where: {
+          schoolId,
+          studentId,
+          items: { some: { categoryId } },
+        },
+        include: {
+          items: { select: { categoryId: true, amount: true } },
+          concessions: { select: { amount: true } },
+          transactions: { select: { amount: true, categoryId: true } },
+        },
+      });
+      const hasOutstandingCategoryInvoice = outstandingInvoices.some(
+        (invoice) => (feeInvoiceService.getInvoiceCategoryTotals(invoice)[categoryId]?.outstanding || 0) > 0
+      );
+      if (hasOutstandingCategoryInvoice) {
+        throw createError("Select the student's outstanding fee invoice to apply this payment.", 422);
+      }
     }
 
     const txn = await tx.financialTransaction.create({
@@ -138,6 +157,7 @@ const recordTransaction = async (schoolId, recordedById, data) => {
         category: { select: { id: true, name: true } },
         student: { select: { id: true, firstName: true, lastName: true, studentNumber: true } },
         recordedBy: { select: { id: true, email: true } },
+        feeInvoice: { select: { id: true, invoiceNumber: true } },
       },
     });
 
@@ -171,22 +191,79 @@ const recordTransaction = async (schoolId, recordedById, data) => {
 };
 
 const updateTransaction = async (schoolId, transactionId, data) => {
-  const txn = await prisma.financialTransaction.findFirst({ where: { id: transactionId, schoolId } });
-  if (!txn) throw createError("Transaction not found.", 404);
-  if (txn.feeInvoiceId) {
-    throw createError("Invoice payments cannot be edited. Delete and re-record the payment instead.", 422);
+  const { amount, method, reference, notes, feeInvoiceId } = data;
+  if (amount !== undefined && (!Number.isFinite(Number(amount)) || Number(amount) <= 0)) {
+    throw createError("A valid amount is required.", 422);
   }
+  return feeInvoiceService.runSerializable(async (tx) => {
+    const txn = await tx.financialTransaction.findFirst({ where: { id: transactionId, schoolId } });
+    if (!txn) throw createError("Transaction not found.", 404);
+    if (txn.feeInvoiceId) {
+      throw createError("Invoice payments cannot be edited. Delete and re-record the payment instead.", 422);
+    }
+    if (feeInvoiceId && (amount !== undefined || method !== undefined)) {
+      throw createError("Allocate an existing payment without changing its amount or method.", 422);
+    }
 
-  const { amount, method, reference, notes } = data;
-  return prisma.financialTransaction.update({
-    where: { id: transactionId },
-    data: {
-      ...(amount !== undefined && amount !== null && { amount: Number(amount) }),
-      ...(method !== undefined && { method }),
-      ...(reference !== undefined && { reference }),
-      ...(notes !== undefined && { notes }),
-    },
-  });
+    let invoice = null;
+    if (feeInvoiceId) {
+      invoice = await tx.feeInvoice.findFirst({
+        where: { id: feeInvoiceId, schoolId, studentId: txn.studentId },
+        include: {
+          items: { select: { categoryId: true, amount: true } },
+          concessions: { select: { amount: true } },
+          transactions: { select: { amount: true, categoryId: true } },
+        },
+      });
+      if (!invoice) throw createError("Fee invoice not found for this student.", 404);
+      if (!invoice.items.some((item) => item.categoryId === txn.categoryId)) {
+        throw createError("Select an invoice that includes this payment category.", 422);
+      }
+      const { balance } = feeInvoiceService.getInvoiceTotals(invoice);
+      const categoryBalance = feeInvoiceService.getInvoiceCategoryTotals(invoice)[txn.categoryId]?.outstanding || 0;
+      if (Number(txn.amount) > balance || Number(txn.amount) > categoryBalance) {
+        throw createError("The payment exceeds the remaining balance for this invoice category.", 422);
+      }
+    }
+
+    const ledgerEntry = await tx.ledgerEntry.findFirst({
+      where: { schoolId, sourceType: "FEE_PAYMENT", sourceId: transactionId },
+    });
+    if (!ledgerEntry) {
+      throw createError("This payment has no ledger entry and cannot be edited safely.", 409);
+    }
+
+    const nextAmount = amount === undefined || amount === null ? Number(txn.amount) : Number(amount);
+    const updated = await tx.financialTransaction.update({
+      where: { id: transactionId },
+      data: {
+        ...(amount !== undefined && amount !== null && { amount: nextAmount }),
+        ...(method !== undefined && { method }),
+        ...(reference !== undefined && { reference }),
+        ...(notes !== undefined && { notes }),
+        ...(invoice && { feeInvoiceId: invoice.id, termId: invoice.termId }),
+      },
+      include: { feeInvoice: { select: { id: true, invoiceNumber: true } } },
+    });
+    if (invoice) {
+      await feeInvoiceService.refreshInvoiceStatus(tx, schoolId, invoice.id);
+    } else {
+      const nextMethod = method || txn.method;
+      const account = await ledgerService.resolveAccountForMethod(schoolId, nextMethod, tx);
+      if (!account.isActive) {
+        throw createError("The ledger account for this payment method is inactive. Activate it before editing this payment.", 409);
+      }
+      await tx.ledgerEntry.update({
+        where: { id: ledgerEntry.id },
+        data: {
+          amount: nextAmount,
+          accountId: account.id,
+          financialCategoryId: txn.categoryId,
+        },
+      });
+    }
+    return updated;
+  }, "The payment was updated at the same time. Refresh and try again.");
 };
 
 // Transactions are never edited away silently either — a correction should
@@ -229,6 +306,7 @@ const getTransactions = async (schoolId, query) => {
         category: { select: { id: true, name: true } },
         student: { select: { id: true, firstName: true, lastName: true, studentNumber: true } },
         recordedBy: { select: { id: true, email: true } },
+        feeInvoice: { select: { id: true, invoiceNumber: true } },
       },
     }),
     prisma.financialTransaction.count({ where }),
@@ -267,34 +345,60 @@ const getStudentFinanceSummary = async (schoolId, studentId) => {
 
   const byCategory = categories.map((cat) => {
     const catTransactions = transactions.filter((t) => t.categoryId === cat.id);
-    const invoicedTotals = feeInvoices
-      .map((invoice) => feeInvoiceService.getInvoiceCategoryTotals(invoice)[cat.id])
-      .filter(Boolean);
-    const hasInvoices = invoicedTotals.length > 0;
-    const paid = hasInvoices
-      ? invoicedTotals.reduce((sum, category) => sum + category.paid, 0)
-      : catTransactions.reduce((sum, t) => sum + Number(t.amount), 0);
-    const expected = hasInvoices
-      ? invoicedTotals.reduce((sum, category) => sum + category.expected, 0)
+    const categoryInvoices = feeInvoices
+      .map((invoice) => ({
+        invoice,
+        category: feeInvoiceService.getInvoiceCategoryTotals(invoice)[cat.id],
+      }))
+      .filter((entry) => entry.category);
+    const invoicedPayments = categoryInvoices.reduce(
+      (sum, entry) => sum + entry.category.paid,
+      0
+    );
+    const unallocatedPayments = catTransactions
+      .filter((transaction) => !transaction.feeInvoiceId)
+      .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
+    const expected = categoryInvoices.length > 0
+      ? categoryInvoices.reduce((sum, entry) => sum + entry.category.expected, 0)
       : cat.expectedAmount !== null ? Number(cat.expectedAmount) : null;
-    const outstanding = hasInvoices
-      ? invoicedTotals.reduce((sum, category) => sum + category.outstanding, 0)
-      : expected !== null ? Math.max(0, expected - paid) : null;
+    const outstanding = categoryInvoices.length > 0
+      ? categoryInvoices.reduce((sum, entry) => sum + entry.category.outstanding, 0)
+      : expected !== null ? Math.max(0, expected - catTransactions.reduce((sum, t) => sum + Number(t.amount), 0)) : null;
 
     return {
       categoryId: cat.id,
       categoryName: cat.name,
       expected,
-      paid,
+      paid: categoryInvoices.length > 0
+        ? invoicedPayments
+        : catTransactions.reduce((sum, transaction) => sum + Number(transaction.amount), 0),
+      invoicedPaid: invoicedPayments,
+      hasInvoices: categoryInvoices.length > 0,
+      unallocatedPaid: unallocatedPayments,
       outstanding,
       transactionCount: catTransactions.length,
     };
   });
+  const unallocatedTransactions = transactions
+    .filter((transaction) => !transaction.feeInvoiceId)
+    .slice(0, 10)
+    .map((transaction) => ({
+      id: transaction.id,
+      categoryName: transaction.category.name,
+      amount: Number(transaction.amount),
+      receiptNumber: transaction.receiptNumber,
+      createdAt: transaction.createdAt,
+    }));
+  const unallocatedTotal = transactions
+    .filter((transaction) => !transaction.feeInvoiceId)
+    .reduce((sum, transaction) => sum + Number(transaction.amount), 0);
 
   return {
     studentId,
     categories: byCategory,
     totalPaid: transactions.reduce((sum, t) => sum + Number(t.amount), 0),
+    unallocatedTotal,
+    unallocatedTransactions,
     feeInvoices: feeInvoices.map((invoice) => ({
       id: invoice.id,
       invoiceNumber: invoice.invoiceNumber,
@@ -309,6 +413,7 @@ const getStudentFinanceSummary = async (schoolId, studentId) => {
       amount: Number(t.amount),
       method: t.method,
       receiptNumber: t.receiptNumber,
+      feeInvoiceId: t.feeInvoiceId,
       createdAt: t.createdAt,
     })),
   };
