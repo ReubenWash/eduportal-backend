@@ -44,7 +44,7 @@ const includeInvoiceDetails = {
       studentNumber: true,
       guardians: {
         include: {
-          guardian: { select: { firstName: true, lastName: true, email: true, isPrimary: true } },
+          guardian: { select: { firstName: true, lastName: true, email: true } },
         },
       },
       enrollments: {
