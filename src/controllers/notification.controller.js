@@ -67,7 +67,7 @@ const massBroadcast = async (req, res) => {
 
 const push = async (req, res) => {
   const r = await notificationService.pushNotification(req.body);
-  return sendSuccess(res, 200, "Push request processed (delivered in-app; no push provider configured).", r);
+  return sendSuccess(res, 200, r.push.note, r);
 };
 
 const broadcastHistory = async (req, res) => {

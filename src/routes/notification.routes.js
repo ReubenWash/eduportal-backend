@@ -13,12 +13,15 @@ router.get("/",          controller.list);
 router.post("/read-all", controller.readAll);
 
 router.post("/device-token",
-  [ body("token").trim().notEmpty().withMessage("Device token is required.") ],
+  [
+    body("token").isString().trim().isLength({ min: 1, max: 4096 }).withMessage("Device token is required."),
+    body("platform").optional().isIn(["web", "android", "ios"]).withMessage("Platform must be web, android, or ios."),
+  ],
   validate,
   controller.registerDeviceToken
 );
 router.delete("/device-token",
-  [ body("token").trim().notEmpty().withMessage("Device token is required.") ],
+  [ body("token").isString().trim().isLength({ min: 1, max: 4096 }).withMessage("Device token is required.") ],
   validate,
   controller.removeDeviceToken
 );

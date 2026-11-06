@@ -1,7 +1,49 @@
 const { prisma }      = require("../config/db");
 const { createError } = require("../middleware/errorHandler");
-const { sendPush, isConfigured } = require("./push.service");
+const { sendPush } = require("./push.service");
 const { sendAnnouncementEmail } = require("./email.service");
+const logger = require("../config/logger");
+
+const sendPushToUsers = async (userIds, { title, body }) => {
+  if (!userIds.length) {
+    return { delivered: false, reason: "no_recipients", successCount: 0, failureCount: 0 };
+  }
+
+  let result;
+  try {
+    const deviceTokens = await prisma.deviceToken.findMany({
+      where: { userId: { in: userIds }, user: { isActive: true } },
+      select: { token: true },
+    });
+    result = await sendPush(deviceTokens.map((device) => device.token), { title, body });
+  } catch (error) {
+    logger.error(`Unable to load device tokens for push delivery: ${error.message}`);
+    return { delivered: false, reason: "token_lookup_failed", successCount: 0, failureCount: 0 };
+  }
+
+  if (result.invalidTokens?.length) {
+    try {
+      await prisma.deviceToken.deleteMany({ where: { token: { in: result.invalidTokens } } });
+    } catch (error) {
+      logger.error(`Unable to remove invalid FCM device tokens: ${error.message}`);
+    }
+  }
+
+  return {
+    delivered: result.delivered,
+    ...(result.reason && { reason: result.reason }),
+    successCount: result.successCount || 0,
+    failureCount: result.failureCount || 0,
+  };
+};
+
+const pushStatusMessage = (result) => {
+  if (result.delivered) return "Push notifications sent.";
+  if (result.reason === "not_configured") return "FCM is not configured; in-app notifications were still created.";
+  if (result.reason === "no_device_tokens") return "No registered devices; in-app notifications were still created.";
+  if (result.reason === "no_recipients") return "No recipients matched this audience.";
+  return "FCM delivery failed; in-app notifications were still created.";
+};
 
 const normalizeAudience = (audience) => {
   if (!audience) return "ALL";
@@ -164,7 +206,11 @@ const broadcast = async (schoolId, { title, message, type, audience }) => {
   });
 
   if (users.length === 0) {
-    return { sent: 0, notificationId: null };
+    return {
+      sent: 0,
+      notificationId: null,
+      push: { delivered: false, reason: "no_recipients", successCount: 0, failureCount: 0 },
+    };
   }
 
   // Create notifications
@@ -192,13 +238,15 @@ const broadcast = async (schoolId, { title, message, type, audience }) => {
     orderBy: { createdAt: 'desc' }
   });
 
-  return { sent: users.length, notificationId: firstNotification?.id };
+  const push = await sendPushToUsers(users.map((user) => user.id), { title, body: message });
+  return { sent: users.length, notificationId: firstNotification?.id, push };
 };
 
 const massBroadcast = async ({ title, message, type, audience, channels, selectedSchools, schoolIds }) => {
   const normalizedAudience = normalizeAudience(audience);
   const enabledChannels = channels || {};
   const shouldCreateInApp = enabledChannels.inApp === true;
+  const shouldSendPush = enabledChannels.push === true;
   const selectedSchoolIds = Array.isArray(selectedSchools) ? selectedSchools : Array.isArray(schoolIds) ? schoolIds : [];
 
   const roleMap = {
@@ -231,7 +279,7 @@ const massBroadcast = async ({ title, message, type, audience, channels, selecte
     if (roleFilter) where.role = roleFilter;
   }
 
-  const users = shouldCreateInApp
+  const users = shouldCreateInApp || shouldSendPush
     ? await prisma.user.findMany({
         where,
         select: { id: true, schoolId: true, email: true },
@@ -239,10 +287,15 @@ const massBroadcast = async ({ title, message, type, audience, channels, selecte
     : [];
 
   if (users.length === 0 && !enabledChannels.email) {
-    return { sent: 0, notificationId: null, email: { sent: 0, failed: 0 } };
+    return {
+      sent: 0,
+      notificationId: null,
+      email: { sent: 0, failed: 0 },
+      ...(shouldSendPush && { push: { delivered: false, reason: "no_recipients", successCount: 0, failureCount: 0 } }),
+    };
   }
 
-  if (users.length > 0) {
+  if (shouldCreateInApp && users.length > 0) {
     const batchSize = 1000;
     for (let i = 0; i < users.length; i += batchSize) {
       const batch = users.slice(i, i + batchSize);
@@ -278,26 +331,33 @@ const massBroadcast = async ({ title, message, type, audience, channels, selecte
       })
     : null;
 
-  return { sent: users.length, notificationId: firstNotification?.id, email: emailResult };
+  const push = shouldSendPush
+    ? await sendPushToUsers(users.map((user) => user.id), { title, body: message })
+    : undefined;
+
+  return {
+    sent: users.length,
+    notificationId: firstNotification?.id,
+    email: emailResult,
+    ...(push && { push }),
+  };
 };
 
 const createNotification = async (userId, { title, message, type }) => {
-  return prisma.notification.create({
+  const notification = await prisma.notification.create({
     data: { userId, title, message, type: type || "info" },
   });
+  await sendPushToUsers([userId], { title, body: message });
+  return notification;
 };
 
-// NOTE: there is no push notification provider (FCM/OneSignal/APNs) wired up
-// in this codebase yet — no device-token storage, no push SDK, no credentials.
-// This creates the in-app notification records via the existing broadcast
-// path so the request doesn't 404, but it does NOT deliver an actual mobile
-// push. Wire up a real provider before relying on this for push delivery.
 const registerDeviceToken = async (userId, token, platform) => {
-  if (!token) throw createError("Device token is required.", 400);
+  const normalizedToken = typeof token === "string" ? token.trim() : "";
+  if (!normalizedToken) throw createError("Device token is required.", 400);
   return prisma.deviceToken.upsert({
-    where: { token },
+    where: { token: normalizedToken },
     update: { userId, platform: platform || "web" },
-    create: { userId, token, platform: platform || "web" },
+    create: { userId, token: normalizedToken, platform: platform || "web" },
   });
 };
 
@@ -306,45 +366,22 @@ const removeDeviceToken = async (userId, token) => {
   return { message: "Device token removed." };
 };
 
-const pushNotification = async ({ title, body, audience }) => {
-  // Always create the in-app notifications so the request has a
-  // guaranteed, visible effect regardless of push provider status.
-  const inAppResult = await massBroadcast({
+const pushNotification = async ({ title, body, audience, selectedSchools, schoolIds }) => {
+  const result = await massBroadcast({
     title,
     message: body,
     type: "push",
     audience,
-    channels: { inApp: true },
+    selectedSchools: selectedSchools || schoolIds,
+    channels: { inApp: true, push: true },
   });
-
-  const roleMap = {
-    ALL:      undefined,
-    TEACHERS: { in: ["CLASS_TEACHER", "SUBJECT_TEACHER"] },
-    PARENTS:  { equals: "PARENT" },
-    STUDENTS: { equals: "STUDENT" },
-    SCHOOLS:  { equals: "SCHOOL_ADMIN" },
-  };
-  const roleFilter = roleMap[audience];
-
-  const deviceTokens = await prisma.deviceToken.findMany({
-    where: { user: { isActive: true, ...(roleFilter && { role: roleFilter }) } },
-    select: { token: true },
-  });
-
-  const pushResult = await sendPush(deviceTokens.map((d) => d.token), { title, body });
-
-  // Clean up tokens Firebase reports as dead/unregistered.
-  if (pushResult.invalidTokens?.length) {
-    await prisma.deviceToken.deleteMany({ where: { token: { in: pushResult.invalidTokens } } });
-  }
 
   return {
-    ...inAppResult,
-    push: pushResult.delivered
-      ? { delivered: true, successCount: pushResult.successCount, failureCount: pushResult.failureCount }
-      : { delivered: false, reason: pushResult.reason, note: isConfigured()
-            ? "Push provider is configured but delivery failed — check server logs."
-            : "No push provider configured (FIREBASE_SERVICE_ACCOUNT_JSON not set) — delivered as in-app notification only." },
+    ...result,
+    push: {
+      ...result.push,
+      note: pushStatusMessage(result.push),
+    },
   };
 };
 

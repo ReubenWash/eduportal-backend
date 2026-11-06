@@ -5,6 +5,8 @@ const storage = require("../config/fileStorage");
 const { createError } = require("../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 const emails = require("./billingEmail.service");
+const notificationService = require("./notification.service");
+const logger = require("../config/logger");
 
 const EXPIRING_SOON_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -326,14 +328,11 @@ const approvePayment = async (id, adminId, body = {}) => {
 
   const mailData = { ...result, schoolName: existing.school.name };
   new Set([existing.submittedBy.email, existing.school.email]).forEach((to) => emails.sendPaymentApprovedEmail(to, mailData));
-  prisma.notification.create({
-    data: {
-      userId: existing.submittedById,
-      title: "Payment approved",
-      message: `Payment ${existing.reference} was approved. Your plan is active until ${periodEndLabel(result.periodEnd)}.`,
-      type: "success",
-    },
-  }).catch(() => {});
+  notificationService.createNotification(existing.submittedById, {
+    title: "Payment approved",
+    message: `Payment ${existing.reference} was approved. Your plan is active until ${periodEndLabel(result.periodEnd)}.`,
+    type: "success",
+  }).catch((error) => logger.error(`Payment approval notification failed: ${error.message}`));
 
   return serializePayment(result, { admin: true });
 };
@@ -354,9 +353,11 @@ const rejectPayment = async (id, adminId, body = {}) => {
   const updated = await prisma.schoolPayment.findUnique({ where: { id }, include: adminInclude });
   const mailData = { ...updated, schoolName: existing.school.name };
   new Set([existing.submittedBy.email, existing.school.email]).forEach((to) => emails.sendPaymentRejectedEmail(to, mailData));
-  prisma.notification.create({
-    data: { userId: existing.submittedById, title: "Payment not approved", message: `Payment ${existing.reference} was not approved: ${reason}`, type: "warning" },
-  }).catch(() => {});
+  notificationService.createNotification(existing.submittedById, {
+    title: "Payment not approved",
+    message: `Payment ${existing.reference} was not approved: ${reason}`,
+    type: "warning",
+  }).catch((error) => logger.error(`Payment rejection notification failed: ${error.message}`));
 
   return serializePayment(updated, { admin: true });
 };

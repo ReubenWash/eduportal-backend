@@ -31,6 +31,15 @@ Open `.env` and fill in:
 | `SMTP_HOST` / `SMTP_PASS` | [Resend](https://resend.com) → API Keys |
 | `CLIENT_URL` | `http://localhost:5173` for local dev |
 | `TENANT_ROOT_DOMAIN` | Your verified school portal root domain, e.g. `schools.example.com` |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Full JSON contents of a Firebase service-account key (store as a deployment secret; never commit it) |
+| `FIREBASE_PROJECT_ID` | Firebase project ID; optional when provided by the service account |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Optional path to a service-account JSON file when using Application Default Credentials |
+
+### Firebase Cloud Messaging (backend)
+
+In Firebase Console, create or select the project used by the mobile/web clients, then open **Project settings → Service accounts** and generate a private key. Set the complete JSON key contents in the backend deployment's secret/environment settings as `FIREBASE_SERVICE_ACCOUNT_JSON`. Do not commit the key or put it in client-side environment variables. Restart the backend after setting credentials.
+
+The backend stores authenticated users' FCM device tokens through `POST /api/v1/notifications/device-token` with `{ "token": "<FCM token>", "platform": "web" }`; `platform` may be `web`, `android`, or `ios`. Remove a signed-in user's token with `DELETE /api/v1/notifications/device-token` and `{ "token": "<FCM token>" }`. School broadcasts and system notifications send to the intended users' registered devices, and super admins can send audience broadcasts through `POST /api/v1/admin/notifications/push`. FCM delivery is reported separately from in-app notification creation; missing credentials or unregistered device tokens do not prevent in-app notifications from being saved.
 
 ---
 

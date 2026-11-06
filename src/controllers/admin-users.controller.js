@@ -2,6 +2,7 @@
 const { prisma } = require("../config/db");
 const { sendSuccess } = require("../utils/apiResponse");
 const { createError } = require("../middleware/errorHandler");
+const notificationService = require("../services/notification.service");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 
@@ -404,13 +405,10 @@ const verifyUser = async (req, res) => {
   });
 
   // Create notification
-  await prisma.notification.create({
-    data: {
-      userId: userId,
-      title: "✅ Email Verified",
-      message: `Your email (${user.email}) has been verified by the administrator. You can now log in.`,
-      type: "success"
-    }
+  await notificationService.createNotification(userId, {
+    title: "✅ Email Verified",
+    message: `Your email (${user.email}) has been verified by the administrator. You can now log in.`,
+    type: "success"
   });
 
   // Log the action
@@ -488,13 +486,10 @@ const verifyAllUsersBySchool = async (req, res) => {
 
   // Create notifications for verified users
   for (const user of unverifiedUsers) {
-    await prisma.notification.create({
-      data: {
-        userId: user.id,
-        title: "✅ Email Verified",
-        message: `Your email (${user.email}) has been verified by the administrator. You can now log in.`,
-        type: "success"
-      }
+    await notificationService.createNotification(user.id, {
+      title: "✅ Email Verified",
+      message: `Your email (${user.email}) has been verified by the administrator. You can now log in.`,
+      type: "success"
     });
   }
 
@@ -570,13 +565,10 @@ const resetStudentPassword = async (req, res) => {
     });
 
     // Create notification for student
-    await prisma.notification.create({
-      data: {
-        userId: student.userId,
-        title: "🔑 Password Reset",
-        message: `Your password has been reset by the administrator. Please log in with your temporary password and change it immediately.`,
-        type: "warning"
-      }
+    await notificationService.createNotification(student.userId, {
+      title: "🔑 Password Reset",
+      message: `Your password has been reset by the administrator. Please log in with your temporary password and change it immediately.`,
+      type: "warning"
     });
 
     // Log the action

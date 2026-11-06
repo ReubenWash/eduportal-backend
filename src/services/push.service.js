@@ -1,95 +1,103 @@
-/**
- * Push notification delivery via Firebase Cloud Messaging.
- *
- * This module is provider-agnostic at the call site: sendPush() always
- * resolves to a result object and never throws, so callers (e.g. the
- * mass-broadcast flow) can safely call it without wrapping every push
- * attempt in try/catch.
- *
- * To actually deliver pushes:
- *   1. npm install firebase-admin
- *   2. Set FIREBASE_SERVICE_ACCOUNT_JSON in your environment to the
- *      full JSON contents of a Firebase service account key
- *      (Project Settings → Service Accounts → Generate new private key).
- *   3. Restart the server.
- *
- * Until both of those are done, sendPush() reports { delivered: false,
- * reason: "not_configured" } and callers should treat the push as a
- * no-op (in-app notifications still work independently of this).
- */
 const logger = require("../config/logger");
 
+const MAX_MULTICAST_TOKENS = 500;
 let firebaseApp = null;
-let initAttempted = false;
+let initializationAttempted = false;
 
 const getFirebaseApp = () => {
-  if (initAttempted) return firebaseApp;
-  initAttempted = true;
-
-  const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-  if (!serviceAccountJson) return null;
+  if (initializationAttempted) return firebaseApp;
+  initializationAttempted = true;
 
   try {
-    // Lazy require: don't force firebase-admin as a hard dependency for
-    // installs that never configure push.
     const admin = require("firebase-admin");
-    const serviceAccount = JSON.parse(serviceAccountJson);
+    const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    let credential;
 
-    firebaseApp = admin.apps.length
+    if (serviceAccountJson) {
+      const serviceAccount = JSON.parse(serviceAccountJson);
+      if (serviceAccount.private_key) {
+        serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, "\n");
+      }
+      credential = admin.credential.cert(serviceAccount);
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      credential = admin.credential.applicationDefault();
+    } else {
+      logger.info("Firebase Cloud Messaging is disabled: no service account credentials configured.");
+      return null;
+    }
+
+    firebaseApp = admin.apps.some((app) => app.name === "[DEFAULT]")
       ? admin.app()
-      : admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+      : admin.initializeApp({
+          credential,
+          ...(process.env.FIREBASE_PROJECT_ID && { projectId: process.env.FIREBASE_PROJECT_ID }),
+        });
 
     return firebaseApp;
-  } catch (err) {
-    logger.warn(`Push notifications not available: ${err.message}`);
+  } catch (error) {
+    logger.error(`Firebase Cloud Messaging initialization failed: ${error.message}`);
     return null;
   }
 };
 
-const isConfigured = () => !!getFirebaseApp();
+const isConfigured = () => Boolean(getFirebaseApp());
 
-/**
- * @param {string[]} tokens - Device tokens to send to.
- * @param {{title: string, body: string}} payload
- * @returns {Promise<{delivered: boolean, reason?: string, successCount?: number, failureCount?: number, invalidTokens?: string[]}>}
- */
+const chunksOf = (items, size) => {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+};
+
+const isInvalidRegistrationToken = (error) => [
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+].includes(error?.code);
+
 const sendPush = async (tokens, { title, body }) => {
-  if (!tokens || tokens.length === 0) {
-    return { delivered: false, reason: "no_device_tokens" };
+  const uniqueTokens = [...new Set((tokens || []).filter((token) => typeof token === "string" && token.trim()))];
+  if (uniqueTokens.length === 0) {
+    return { delivered: false, reason: "no_device_tokens", successCount: 0, failureCount: 0, invalidTokens: [] };
   }
 
   const app = getFirebaseApp();
   if (!app) {
-    return { delivered: false, reason: "not_configured" };
+    return { delivered: false, reason: "not_configured", successCount: 0, failureCount: uniqueTokens.length, invalidTokens: [] };
   }
 
-  try {
-    const admin = require("firebase-admin");
-    const response = await admin.messaging().sendEachForMulticast({
-      tokens,
-      notification: { title, body },
-    });
+  let successCount = 0;
+  let failureCount = 0;
+  const invalidTokens = [];
+  const admin = require("firebase-admin");
 
-    const invalidTokens = [];
-    response.responses.forEach((r, i) => {
-      if (!r.success) {
-        const code = r.error?.code || "";
-        if (code.includes("registration-token-not-registered") || code.includes("invalid-argument")) {
-          invalidTokens.push(tokens[i]);
+  for (const tokenBatch of chunksOf(uniqueTokens, MAX_MULTICAST_TOKENS)) {
+    try {
+      const response = await admin.messaging(app).sendEachForMulticast({
+        tokens: tokenBatch,
+        notification: { title, body },
+      });
+
+      successCount += response.successCount;
+      failureCount += response.failureCount;
+      response.responses.forEach((result, index) => {
+        if (!result.success && isInvalidRegistrationToken(result.error)) {
+          invalidTokens.push(tokenBatch[index]);
         }
-      }
-    });
-
-    return {
-      delivered: true,
-      successCount: response.successCount,
-      failureCount: response.failureCount,
-      invalidTokens,
-    };
-  } catch (err) {
-    logger.error(`Push send failed: ${err.message}`);
-    return { delivered: false, reason: "send_error", error: err.message };
+      });
+    } catch (error) {
+      failureCount += tokenBatch.length;
+      logger.error(`Firebase Cloud Messaging batch failed: ${error.message}`);
+    }
   }
+
+  return {
+    delivered: successCount > 0,
+    reason: successCount > 0 ? undefined : "delivery_failed",
+    successCount,
+    failureCount,
+    invalidTokens,
+  };
 };
 
 module.exports = { sendPush, isConfigured };

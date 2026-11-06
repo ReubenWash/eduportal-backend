@@ -4,6 +4,7 @@ const { prisma }  = require("../config/db");
 const { generateSchoolSlug } = require("../utils/generateId");
 const { sendVerificationEmail, sendRegistrationUnderReviewEmail, sendSchoolStatusEmail } = require("./email.service");
 const { notifyAdminsNewSchool } = require("./billingEmail.service");
+const notificationService = require("./notification.service");
 const { createError } = require("../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 const { buildSuperAdminDashboardPayload } = require("../utils/superAdminDashboard");
@@ -76,13 +77,10 @@ const registerSchool = async ({ name, email, password, region, district, headmas
     },
   });
 
-  await prisma.notification.create({
-    data: {
-      userId: result.user.id,
-      title: "Registration Under Review",
-      message: `Your registration for ${name} has been received and is currently under review. Please verify your email using the 6-digit code sent to your email.`,
-      type: "info",
-    }
+  await notificationService.createNotification(result.user.id, {
+    title: "Registration Under Review",
+    message: `Your registration for ${name} has been received and is currently under review. Please verify your email using the 6-digit code sent to your email.`,
+    type: "info",
   });
 
   // ─── Send emails with the verification code ──────────────────
@@ -839,13 +837,10 @@ const updateSchoolStatus = async (schoolId, status) => {
   for (const user of adminUsers) {
     const message = statusMessages[status];
     if (message) {
-      await prisma.notification.create({
-        data: {
-          userId: user.id,
-          title: message.title,
-          message: message.message,
-          type: message.type,
-        }
+      await notificationService.createNotification(user.id, {
+        title: message.title,
+        message: message.message,
+        type: message.type,
       });
     }
   }
@@ -902,13 +897,10 @@ const deleteSchool = async (schoolId, userId = null) => {
   });
 
   for (const u of adminUsers) {
-    await prisma.notification.create({
-      data: {
-        userId: u.id,
-        title: `School Account Deactivated`,
-        message: `Your school account for ${school.name} has been deactivated by the system administrator. Please contact support for more information.`,
-        type: "warning",
-      }
+    await notificationService.createNotification(u.id, {
+      title: `School Account Deactivated`,
+      message: `Your school account for ${school.name} has been deactivated by the system administrator. Please contact support for more information.`,
+      type: "warning",
     });
   }
 
@@ -962,13 +954,10 @@ const restoreSchool = async (schoolId, userId = null) => {
     });
 
     for (const u of adminUsers) {
-      await prisma.notification.create({
-        data: {
-          userId: u.id,
-          title: `School Account Restored`,
-          message: `Your school account for ${school.name} has been restored by the system administrator. Please log in again to continue.`,
-          type: "success",
-        }
+      await notificationService.createNotification(u.id, {
+        title: `School Account Restored`,
+        message: `Your school account for ${school.name} has been restored by the system administrator. Please log in again to continue.`,
+        type: "success",
       });
     }
   } catch (notifError) {
