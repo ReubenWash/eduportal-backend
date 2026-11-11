@@ -40,4 +40,13 @@ const publicLimiter = rateLimit({
   handler,
 });
 
-module.exports = { authLimiter, apiLimiter, publicLimiter };
+const studyAssistantLimiter = rateLimit({
+  windowMs:        10 * 60 * 1000,
+  max:             10,
+  keyGenerator:    (req) => req.user.userId,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  handler,
+});
+
+module.exports = { authLimiter, apiLimiter, publicLimiter, studyAssistantLimiter };

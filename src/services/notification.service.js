@@ -2,6 +2,7 @@ const { prisma }      = require("../config/db");
 const { createError } = require("../middleware/errorHandler");
 const { sendPush } = require("./push.service");
 const { sendAnnouncementEmail } = require("./email.service");
+const { sendSms } = require("./sms.service");
 const logger = require("../config/logger");
 
 const sendPushToUsers = async (userIds, { title, body }) => {
@@ -35,6 +36,35 @@ const sendPushToUsers = async (userIds, { title, body }) => {
     successCount: result.successCount || 0,
     failureCount: result.failureCount || 0,
   };
+};
+
+const sendSmsToUsers = async (users, { title, message, guardianWhere = null }) => {
+  const phoneNumbers = users.flatMap((user) => [
+    user.guardianProfile?.schoolId === user.schoolId ? user.guardianProfile.phone : null,
+    user.staff?.schoolId === user.schoolId ? user.staff.phone : null,
+    user.school?.phone,
+  ]).filter(Boolean);
+
+  if (guardianWhere) {
+    const guardians = await prisma.guardian.findMany({
+      where: guardianWhere,
+      select: { phone: true },
+    });
+    phoneNumbers.push(...guardians.map((guardian) => guardian.phone).filter(Boolean));
+  }
+
+  if (!phoneNumbers.length) {
+    return {
+      configured: Boolean(process.env.ARKESEL_API_KEY && process.env.ARKESEL_SENDER_ID),
+      attempted: 0,
+      accepted: 0,
+      failed: 0,
+      skipped: 0,
+      noRecipients: true,
+    };
+  }
+
+  return sendSms(phoneNumbers, `${title}: ${message}`);
 };
 
 const pushStatusMessage = (result) => {
@@ -186,7 +216,7 @@ const getUnreadCount = async (userId) => {
   });
 };
 
-const broadcast = async (schoolId, { title, message, type, audience }) => {
+const broadcast = async (schoolId, { title, message, type, audience, channels = {} }) => {
   // Find target users by audience
   const roleMap = {
     ALL:      undefined,
@@ -196,16 +226,22 @@ const broadcast = async (schoolId, { title, message, type, audience }) => {
   };
 
   const roleFilter = roleMap[audience];
+  const guardianWhere = ["ALL", "PARENTS"].includes(audience) ? { schoolId } : null;
   const users = await prisma.user.findMany({
     where: {
       schoolId,
       isActive: true,
       ...(roleFilter && { role: roleFilter }),
     },
-    select: { id: true },
+    select: {
+      id: true,
+      guardianProfile: { select: { phone: true, schoolId: true } },
+      staff: { select: { phone: true, schoolId: true } },
+      school: { select: { phone: true } },
+    },
   });
 
-  if (users.length === 0) {
+  if (users.length === 0 && channels.sms !== true) {
     return {
       sent: 0,
       notificationId: null,
@@ -214,32 +250,37 @@ const broadcast = async (schoolId, { title, message, type, audience }) => {
   }
 
   // Create notifications
-  await prisma.notification.createMany({
-    data: users.map((u) => ({
-      userId:  u.id,
-      title,
-      message,
-      type:    type || "info",
-      isRead:  false,
-    })),
-  });
+  if (users.length) {
+    await prisma.notification.createMany({
+      data: users.map((u) => ({
+        userId:  u.id,
+        title,
+        message,
+        type:    type || "info",
+        isRead:  false,
+      })),
+    });
+  }
 
   await prisma.announcement.create({
     data: { schoolId, title, body: message, audience: audience || "ALL" },
   });
 
   // Get the first notification ID for reference
-  const firstNotification = await prisma.notification.findFirst({
-    where: { 
-      title, 
-      message, 
-      type: type || "info" 
-    },
-    orderBy: { createdAt: 'desc' }
-  });
+  const firstNotification = users.length
+    ? await prisma.notification.findFirst({
+        where: {
+          title,
+          message,
+          type: type || "info",
+        },
+        orderBy: { createdAt: 'desc' }
+      })
+    : null;
 
   const push = await sendPushToUsers(users.map((user) => user.id), { title, body: message });
-  return { sent: users.length, notificationId: firstNotification?.id, push };
+  const sms = channels.sms === true ? await sendSmsToUsers(users, { title, message, guardianWhere }) : undefined;
+  return { sent: users.length, notificationId: firstNotification?.id, push, ...(sms && { sms }) };
 };
 
 const massBroadcast = async ({ title, message, type, audience, channels, selectedSchools, schoolIds }) => {
@@ -247,6 +288,7 @@ const massBroadcast = async ({ title, message, type, audience, channels, selecte
   const enabledChannels = channels || {};
   const shouldCreateInApp = enabledChannels.inApp === true;
   const shouldSendPush = enabledChannels.push === true;
+  const shouldSendSms = enabledChannels.sms === true;
   const selectedSchoolIds = Array.isArray(selectedSchools) ? selectedSchools : Array.isArray(schoolIds) ? schoolIds : [];
 
   const roleMap = {
@@ -279,19 +321,36 @@ const massBroadcast = async ({ title, message, type, audience, channels, selecte
     if (roleFilter) where.role = roleFilter;
   }
 
-  const users = shouldCreateInApp || shouldSendPush
+  let guardianWhere = null;
+  if (normalizedAudience === "SELECTED_SCHOOLS") {
+    guardianWhere = { schoolId: { in: selectedSchoolIds.length ? selectedSchoolIds : ["__none__"] } };
+  } else if (["ALL_SCHOOLS", "PREMIUM_ONLY", "BASIC_ONLY"].includes(normalizedAudience)) {
+    guardianWhere = { school: schoolFilter };
+  } else if (["ALL", "PARENTS"].includes(normalizedAudience)) {
+    guardianWhere = { school: { status: "ACTIVE" } };
+  }
+
+  const users = shouldCreateInApp || shouldSendPush || shouldSendSms
     ? await prisma.user.findMany({
         where,
-        select: { id: true, schoolId: true, email: true },
+        select: {
+          id: true,
+          schoolId: true,
+          email: true,
+          guardianProfile: { select: { phone: true, schoolId: true } },
+          staff: { select: { phone: true, schoolId: true } },
+          school: { select: { phone: true } },
+        },
       })
     : [];
 
-  if (users.length === 0 && !enabledChannels.email) {
+  if (users.length === 0 && !enabledChannels.email && !(shouldSendSms && guardianWhere)) {
     return {
       sent: 0,
       notificationId: null,
       email: { sent: 0, failed: 0 },
       ...(shouldSendPush && { push: { delivered: false, reason: "no_recipients", successCount: 0, failureCount: 0 } }),
+      ...(shouldSendSms && { sms: await sendSmsToUsers([], { title, message, guardianWhere }) }),
     };
   }
 
@@ -334,13 +393,80 @@ const massBroadcast = async ({ title, message, type, audience, channels, selecte
   const push = shouldSendPush
     ? await sendPushToUsers(users.map((user) => user.id), { title, body: message })
     : undefined;
+  const sms = shouldSendSms ? await sendSmsToUsers(users, { title, message, guardianWhere }) : undefined;
 
   return {
     sent: users.length,
     notificationId: firstNotification?.id,
     email: emailResult,
     ...(push && { push }),
+    ...(sms && { sms }),
   };
+};
+
+const notifyReportReleased = async (schoolId, studentIds, termId) => {
+  if (!studentIds.length) return { notifications: 0, sms: null };
+
+  const students = await prisma.student.findMany({
+    where: { id: { in: studentIds }, schoolId },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      userId: true,
+      guardians: {
+        where: { guardian: { schoolId } },
+        select: {
+          guardian: {
+            select: { userId: true, phone: true },
+          },
+        },
+      },
+    },
+  });
+  if (!students.length) return { notifications: 0, sms: null };
+
+  const term = termId
+    ? await prisma.term.findFirst({ where: { id: termId, schoolId }, select: { termNumber: true, academicYear: true } })
+    : null;
+  const school = await prisma.school.findUnique({ where: { id: schoolId }, select: { name: true } });
+  const recipients = new Set();
+  const smsRecipients = [];
+
+  for (const student of students) {
+    const childName = `${student.firstName} ${student.lastName}`.trim();
+    const resultTitle = "Examination results available";
+    const termLabel = term ? `${term.termNumber.replace("TERM", "Term ")} ${term.academicYear}` : "term";
+    const resultMessage = `${childName}'s ${termLabel} results are now available in the ${school?.name || "school"} portal.`;
+
+    if (student.userId) recipients.add(student.userId);
+    for (const link of student.guardians) {
+      const guardian = link.guardian;
+      if (guardian.userId) recipients.add(guardian.userId);
+      if (guardian.phone) smsRecipients.push(guardian.phone);
+    }
+
+    for (const userId of new Set([
+      student.userId,
+      ...student.guardians.map((link) => link.guardian.userId),
+    ].filter(Boolean))) {
+      try {
+        await prisma.notification.create({
+          data: { userId, title: resultTitle, message: resultMessage, type: "results" },
+        });
+      } catch (error) {
+        logger.error(`Unable to create report release notification for user ${userId}: ${error.message}`);
+      }
+    }
+  }
+
+  const title = "Examination results available";
+  const message = `Examination results are available in your ${school?.name || "school"} portal. Please sign in to view your child's report.`;
+  const [sms, push] = await Promise.all([
+    sendSms(smsRecipients, message),
+    sendPushToUsers([...recipients], { title, body: message }),
+  ]);
+  return { notifications: recipients.size, sms, push };
 };
 
 const createNotification = async (userId, { title, message, type }) => {
@@ -423,6 +549,7 @@ module.exports = {
   massBroadcast, 
   createNotification, 
   pushNotification, 
+  notifyReportReleased,
   getBroadcastHistory, 
   registerDeviceToken, 
   removeDeviceToken,

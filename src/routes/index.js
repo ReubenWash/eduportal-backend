@@ -24,6 +24,7 @@ router.use("/attendance",    require("./attendance.routes"));
 router.use("/reports",       require("./report.routes"));
 router.use("/analytics",     require("./analytics.routes"));
 router.use("/notifications", require("./notification.routes"));
+router.use("/study-assistant", require("./studyAssistant.routes"));
 router.use("/documents",     require("./document.routes"));
 router.use("/billing",       require("./billing.routes"));        // School admin: manual payments
 // Manual payments (review, approve, settings)

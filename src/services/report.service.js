@@ -1,6 +1,7 @@
 const { prisma }      = require("../config/db");
 const { createError } = require("../middleware/errorHandler");
 const { sendReportCardEmail } = require("./email.service");
+const notificationService = require("./notification.service");
 const logger = require("../config/logger");
 const { computePositions } = require("../utils/gradeEngine");
 const { className: formatClassName } = require("../utils/fileNames");
@@ -496,6 +497,13 @@ const releaseReport = async (schoolId, reportId) => {
       },
     });
 
+    let delivery = null;
+    try {
+      delivery = await notificationService.notifyReportReleased(schoolId, [report.studentId], report.termId);
+    } catch (error) {
+      logger.error(`Report release notification failed for report ${reportId}: ${error.message}`);
+    }
+
     // Update class positions
     try {
       // Get the student's class for this term
@@ -514,7 +522,7 @@ const releaseReport = async (schoolId, reportId) => {
       logger.error("Failed to update class positions:", posError.message);
     }
 
-    return released;
+    return { ...released, delivery };
   } catch (error) {
     logger.error("Release report error:", error);
     throw error;
@@ -551,6 +559,7 @@ const bulkReleaseReports = async (schoolId, classId, termId) => {
       select: {
         id: true,
         studentId: true,
+        termId: true,
         pdfUrl: true,
         status: true
       }
@@ -632,6 +641,27 @@ const releaseReportGroup = async (schoolId, reports, context) => {
     },
   });
 
+  const releasedReports = updateMany.count
+    ? await prisma.report.findMany({
+        where: { id: { in: reportIdsToRelease }, status: "RELEASED" },
+        select: { studentId: true, termId: true },
+      })
+    : [];
+  const delivery = [];
+  const reportsByTerm = new Map();
+  for (const report of releasedReports) {
+    const termStudentIds = reportsByTerm.get(report.termId) || [];
+    termStudentIds.push(report.studentId);
+    reportsByTerm.set(report.termId, termStudentIds);
+  }
+  for (const [termId, studentIds] of reportsByTerm) {
+    try {
+      delivery.push(await notificationService.notifyReportReleased(schoolId, studentIds, termId));
+    } catch (error) {
+      logger.error(`Bulk report release notification failed: ${error.message}`);
+    }
+  }
+
   const uniqueTermIds = [...new Set(reports.map(r => r.termId).filter(Boolean))];
   const uniqueClassIds = context.classId ? [context.classId] : [...new Set((await prisma.enrollment.findMany({
     where: { studentId: { in: reports.map(r => r.studentId) }, termId: { in: uniqueTermIds } },
@@ -646,7 +676,7 @@ const releaseReportGroup = async (schoolId, reports, context) => {
     }
   }
 
-  return { released: updateMany.count };
+  return { released: updateMany.count, delivery };
 };
 
 // ── Helper: Update class positions ────────────────────────────

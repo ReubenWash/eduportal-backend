@@ -41,6 +41,24 @@ In Firebase Console, create or select the project used by the mobile/web clients
 
 The backend stores authenticated users' FCM device tokens through `POST /api/v1/notifications/device-token` with `{ "token": "<FCM token>", "platform": "web" }`; `platform` may be `web`, `android`, or `ios`. Remove a signed-in user's token with `DELETE /api/v1/notifications/device-token` and `{ "token": "<FCM token>" }`. School broadcasts and system notifications send to the intended users' registered devices, and super admins can send audience broadcasts through `POST /api/v1/admin/notifications/push`. FCM delivery is reported separately from in-app notification creation; missing credentials or unregistered device tokens do not prevent in-app notifications from being saved.
 
+### Arkesel SMS
+
+Configure these values in the backend host's secret/environment settings, then restart the backend:
+
+| Variable | Purpose |
+|---|---|
+| `ARKESEL_API_KEY` | Arkesel API key; keep it backend-only |
+| `ARKESEL_SENDER_ID` | Approved Arkesel sender ID |
+| `ARKESEL_SMS_URL` | Optional API URL override; defaults to `https://sms.arkesel.com/api/v2/sms/send` |
+
+The Super Admin Notifications Center can send SMS announcements to selected audiences (parents, teachers, and school admins). SMS delivery is opt-in per broadcast and reports accepted/failed counts; Arkesel acceptance is not a handset delivery receipt. Newly recorded absences automatically alert linked guardians, and releasing examination reports alerts the student and guardians. Guardian/staff phone numbers should include their country code. If the Arkesel credentials are missing or a provider request fails, attendance/report release still completes and the SMS failure is logged and surfaced separately.
+
+### Educational study assistant
+
+The assistant uses the Google Gemini API. Configure `GEMINI_API_KEY` as a backend-only secret and optionally set `GEMINI_MODEL` (defaults to `gemini-2.5-flash`). Google AI Studio may provide a free usage tier, subject to Google's current availability, limits, and terms; it is not an unlimited or guaranteed-free service. If no key is set, the authenticated assistant endpoint returns an explicit configuration error.
+
+Students and teachers can use the assistant at `POST /api/v1/study-assistant/ask` with `{ "question": "..." }`. It is school-tenant scoped, limited to 10 requests per user every 10 minutes, and constrained to educational questions. The service sends the question to Google for generation; do not include student-identifying or other sensitive information. Conversation history is not persisted by Goreb.
+
 ---
 
 ## 3. Generate Prisma client
