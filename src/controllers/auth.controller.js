@@ -11,8 +11,8 @@ const login = async (req, res) => {
   try {
     const { email, password, portal } = req.body;
 
-    if (!email || !password || !portal) {
-      throw createError("Login portal, email/student number, and password are required", 400);
+    if (!email || !password) {
+      throw createError("Email/student number and password are required", 400);
     }
 
     const { accessToken, refreshToken, user } = await authService.login(

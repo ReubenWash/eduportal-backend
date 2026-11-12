@@ -12,7 +12,7 @@ const { getTenantSlugFromOrigin } = require("../utils/tenantDomain");
 
 // ── Login ──────────────────────────────────────────────────────
 const login = async (identifier, password, portal, origin) => {
-  if (!isSupportedPortal(portal)) {
+  if (portal && !isSupportedPortal(portal)) {
     throw createError("A valid login portal is required.", 400);
   }
 
@@ -77,7 +77,7 @@ const login = async (identifier, password, portal, origin) => {
     throw createError("This account does not belong to the school portal in this address.", 403);
   }
 
-  if (!isRoleAllowedForPortal(portal, user.role)) {
+  if (portal && !isRoleAllowedForPortal(portal, user.role)) {
     throw createError("This account does not have access to the selected portal.", 403);
   }
 
