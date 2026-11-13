@@ -11,11 +11,16 @@ const { isValidE164Phone } = require("../utils/phone");
 router.use(authenticate, tenantScope);
 
 // Self-service guardian routes
+router.get("/me", controller.getMyProfile);
 router.get("/me/children", controller.getMyChildren);
 router.get("/me/children/:studentId/report-cards", controller.getChildReportCards);
 router.get("/me/children/:studentId/grades", controller.getChildGrades);
 router.get("/me/children/:studentId/attendance-summary", controller.getChildAttendance);
 router.get("/me/children/:studentId/finance", controller.getChildFinance);
+router.get("/me/children/:studentId/timetable", controller.getChildTimetable);
+router.get("/me/children/:studentId/assignments", controller.getChildAssignments);
+router.get("/me/children/:studentId/teacher-contact", controller.getChildTeacherContact);
+router.get("/me/children/:studentId/conduct-log", controller.getChildConductLog);
 
 router.get("/",    isSchoolStaff, controller.list);
 router.get("/:id", isSchoolStaff, controller.getOne);

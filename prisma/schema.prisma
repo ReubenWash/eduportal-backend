@@ -43,6 +43,9 @@ model School {
   financialTransactions  FinancialTransaction[]
   feeStructures          FeeStructure[]
   feeInvoices            FeeInvoice[]
+  timetableSlots         TimetableSlot[]
+  assignments            Assignment[]
+  conductIncidents       ConductIncident[]
   // ── Phase 1: Ledger + Expenses ──
   ledgerAccounts    LedgerAccount[]
   ledgerEntries     LedgerEntry[]
@@ -98,6 +101,7 @@ model User {
   supportTicketsAssigned    SupportTicket[] @relation("TicketAssignee")
   supportTicketsCreated     SupportTicket[] @relation("TicketCreator")
   ticketMessages            TicketMessage[]
+  gradedAssignmentSubmissions AssignmentSubmission[] @relation("AssignmentSubmissionGrader")
   twoFactorAuth             TwoFactorAuth?
   school                    School?         @relation(fields: [schoolId], references: [id])
 
@@ -133,6 +137,9 @@ model Staff {
   school             School         @relation(fields: [schoolId], references: [id])
   user               User           @relation(fields: [userId], references: [id])
   subjectAssignments StaffSubject[]
+  timetableSlots     TimetableSlot[] @relation("TimetableTeacher")
+  assignments        Assignment[]    @relation("AssignmentTeacher")
+  conductIncidents   ConductIncident[] @relation("ConductReporter")
 
   @@map("staff")
 }
@@ -178,6 +185,8 @@ model Student {
   guardians     StudentGuardian[]
   financialTransactions FinancialTransaction[]
   feeInvoices           FeeInvoice[]
+  assignmentSubmissions AssignmentSubmission[]
+  conductIncidents      ConductIncident[]
   school        School            @relation(fields: [schoolId], references: [id])
   user          User?             @relation(fields: [userId], references: [id])
 
@@ -210,6 +219,9 @@ model Class {
   school         School         @relation(fields: [schoolId], references: [id])
   enrollments    Enrollment[]
   feeStructures  FeeStructure[]
+  timetableSlots TimetableSlot[]
+  assignments    Assignment[]
+  conductIncidents ConductIncident[]
 
   @@unique([schoolId, level, section, academicYear])
   @@map("classes")
@@ -223,6 +235,8 @@ model Subject {
   type          SubjectType    @default(CORE)
   classSubjects ClassSubject[]
   scores        Score[]
+  timetableSlots TimetableSlot[]
+  assignments    Assignment[]
   staffSubjects StaffSubject[]
   school        School         @relation(fields: [schoolId], references: [id])
 
@@ -269,6 +283,9 @@ model Term {
   financialTransactions FinancialTransaction[]
   feeStructures          FeeStructure[]
   feeInvoices            FeeInvoice[]
+  timetableSlots         TimetableSlot[]
+  assignments            Assignment[]
+  conductIncidents       ConductIncident[]
   school       School       @relation(fields: [schoolId], references: [id])
 
   @@unique([schoolId, academicYear, termNumber])
@@ -359,6 +376,105 @@ model Report {
 
   @@unique([studentId, termId])
   @@map("reports")
+}
+
+model TimetableSlot {
+  id        String   @id @default(uuid())
+  schoolId  String
+  classId   String
+  termId    String
+  subjectId String?
+  teacherId String?
+  weekday   Weekday
+  startTime String
+  endTime   String
+  room      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class     Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  term      Term     @relation(fields: [termId], references: [id], onDelete: Cascade)
+  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  teacher   Staff?   @relation("TimetableTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+
+  @@unique([classId, termId, weekday, startTime])
+  @@index([schoolId, termId, weekday])
+  @@index([teacherId, termId, weekday])
+  @@map("timetable_slots")
+}
+
+model Assignment {
+  id           String           @id @default(uuid())
+  schoolId     String
+  classId      String
+  subjectId    String?
+  teacherId    String?
+  termId       String
+  title        String
+  details      String?
+  attachmentUrl String?
+  dueDate      DateTime
+  status       AssignmentStatus @default(ACTIVE)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  school       School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  class        Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subject      Subject?         @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  teacher      Staff?           @relation("AssignmentTeacher", fields: [teacherId], references: [id], onDelete: SetNull)
+  term         Term             @relation(fields: [termId], references: [id], onDelete: Cascade)
+  submissions  AssignmentSubmission[]
+
+  @@index([schoolId, classId, termId, status])
+  @@index([teacherId, dueDate])
+  @@map("assignments")
+}
+
+model AssignmentSubmission {
+  id          String           @id @default(uuid())
+  assignmentId String
+  studentId   String
+  status      SubmissionStatus @default(PENDING)
+  answerUrl   String?
+  submittedAt DateTime?
+  score       Float?
+  feedback    String?
+  gradedAt    DateTime?
+  gradedById  String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  assignment  Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student     Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  gradedBy    User?            @relation("AssignmentSubmissionGrader", fields: [gradedById], references: [id], onDelete: SetNull)
+
+  @@unique([assignmentId, studentId])
+  @@index([assignmentId, status])
+  @@map("assignment_submissions")
+}
+
+model ConductIncident {
+  id          String      @id @default(uuid())
+  schoolId    String
+  studentId   String
+  classId     String?
+  termId      String?
+  reporterId  String?
+  type        ConductType
+  title       String
+  note        String?
+  actionTaken String?
+  occurredAt  DateTime    @default(now())
+  resolvedAt  DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  school      School      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class       Class?      @relation(fields: [classId], references: [id], onDelete: SetNull)
+  term        Term?       @relation(fields: [termId], references: [id], onDelete: SetNull)
+  reporter    Staff?      @relation("ConductReporter", fields: [reporterId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId, studentId, occurredAt])
+  @@index([schoolId, type, occurredAt])
+  @@map("conduct_incidents")
 }
 
 model Notification {
@@ -1532,6 +1648,31 @@ enum Role {
   PARENT
   STUDENT
   ACCOUNTANT
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  COMPLETED
+}
+
+enum SubmissionStatus {
+  PENDING
+  SUBMITTED
+  GRADED
+}
+
+enum ConductType {
+  ACHIEVEMENT
+  CONDUCT
+  DISCIPLINARY
 }
 
 enum SchoolStatus {

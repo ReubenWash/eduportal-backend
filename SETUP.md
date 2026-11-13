@@ -59,6 +59,33 @@ The assistant uses the Google Gemini API. Configure `GEMINI_API_KEY` as a backen
 
 Students and teachers can use the assistant at `POST /api/v1/study-assistant/ask` with `{ "question": "..." }`. It is school-tenant scoped, limited to 10 requests per user every 10 minutes, and constrained to educational questions. The service sends the question to Google for generation; do not include student-identifying or other sensitive information. Conversation history is not persisted by Goreb.
 
+Generate a structured, class-appropriate quiz with `POST /api/v1/study-assistant/quiz` and `{ "subject": "ALL", "count": 5 }`. Student class placement is read from the signed-in student's current enrollment; teachers can optionally send a `classId` they teach. The response is a validated array of multiple-choice questions and explanations. The same per-user assistant rate limit applies.
+
+### Student, parent, and teacher portal data
+
+The following authenticated, school-scoped endpoints provide the portal data not available from the earlier APIs:
+
+| Endpoint | Access | Purpose |
+|---|---|---|
+| `GET /api/v1/guardians/me` | Parent | Signed-in guardian profile |
+| `GET /api/v1/guardians/me/children/:studentId/timetable` | Linked parent | Child's current enrolled class timetable |
+| `GET /api/v1/guardians/me/children/:studentId/assignments` | Linked parent | Homework and the child's submission/grade status |
+| `GET /api/v1/guardians/me/children/:studentId/teacher-contact` | Linked parent | Class teacher and school contact details |
+| `GET /api/v1/guardians/me/children/:studentId/conduct-log` | Linked parent | Child's achievements and conduct records |
+| `GET /api/v1/timetable/classes/:classId?termId=...` | School admin or assigned teacher | Class timetable |
+| `GET /api/v1/timetable/teachers/me?termId=...` | Teacher | Signed-in teacher's timetable |
+| `POST /api/v1/timetable/slots` | School admin | Create or update a timetable slot; validates school scope and time conflicts |
+| `GET /api/v1/assignments` | School staff, student, or parent | Lists assignments visible to the caller; parents supply `studentId` |
+| `POST /api/v1/assignments` | School admin or assigned teacher | Create homework for an assigned class and term |
+| `POST /api/v1/assignments/:id/submissions` | Student | Submit or replace the student's response before the due date |
+| `GET /api/v1/assignments/:id/submissions` | School admin or assigned teacher | Review submissions |
+| `PATCH /api/v1/assignments/submissions/:submissionId` | School admin or assigned teacher | Grade a submission with a score and optional feedback |
+| `GET /api/v1/discipline/incidents` | School admin or assigned teacher | Search scoped conduct records |
+| `POST /api/v1/discipline/incidents` | School admin or assigned teacher | Record an achievement, conduct note, or disciplinary incident |
+| `PATCH /api/v1/discipline/incidents/:id` | School admin or assigned teacher | Add action taken or resolve a record |
+
+These features require the `20261113170000_portal_academic_data` Prisma migration. In a deployment, apply committed migrations with `npx prisma migrate deploy`; for local development use `npx prisma migrate dev`. Then regenerate the Prisma client with `npx prisma generate` and restart the API.
+
 ---
 
 ## 3. Generate Prisma client

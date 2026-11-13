@@ -1,6 +1,7 @@
 const { prisma } = require("../config/db");
 const guardianService = require("../services/guardian.service");
 const financeService = require("../services/finance.service");
+const portalAcademicService = require("../services/portalAcademic.service");
 const { sendSuccess, sendError } = require("../utils/apiResponse");
 const { normalizeGuardianGradePayload } = require("../utils/guardianGradePayload");
 
@@ -41,6 +42,27 @@ const getMyChildren = async (req, res, next) => {
     sendSuccess(res, 200, "Success", children);
   } catch (error) {
     next(error);
+  }
+};
+
+const getMyProfile = async (req, res, next) => {
+  try {
+    const guardian = await prisma.guardian.findFirst({
+      where: { userId: req.user.userId, schoolId: req.user.schoolId },
+      include: { user: { select: { email: true } } },
+    });
+    if (!guardian) return sendError(res, 404, "Guardian profile not found.");
+    return sendSuccess(res, 200, "Guardian profile fetched.", {
+      id: guardian.id,
+      name: `${guardian.firstName} ${guardian.lastName}`.trim(),
+      firstName: guardian.firstName,
+      lastName: guardian.lastName,
+      phone: guardian.phone,
+      email: guardian.email || guardian.user?.email || null,
+      relationship: guardian.relationship,
+    });
+  } catch (error) {
+    return next(error);
   }
 };
 
@@ -131,4 +153,56 @@ const getChildFinance = async (req, res, next) => {
   }
 };
 
-module.exports = { create, list, getOne, update, linkStudent, getMyChildren, getChildReportCards, getChildGrades, getChildAttendance, getChildFinance };
+const getChildTimetable = async (req, res, next) => {
+  try {
+    const timetable = await portalAcademicService.getChildTimetable(req.user, req.params.studentId);
+    return sendSuccess(res, 200, "Child timetable fetched.", timetable);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getChildAssignments = async (req, res, next) => {
+  try {
+    const assignments = await portalAcademicService.getChildAssignments(req.user, req.params.studentId);
+    return sendSuccess(res, 200, "Child assignments fetched.", assignments);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getChildTeacherContact = async (req, res, next) => {
+  try {
+    const contact = await portalAcademicService.getChildTeacherContact(req.user, req.params.studentId);
+    return sendSuccess(res, 200, "Teacher contact fetched.", contact);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getChildConductLog = async (req, res, next) => {
+  try {
+    const records = await portalAcademicService.getChildConductLog(req.user, req.params.studentId);
+    return sendSuccess(res, 200, "Conduct records fetched.", records);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+module.exports = {
+  create,
+  list,
+  getOne,
+  update,
+  linkStudent,
+  getMyChildren,
+  getMyProfile,
+  getChildReportCards,
+  getChildGrades,
+  getChildAttendance,
+  getChildFinance,
+  getChildTimetable,
+  getChildAssignments,
+  getChildTeacherContact,
+  getChildConductLog,
+};

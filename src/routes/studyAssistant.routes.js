@@ -23,4 +23,15 @@ router.post(
   controller.ask
 );
 
+router.post(
+  "/quiz",
+  [
+    body("classId").optional().isUUID(),
+    body("subject").optional().isString().trim().isLength({ min: 1, max: 100 }),
+    body("count").optional().isInt({ min: 1, max: 10 }).toInt(),
+  ],
+  validate,
+  controller.quiz
+);
+
 module.exports = router;
