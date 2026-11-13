@@ -1,5 +1,6 @@
 const axios = require("axios");
 const { createError } = require("../middleware/errorHandler");
+const logger = require("../config/logger");
 
 const STUDY_ASSISTANT_INSTRUCTIONS = [
   "You are Goreb's study assistant for school students and teachers.",
@@ -94,17 +95,32 @@ const askStudyAssistant = async (question) => {
   } catch (error) {
     if (error.statusCode) throw error;
     const providerStatus = error.response?.status;
+    const providerMessage = String(
+      error.response?.data?.error?.message
+        || error.response?.data?.message
+        || error.message
+        || "Unknown provider error"
+    ).replace(/[\r\n]+/g, " ").slice(0, 400);
+    logger.error(
+      `Gemini study-assistant request failed: model=${model}, status=${providerStatus || "network"}, code=${error.code || "none"}, message=${providerMessage}`
+    );
     if (providerStatus === 429) {
       throw createError("The study assistant is busy. Please try again shortly.", 429);
     }
     if (providerStatus === 401 || providerStatus === 403) {
       throw createError("The study assistant provider rejected its backend credentials. Check GEMINI_API_KEY.", 503);
     }
+    if (providerStatus === 400 || providerStatus === 404) {
+      throw createError("Gemini rejected the request or model. Check GEMINI_MODEL and the model's API availability in Render.", 502);
+    }
     if (providerStatus) {
       throw createError("The study assistant could not answer right now. Please try again later.", 502);
     }
     if (error.code === "ECONNABORTED") {
       throw createError("The study assistant took too long to respond. Please try again.", 504);
+    }
+    if (["ENOTFOUND", "EAI_AGAIN", "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT"].includes(error.code)) {
+      throw createError("The study assistant provider is temporarily unreachable. Please try again later.", 502);
     }
     throw error;
   }
