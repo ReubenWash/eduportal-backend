@@ -55,7 +55,7 @@ The Super Admin Notifications Center can send SMS announcements to selected audi
 
 ### Educational study assistant
 
-The assistant uses the Google Gemini API. Configure `GEMINI_API_KEY` as a backend-only secret and optionally set `GEMINI_MODEL` (defaults to `gemini-3.8-flash` and automatically falls back if an older model is no longer available). Google AI Studio may provide a free usage tier, subject to Google's current availability, limits, and terms; it is not an unlimited or guaranteed-free service. If no key is set, the authenticated assistant endpoint returns an explicit configuration error.
+The assistant uses the Google Gemini API. Configure `GEMINI_API_KEY` as a backend-only secret and optionally set `GEMINI_MODEL` (defaults to `gemini-3.8-flash` and automatically falls back if an older model is no longer available). Requests allow up to 60 seconds by default; set `GEMINI_REQUEST_TIMEOUT_MS` on the backend if your hosting/provider needs a different limit. The chat uses low thinking effort for faster educational replies. Google AI Studio may provide a free usage tier, subject to Google's current availability, limits, and terms; it is not an unlimited or guaranteed-free service. If no key is set, the authenticated assistant endpoint returns an explicit configuration error.
 
 Students and teachers can use the assistant at `POST /api/v1/study-assistant/ask` with `{ "question": "..." }`. It is school-tenant scoped, limited to 10 requests per user every 10 minutes, and constrained to educational questions. The service sends the question to Google for generation; do not include student-identifying or other sensitive information. Conversation history is not persisted by Goreb.
 

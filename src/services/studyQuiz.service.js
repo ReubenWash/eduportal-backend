@@ -11,6 +11,10 @@ const SAFETY_SETTINGS = [
   { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_LOW_AND_ABOVE" },
 ];
 const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
+const configuredGeminiTimeout = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS);
+const GEMINI_REQUEST_TIMEOUT_MS = Number.isFinite(configuredGeminiTimeout) && configuredGeminiTimeout > 0
+  ? configuredGeminiTimeout
+  : 60000;
 
 const getGeminiModelCandidates = () => {
   const configured = (process.env.GEMINI_MODEL || "").trim();
@@ -199,7 +203,7 @@ const generateStudyQuiz = async (user, { classId, subject = "ALL", count = 5 }) 
           },
         },
         {
-          timeout: 25000,
+          timeout: GEMINI_REQUEST_TIMEOUT_MS,
           headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
         }
       );

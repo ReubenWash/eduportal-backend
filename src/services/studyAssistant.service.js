@@ -12,6 +12,10 @@ const STUDY_ASSISTANT_INSTRUCTIONS = [
 ].join(" ");
 
 const DEFAULT_GEMINI_MODEL = "gemini-3.8-flash";
+const configuredGeminiTimeout = Number(process.env.GEMINI_REQUEST_TIMEOUT_MS);
+const GEMINI_REQUEST_TIMEOUT_MS = Number.isFinite(configuredGeminiTimeout) && configuredGeminiTimeout > 0
+  ? configuredGeminiTimeout
+  : 60000;
 
 const getGeminiModelCandidates = () => {
   const configured = (process.env.GEMINI_MODEL || "").trim();
@@ -66,13 +70,22 @@ const askStudyAssistant = async (question) => {
 
   for (const model of modelCandidates) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    const modelRequestConfig = {
+      ...requestConfig,
+      generationConfig: {
+        ...requestConfig.generationConfig,
+        ...(model.startsWith("gemini-3.")
+          ? { thinkingConfig: { thinkingLevel: "LOW" } }
+          : {}),
+      },
+    };
 
     try {
       const response = await axios.post(
         endpoint,
-        requestConfig,
+        modelRequestConfig,
         {
-          timeout: 20000,
+          timeout: GEMINI_REQUEST_TIMEOUT_MS,
           headers: {
             "Content-Type": "application/json",
             "x-goog-api-key": apiKey,
