@@ -86,6 +86,12 @@ The following authenticated, school-scoped endpoints provide the portal data not
 
 These features require the `20261113170000_portal_academic_data` Prisma migration. In a deployment, apply committed migrations with `npx prisma migrate deploy`; for local development use `npx prisma migrate dev`. Then regenerate the Prisma client with `npx prisma generate` and restart the API.
 
+### School admin operations
+
+The authenticated, tenant-scoped `/api/v1/school-operations` endpoints back the school library catalog, transport routes, payroll records, school announcement history, and downloadable school data export. Library and transport records are school-admin managed. Payroll can be managed by school admins and accountants; each entry is unique per staff member and payroll month. Announcements are sent through `POST /api/v1/notifications/broadcast` and their saved history is available to school admins. `GET /api/v1/school-operations/export` downloads a JSON export of the requesting school's data and excludes authentication secrets; it is not a full database backup or restore point.
+
+These features require the `20261115231000_school_admin_operations` Prisma migration. Apply committed migrations with `npx prisma migrate deploy` in deployments, then run `npx prisma generate` and restart the API.
+
 ---
 
 ## 3. Generate Prisma client

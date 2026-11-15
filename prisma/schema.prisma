@@ -46,6 +46,9 @@ model School {
   timetableSlots         TimetableSlot[]
   assignments            Assignment[]
   conductIncidents       ConductIncident[]
+  libraryBooks           LibraryBook[]
+  transportRoutes        TransportRoute[]
+  payrollEntries         PayrollEntry[]
   // ── Phase 1: Ledger + Expenses ──
   ledgerAccounts    LedgerAccount[]
   ledgerEntries     LedgerEntry[]
@@ -140,6 +143,7 @@ model Staff {
   timetableSlots     TimetableSlot[] @relation("TimetableTeacher")
   assignments        Assignment[]    @relation("AssignmentTeacher")
   conductIncidents   ConductIncident[] @relation("ConductReporter")
+  payrollEntries     PayrollEntry[]
 
   @@map("staff")
 }
@@ -488,6 +492,63 @@ model Notification {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
+}
+
+model LibraryBook {
+  id               String   @id @default(uuid())
+  schoolId         String
+  title            String
+  author           String?
+  category         String?
+  isbn             String?
+  totalCopies      Int      @default(1)
+  availableCopies  Int      @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  school           School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, isbn])
+  @@index([schoolId, title])
+  @@map("library_books")
+}
+
+model TransportRoute {
+  id           String   @id @default(uuid())
+  schoolId     String
+  name         String
+  vehiclePlate String?
+  driverName   String?
+  driverPhone  String?
+  stopCount    Int      @default(0)
+  capacity     Int      @default(0)
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  school       School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, status])
+  @@map("transport_routes")
+}
+
+model PayrollEntry {
+  id          String   @id @default(uuid())
+  schoolId    String
+  staffId     String
+  period      String
+  basicSalary Decimal  @db.Decimal(12, 2)
+  allowances  Decimal  @default(0) @db.Decimal(12, 2)
+  deductions  Decimal  @default(0) @db.Decimal(12, 2)
+  netPay      Decimal  @db.Decimal(12, 2)
+  status      String   @default("PENDING")
+  paidAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  staff       Staff    @relation(fields: [staffId], references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, staffId, period])
+  @@index([schoolId, period, status])
+  @@map("payroll_entries")
 }
 
 model DeviceToken {
