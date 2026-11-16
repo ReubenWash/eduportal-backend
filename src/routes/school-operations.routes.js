@@ -45,7 +45,17 @@ router.patch(
 );
 router.delete("/books/:id", schoolAdmin, [param("id").isUUID()], validate, controller.deleteBook);
 
-router.get("/transport-routes", schoolAdmin, [query("search").optional().isString().isLength({ max: 120 })], validate, controller.listTransportRoutes);
+router.get(
+  "/transport-routes",
+  schoolAdmin,
+  [query("search").optional().isString().isLength({ max: 120 })],
+  validate,
+  (req, res, next) => {
+    res.set("Cache-Control", "no-store");
+    next();
+  },
+  controller.listTransportRoutes
+);
 router.post(
   "/transport-routes",
   schoolAdmin,

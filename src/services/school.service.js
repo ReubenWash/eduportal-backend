@@ -8,10 +8,20 @@ const notificationService = require("./notification.service");
 const { createError } = require("../middleware/errorHandler");
 const { getPagination, paginatedResponse } = require("../utils/paginate");
 const { buildSuperAdminDashboardPayload } = require("../utils/superAdminDashboard");
+const { getTermStatusForDate } = require("../utils/termStatus");
 
 const getSchoolPortalUrl = (slug) => {
   const rootDomain = process.env.TENANT_ROOT_DOMAIN?.trim().toLowerCase().replace(/^\.+|\.+$/g, "");
   return rootDomain ? `https://${slug}.${rootDomain}` : null;
+};
+
+const syncSchoolTermStatuses = async (schoolId, now = new Date()) => {
+  const terms = await prisma.term.findMany({ where: { schoolId } });
+  return Promise.all(terms.map(async (term) => {
+    const status = getTermStatusForDate(term, now);
+    if (status === term.status) return term;
+    return prisma.term.update({ where: { id: term.id }, data: { status } });
+  }));
 };
 
 // ── Register new school ────────────────────────────────────────
@@ -282,11 +292,15 @@ const getDashboardStats = async (schoolId, user) => {
   console.log('🔍 User role:', user?.role);
   console.log('🔍 User ID:', user?.id);
 
+  const terms = await syncSchoolTermStatuses(schoolId);
+  const activeTerm = terms
+    .filter((term) => term.status === "ACTIVE")
+    .sort((a, b) => new Date(b.startDate) - new Date(a.startDate))[0] || null;
+
   const [
     totalStudents,
     totalStaff,
     totalClasses,
-    activeTerm,
   ] = await Promise.all([
     prisma.student.count({ where: { schoolId, status: "ACTIVE" } }),
     prisma.staff.count({ 
@@ -296,11 +310,6 @@ const getDashboardStats = async (schoolId, user) => {
       } 
     }),
     prisma.class.count({ where: { schoolId } }),
-    prisma.term.findFirst({
-      where:   { schoolId, status: "ACTIVE" },
-      orderBy: { createdAt: "desc" },
-      select:  { id: true, academicYear: true, termNumber: true, startDate: true, endDate: true },
-    }),
   ]);
 
   // Compute pass rate from scores in active term
@@ -581,35 +590,13 @@ const getSuperAdminDashboard = async () => {
 // ── Terms ──────────────────────────────────────────────────────
 // ✅ UPDATED: Auto-update term status based on current date
 const getTerms = async (schoolId, academicYear) => {
-  const terms = await prisma.term.findMany({
-    where: {
-      schoolId,
-      ...(academicYear && { academicYear }),
-    },
-    orderBy: [{ academicYear: "desc" }, { termNumber: "asc" }],
-  });
-
-  // ✅ Auto-update term status based on current date
-  const now = new Date();
-  const updatedTerms = terms.map(term => {
-    let status = term.status;
-    const startDate = new Date(term.startDate);
-    const endDate = new Date(term.endDate);
-    
-    // If term is UPCOMING but startDate has passed, set to ACTIVE
-    if (status === "UPCOMING" && startDate <= now) {
-      status = "ACTIVE";
-    }
-    
-    // If term is ACTIVE but endDate has passed, set to COMPLETED
-    if (status === "ACTIVE" && endDate < now) {
-      status = "COMPLETED";
-    }
-    
-    return { ...term, status };
-  });
-
-  return updatedTerms;
+  const terms = await syncSchoolTermStatuses(schoolId);
+  return terms
+    .filter((term) => !academicYear || term.academicYear === academicYear)
+    .sort((a, b) =>
+      b.academicYear.localeCompare(a.academicYear) ||
+      a.termNumber.localeCompare(b.termNumber)
+    );
 };
 
 // ✅ UPDATED: Auto-set term status based on dates
@@ -627,22 +614,16 @@ const createTerm = async (schoolId, data) => {
   const now = new Date();
   const startDate = new Date(data.startDate);
   const endDate = new Date(data.endDate);
-  
-  let status = data.status || "UPCOMING";
-  
-  // If start date is in the past, set to ACTIVE
-  if (startDate <= now) {
-    status = "ACTIVE";
-  }
-  
-  // If end date is in the past, set to COMPLETED
-  if (endDate < now) {
-    status = "COMPLETED";
-  }
+
+  const status = getTermStatusForDate({
+    startDate,
+    endDate,
+    status: data.status || "UPCOMING",
+  }, now);
 
   return prisma.term.create({
-    data: { 
-      schoolId, 
+    data: {
+      schoolId,
       ...data,
       status,
     },
@@ -659,27 +640,25 @@ const updateTerm = async (schoolId, termId, data) => {
     throw createError("Term not found", 404);
   }
 
-  // ✅ If activating, deactivate all other terms first
-  if (data.status === "ACTIVE") {
+  const updatedTermData = {
+    ...data,
+    status: getTermStatusForDate({
+      startDate: data.startDate || term.startDate,
+      endDate: data.endDate || term.endDate,
+      status: data.status || term.status,
+    }),
+  };
+
+  if (updatedTermData.status === "ACTIVE") {
     await prisma.term.updateMany({
-      where: { schoolId, status: "ACTIVE" },
+      where: { schoolId, status: "ACTIVE", id: { not: termId } },
       data: { status: "COMPLETED" },
     });
   }
 
-  // ✅ If start date is being updated, auto-set status
-  if (data.startDate) {
-    const now = new Date();
-    const startDate = new Date(data.startDate);
-    
-    if (startDate <= now && data.status !== "COMPLETED") {
-      data.status = "ACTIVE";
-    }
-  }
-
   return prisma.term.update({
     where: { id: termId },
-    data,
+    data: updatedTermData,
   });
 };
 
@@ -688,7 +667,7 @@ const updateTermStatus = async (schoolId, termId, status) => {
   const term = await prisma.term.findFirst({
     where: { id: termId, schoolId },
   });
-  
+
   if (!term) {
     throw createError("Term not found", 404);
   }
@@ -698,17 +677,17 @@ const updateTermStatus = async (schoolId, termId, status) => {
     throw createError("Invalid status. Must be one of: UPCOMING, ACTIVE, COMPLETED", 400);
   }
 
-  // ✅ If activating, deactivate all other active terms
-  if (status === "ACTIVE") {
+  const normalizedStatus = getTermStatusForDate({ ...term, status });
+  if (normalizedStatus === "ACTIVE") {
     await prisma.term.updateMany({
-      where: { schoolId, status: "ACTIVE" },
+      where: { schoolId, status: "ACTIVE", id: { not: termId } },
       data: { status: "COMPLETED" },
     });
   }
 
   return prisma.term.update({
     where: { id: termId },
-    data: { status },
+    data: { status: normalizedStatus },
   });
 };
 
